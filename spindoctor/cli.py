@@ -3780,49 +3780,45 @@ def _sibling_exe(name: str) -> str:
     return tool_command_text(name)
 
 
-def _make_install_tools_bats() -> "dict[str, str]":
-    """Build .bat files that wait for this executable's embedded workers.
+def _make_install_tools_bats(helpers=None) -> "dict[str, str]":
+    """``{"<name>.bat": body}`` for *helpers* (default: every helper).
 
-    Called at write time (not at module import) so that ``sys.executable``
-    resolves to the frozen GUI or CLI that the user actually ran.
+    The bodies run this executable's embedded workers.  Called at write time
+    (not at module import) so that ``sys.executable`` resolves to the frozen
+    GUI or CLI that the user actually ran.
     """
-    fav    = _sibling_exe("spindoctor-fav")
-    recent = _sibling_exe("spindoctor-recent")
-    stats  = _sibling_exe("spindoctor-stats")
-    return {
-        "Refresh Favorites.bat": (
-            "@echo off\r\n"
-            "REM Regenerates the cross-system HyperSpin Favorites wheel.\r\n"
-            f'start "" /B /WAIT {fav} rebuild --apply\r\n'
-            "if errorlevel 1 pause\r\n"
-            "exit\r\n"
-        ),
-        "Refresh Recently Played.bat": (
-            "@echo off\r\n"
-            "REM Regenerates the Recently Played wheel from RocketLauncher stats.\r\n"
-            f'start "" /B /WAIT {recent} rebuild --apply\r\n'
-            "if errorlevel 1 pause\r\n"
-            "exit\r\n"
-        ),
-        "Refresh Most Played.bat": (
-            "@echo off\r\n"
-            "REM Regenerates the Most Played wheel from RocketLauncher playtime.\r\n"
-            f'start "" /B /WAIT {stats} build-wheel --apply\r\n'
-            "if errorlevel 1 pause\r\n"
-            "exit\r\n"
-        ),
-        "Refresh All.bat": (
-            "@echo off\r\n"
-            "REM Refresh all three wheels. Pause on ANY step's failure so a\r\n"
-            "REM silent fail-and-close doesn't hide which wheel didn't rebuild.\r\n"
-            f'start "" /B /WAIT {fav} rebuild --apply\r\n'
-            "if errorlevel 1 (echo. & echo Favorites step failed. & pause & exit /b 1)\r\n"
-            f'start "" /B /WAIT {recent} rebuild --apply\r\n'
-            "if errorlevel 1 (echo. & echo Recently Played step failed. & pause & exit /b 1)\r\n"
-            f'start "" /B /WAIT {stats} build-wheel --apply\r\n'
-            "if errorlevel 1 (echo. & echo Most Played step failed. & pause & exit /b 1)\r\n"
-        ),
-    }
+    from .toolkit_helpers import HELPERS
+
+    return {f"{h.name}.bat": h.body() for h in (HELPERS if helpers is None else helpers)}
+
+
+def _picked_helpers(tools, *, required: bool):
+    """The helpers ``--tool`` names; exits 2 on an unknown name, or when
+    *required* and nothing is picked (after listing what can be)."""
+    from . import toolkit_helpers as th
+
+    try:
+        picked = th.pick(tools)
+    except ValueError as exc:
+        err_console.print(
+            f"[red]Unknown helper(s):[/red] {exc}. Choose from: "
+            + ", ".join(h.key for h in th.HELPERS)
+        )
+        sys.exit(2)
+    if picked or not required:
+        return picked
+    console.print(
+        "Pick the helpers to write with [cyan]--tool[/cyan] "
+        "(repeat it, or separate names with commas):"
+    )
+    width = max(len(h.key) for h in th.HELPERS)
+    for h in th.HELPERS:
+        console.print(f"  [cyan]{h.key.ljust(width)}[/cyan]  {h.name}: {h.summary}")
+    console.print(
+        "Example: [cyan]spindoctor install-tools --tool "
+        "refresh-favorites,refresh-recently-played[/cyan]"
+    )
+    sys.exit(2)
 
 
 def _install_tools_pclauncher_ini(bat_path: Path) -> str:
@@ -4417,6 +4413,11 @@ def _resolve_tools_output_dir(add_to_system: str, rl_dir: "Path") -> "Path":
 
 
 @cli.command("install-tools")
+@click.option("--tool", "tools", multiple=True, metavar="NAME",
+              help="Helper to write, by name (e.g. refresh-all or "
+                   "\"Refresh All\"). Repeat it, or separate names with "
+                   "commas. Required: run without it to see the list. "
+                   "Helpers you don't pick are left as they are.")
 @click.option("--output-dir", type=click.Path(), default=None,
               help="Directory to write .bat helpers. Defaults to "
                    "<rocketlauncher_dir>/Modules/HyperLaunch/Tools/spindoctor "
@@ -4434,21 +4435,23 @@ def _resolve_tools_output_dir(add_to_system: str, rl_dir: "Path") -> "Path":
 @click.option("--apply", "apply_changes", is_flag=True,
               help="Commit database changes (default: dry-run preview). "
                    "Required when --add-to-system is set.")
-def install_tools(output_dir, add_to_system, apply_changes):
-    """Install HyperSpin Tools menu wrappers for fav/recent rebuilds.
+def install_tools(tools, output_dir, add_to_system, apply_changes):
+    """Install the HyperSpin helpers you pick with --tool, one by one.
 
     \b
-    Writes .bat files that HyperSpin's Tools menu can call directly:
+    Each helper is a .bat file that HyperSpin's Tools menu can call:
 
       \b
-      • Refresh Favorites.bat       → spindoctor-fav rebuild --apply
-      • Refresh Recently Played.bat → spindoctor-recent rebuild --apply
-      • Refresh Most Played.bat     → spindoctor-stats build-wheel --apply
-      • Refresh All.bat             → fav + recent + most-played
+      • refresh-favorites       → spindoctor-fav rebuild --apply
+      • refresh-recently-played → spindoctor-recent rebuild --apply
+      • refresh-most-played     → spindoctor-stats build-wheel --apply
+      • refresh-all             → fav + recent + most-played
 
     Drop them into HyperSpin's Tools folder (or point HyperSpin at the
     output directory) so users can refresh the wheels from the cabinet
-    without dropping to a console.
+    without dropping to a console. Only the helpers you pick are written;
+    ones an earlier run installed stay as they are (remove them with
+    uninstall-tools --tool).
 
     \b
     With --add-to-system, also adds matching <game> entries to the named
@@ -4456,7 +4459,17 @@ def install_tools(output_dir, add_to_system, apply_changes):
     the bats. The system shows up on a wheel inside HyperSpin (commonly
     a 'Toolkit' or 'Tools' wheel) and each helper appears as a 'game'
     you can launch like any other.
+
+    \b
+    Examples:
+      spindoctor install-tools --tool refresh-all
+      spindoctor install-tools --tool refresh-favorites,refresh-recently-played
+      spindoctor install-tools --tool refresh-all --add-to-system Toolkit --apply
     """
+    from . import toolkit_helpers as th
+    from ._utils import atomic_write_bytes
+
+    picked = _picked_helpers(tools, required=True)
     config = _cfg()
 
     if add_to_system:
@@ -4496,23 +4509,23 @@ def install_tools(output_dir, add_to_system, apply_changes):
     out.mkdir(parents=True, exist_ok=True)
 
     written_bats: list[Path] = []
-    for name, body in _make_install_tools_bats().items():
+    for name, body in _make_install_tools_bats(picked).items():
         path = out / name
-        path.write_text(body, encoding="utf-8")
+        # The bodies already end lines with \r\n: write bytes, so Windows
+        # text mode doesn't turn them into \r\r\n.
+        atomic_write_bytes(path, body.encode("utf-8"))
         written_bats.append(path)
     console.print(
         f"[green]+[/green] wrote {len(written_bats)} helper(s) to "
-        f"[cyan]{out}[/cyan]"
+        f"[cyan]{out}[/cyan]: " + ", ".join(p.name for p in written_bats)
     )
 
     # Remove stale files from tools that have been renamed or removed in
     # this version.  "Refresh Both" was renamed to "Refresh All" in v2.4.27;
     # without this cleanup the old bat stays on disk and appears as a
-    # confusing duplicate in the HyperSpin Tools menu.
-    _current_stems = {p.stem for p in written_bats}
-    for _stale_stem in _INSTALL_TOOLS_STEMS:
-        if _stale_stem in _current_stems:
-            continue
+    # confusing duplicate in the HyperSpin Tools menu.  Current helpers that
+    # weren't picked this time are left alone.
+    for _stale_stem in th.LEGACY_NAMES:
         for _suffix in (".bat", ".ini"):
             _stale_path = out / f"{_stale_stem}{_suffix}"
             if _stale_path.is_file():
@@ -4533,12 +4546,13 @@ def install_tools(output_dir, add_to_system, apply_changes):
             "HyperSpin's Tools folder, or register the .bat files in "
             "HyperHQ → Tools.[/dim]"
         )
-        console.print(
-            "[dim]Run on boot:[/dim] use the GUI's Custom Wheels tab → "
-            "Auto-refresh on cabinet startup → Enable auto-run, or schedule "
-            "the generated [cyan]Refresh All.bat[/cyan] via Windows Task "
-            "Scheduler (trigger: 'At log on')."
-        )
+        if any(p.stem == "Refresh All" for p in written_bats):
+            console.print(
+                "[dim]Run on boot:[/dim] use the GUI's Custom Wheels tab → "
+                "Auto-refresh on cabinet startup → Enable auto-run, or schedule "
+                "the generated [cyan]Refresh All.bat[/cyan] via Windows Task "
+                "Scheduler (trigger: 'At log on')."
+            )
         return
 
     # ── --add-to-system path: also add wheel entries + per-game INIs ─────────
@@ -4595,9 +4609,7 @@ def install_tools(output_dir, add_to_system, apply_changes):
     # "Refresh Both" was renamed to "Refresh All" in v2.4.27; purge the old
     # entry so it doesn't remain visible in the HyperSpin wheel.
     removed_db: list[str] = []
-    for _stale_stem in _INSTALL_TOOLS_STEMS:
-        if _stale_stem in _current_stems:
-            continue
+    for _stale_stem in th.LEGACY_NAMES:
         if _stale_stem in db.games():
             db.remove_game(_stale_stem)
             removed_db.append(_stale_stem)
@@ -4664,20 +4676,12 @@ def install_tools(output_dir, add_to_system, apply_changes):
 
 # ─── uninstall-tools ──────────────────────────────────────────────────────────
 
-#: Stems of every file that install-tools can write, covering both the current
-#: All stems ever written by install-tools (current + legacy) so that both
-#: install-tools (cleans up stale files on re-run) and uninstall-tools (full
-#: removal) cover every variant regardless of which version wrote the files.
-_INSTALL_TOOLS_STEMS: tuple[str, ...] = (
-    "Refresh Favorites",
-    "Refresh Recently Played",
-    "Refresh Most Played",
-    "Refresh All",    # current name (renamed from "Refresh Both" in v2.4.27)
-    "Refresh Both",   # legacy name — no longer written; kept for cleanup only
-)
-
-
 @cli.command("uninstall-tools")
+@click.option("--tool", "tools", multiple=True, metavar="NAME",
+              help="Remove only this helper (same names as install-tools "
+                   "--tool; repeat it or separate names with commas). "
+                   "Without it, every SpinDoctor helper is removed, "
+                   "including names older versions wrote.")
 @click.option("--add-to-system", "add_to_system", default=None,
               help="HyperSpin system whose PCLauncher folder and database "
                    "XML should be cleaned. Mirrors the --add-to-system flag "
@@ -4689,12 +4693,13 @@ _INSTALL_TOOLS_STEMS: tuple[str, ...] = (
               help="Actually remove the files and database entries. "
                    "Without this flag the command shows a dry-run preview "
                    "of what would be removed.")
-def uninstall_tools(add_to_system, apply_changes):
+def uninstall_tools(tools, add_to_system, apply_changes):
     """Remove SpinDoctor tool helpers installed by install-tools.
 
     \b
     Reverses `spindoctor install-tools [--add-to-system <NAME>]`.
-    Dry-run by default — pass --apply to actually delete.
+    Dry-run by default — pass --apply to actually delete. With --tool,
+    only those helpers are removed and the others stay.
 
     \b
     Without --add-to-system:
@@ -4721,8 +4726,16 @@ def uninstall_tools(add_to_system, apply_changes):
     Examples:
       spindoctor uninstall-tools --add-to-system Toolkit
       spindoctor uninstall-tools --add-to-system Toolkit --apply
+      spindoctor uninstall-tools --tool refresh-most-played --apply
       spindoctor uninstall-tools --apply
     """
+    from . import toolkit_helpers as th
+
+    picked = _picked_helpers(tools, required=False)
+    # Stems to remove, in a stable order: the picked helpers, or every name
+    # install-tools has ever written.
+    stems = ([h.name for h in picked] if picked
+             else [h.name for h in th.HELPERS] + list(th.LEGACY_NAMES))
     config = _cfg()
     verb = "removed" if apply_changes else "would remove"
 
@@ -4755,7 +4768,7 @@ def uninstall_tools(add_to_system, apply_changes):
         # ── Collect candidate files; delete only when --apply ─────────────────
         pending_files: list[Path] = []
         for search_dir in search_dirs:
-            for stem in _INSTALL_TOOLS_STEMS:
+            for stem in stems:
                 for suffix in (".bat", ".ini"):
                     p = search_dir / (stem + suffix)
                     if p.exists():
@@ -4780,31 +4793,21 @@ def uninstall_tools(add_to_system, apply_changes):
             )
 
         # ── Clean up PCLauncher module INI sections ───────────────────────────
-        from .rocketlauncher import _TOOLKIT_TOOL_NAMES
+        from .rocketlauncher import strip_toolkit_sections
         module_ini = rl_dir / "Modules" / "PCLauncher" / f"{add_to_system}.ini"
         if module_ini.exists():
-            existing = read_editable_text(module_ini)
-            preserved_lines: list[str] = []
-            in_sd_section = False
-            found_sd_sections = False
-            for line in existing.splitlines(keepends=True):
-                stripped = line.strip()
-                if stripped.startswith("[") and stripped.endswith("]"):
-                    section_name = stripped[1:-1]
-                    in_sd_section = section_name in _TOOLKIT_TOOL_NAMES
-                    if in_sd_section:
-                        found_sd_sections = True
-                if not in_sd_section:
-                    preserved_lines.append(line)
-            if found_sd_sections:
+            content, found_sections = strip_toolkit_sections(
+                read_editable_text(module_ini), stems,
+            )
+            if found_sections:
                 console.print(
                     f"[{'green' if apply_changes else 'yellow'}]"
                     f"{'–' if apply_changes else '?'}[/{'green' if apply_changes else 'yellow'}] "
                     f"{verb} SpinDoctor sections from PCLauncher module INI "
-                    f"[cyan]{module_ini}[/cyan]"
+                    f"[cyan]{module_ini}[/cyan]: "
+                    + ", ".join(f"[bold]{n}[/bold]" for n in found_sections)
                 )
                 if apply_changes:
-                    content = "".join(preserved_lines)
                     if content.strip():
                         write_windows_text(module_ini, content)
                     else:
@@ -4825,7 +4828,7 @@ def uninstall_tools(add_to_system, apply_changes):
         else:
             db = HyperspinDatabase(add_to_system, db_path)
             db.load()
-            present_entries = [s for s in _INSTALL_TOOLS_STEMS if db.get(s)]
+            present_entries = [s for s in stems if db.get(s)]
             if present_entries:
                 console.print(
                     f"[{'green' if apply_changes else 'yellow'}]"
@@ -4862,7 +4865,7 @@ def uninstall_tools(add_to_system, apply_changes):
 
         pending_files = [
             out / (stem + ".bat")
-            for stem in _INSTALL_TOOLS_STEMS
+            for stem in stems
             if (out / (stem + ".bat")).exists()
         ]
 

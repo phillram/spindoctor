@@ -1171,8 +1171,10 @@ _CUSTOM_COMMAND_PRESETS: tuple[str, ...] = (
     # ── Tools ─────────────────────────────────────────────────────────────────
     "─── Tools ───",
     "install-tools",
-    "install-tools --add-to-system <SYSTEM>",
+    "install-tools --tool <NAME>",
+    "install-tools --tool <NAME> --add-to-system <SYSTEM>",
     "uninstall-tools --apply",
+    "uninstall-tools --tool <NAME> --apply",
     # ── Config ────────────────────────────────────────────────────────────────
     "─── Config ───",
     "config init",
@@ -12436,9 +12438,20 @@ class _SpinDoctorGUI:
 
         self._help_text(
             helpers_lf,
-            text="Create Refresh Favorites, Refresh Recently Played, Refresh Most Played and Refresh All batch shortcuts. Use them from HyperHQ Tools or an existing maintenance wheel.",
+            text="Tick the helpers you want, then install them for HyperHQ Tools or into an existing maintenance wheel. Helpers you leave unticked are not touched; Uninstall from wheel removes only the ticked ones.",
         ).pack(fill="x", padx=6, pady=(4, 6))
 
+        from .toolkit_helpers import HELPERS as _TOOL_HELPERS
+
+        pick_frame = self.ttk.Frame(helpers_lf)
+        pick_frame.pack(fill="x", padx=6, pady=(0, 6))
+        self._tools_pick_vars = {}
+        for i, helper in enumerate(_TOOL_HELPERS):
+            var = self.tk.BooleanVar(value=False)
+            self._tools_pick_vars[helper.key] = var
+            box = self.ttk.Checkbutton(pick_frame, text=helper.name, variable=var)
+            box.grid(row=i // 2, column=i % 2, sticky="w", padx=(0, 24), pady=1)
+            _attach_tooltip(box, helper.summary[:1].upper() + helper.summary[1:] + ".", self.tk)
 
         # HyperHQ → Tools install (default)
         hhq_frame = self.ttk.LabelFrame(
@@ -12474,7 +12487,7 @@ class _SpinDoctorGUI:
         wheel_frame.pack(fill="x", padx=6, pady=(2, 8))
         self._help_text(
             wheel_frame,
-            text="Add refresh entries and PCLauncher INIs to an existing maintenance wheel, such as Toolkit. The target system must already exist and use PCLauncher.",
+            text="Add the ticked helpers as entries, with PCLauncher INIs, to an existing maintenance wheel, such as Toolkit. The target system must already exist and use PCLauncher.",
         ).pack(fill="x", padx=6, pady=(2, 4))
 
         sys_row = self.ttk.Frame(wheel_frame)
@@ -12673,8 +12686,26 @@ class _SpinDoctorGUI:
         self._refresh_autorefresh_status()
         return frame
 
+    def _ticked_tool_helpers(self, button: str):
+        """The helpers ticked in the checklist, or None (after a status-bar
+        prompt) when none are."""
+        from .toolkit_helpers import HELPERS
+
+        picked = [h for h in HELPERS if self._tools_pick_vars[h.key].get()]
+        if not picked:
+            self._flash_validation(f"Tick at least one helper before clicking {button}.")
+            return None
+        return picked
+
+    @staticmethod
+    def _tool_args(picked) -> "list[str]":
+        return ["--tool", ",".join(h.key for h in picked)]
+
     def _run_install_tools(self) -> None:
-        args = ["install-tools"]
+        picked = self._ticked_tool_helpers("Install Tools-menu helpers")
+        if picked is None:
+            return
+        args = ["install-tools"] + self._tool_args(picked)
         outdir = self._tools_outdir_var.get().strip()
         if outdir:
             args += ["--output-dir", outdir]
@@ -12688,8 +12719,12 @@ class _SpinDoctorGUI:
                 "(e.g. 'Toolkit') before clicking Install into wheel."
             )
             return
+        picked = self._ticked_tool_helpers("Install into wheel")
+        if picked is None:
+            return
         self._run_cli(
-            "spindoctor", ["install-tools", "--add-to-system", wheel],
+            "spindoctor",
+            ["install-tools"] + self._tool_args(picked) + ["--add-to-system", wheel],
         )
 
     def _run_uninstall_tools_from_wheel(self) -> None:
@@ -12700,17 +12735,20 @@ class _SpinDoctorGUI:
                 "(e.g. 'Toolkit') before clicking Uninstall from wheel."
             )
             return
+        picked = self._ticked_tool_helpers("Uninstall from wheel")
+        if picked is None:
+            return
         if not self.messagebox.askyesno(
             "Confirm uninstall",
-            f"Remove all SpinDoctor helper files and database entries "
-            f"from the '{wheel}' wheel?\n\n"
-            "This deletes the .bat and .ini files from the PCLauncher "
-            "folder and removes the matching <game> entries from "
+            f"Remove these SpinDoctor helpers from the '{wheel}' wheel?\n\n"
+            + "\n".join(f"  • {h.name}" for h in picked) + "\n\n"
+            "This deletes their .bat and .ini files from the PCLauncher "
+            "folder and removes their <game> entries from "
             f"{wheel}.xml. This cannot be undone (except by re-running "
             "'Install into wheel').",
         ):
             return
-        args = ["uninstall-tools", "--add-to-system", wheel]
+        args = ["uninstall-tools"] + self._tool_args(picked) + ["--add-to-system", wheel]
         if self._global_apply_var.get():
             args.append("--apply")
         self._run_cli("spindoctor", args)

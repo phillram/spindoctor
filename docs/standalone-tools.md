@@ -104,15 +104,17 @@ spindoctor-stats build-wheel --apply
 
 Three integration patterns, in roughly increasing order of "how much you want it to feel like part of HyperSpin":
 
-1. **HyperHQ → Tools menu (default).** The GUI's **Custom Wheels** tab → "Install for HyperHQ → Tools menu" runs:
-   ```bat
-   spindoctor install-tools
-   ```
-   Writes four `.bat` files into `<RocketLauncher>/Modules/HyperLaunch/Tools/spindoctor/`. Open `HyperHQ.exe`, go to the Tools tab, click Add, and point each entry at the matching `.bat`. They appear inside HyperSpin's in-cabinet Tools menu as `Refresh Favorites`, `Refresh Recently Played`, `Refresh Most Played`, and `Refresh All`.
+Tick the helpers you want in the GUI's **Custom Wheels** tab, or name them with `--tool` (see [`install-tools`](commands.md#install-tools) for the list). Only those are written; helpers you installed earlier stay as they are.
 
-2. **As games inside an existing wheel system (`--add-to-system`).** If you've built a "Toolkit" or "Tools" wheel (a HyperSpin system whose "games" are maintenance tasks), expose the helpers as wheel entries inside it. The GUI's **Custom Wheels** tab → "Install into an existing wheel system" runs:
+1. **HyperHQ → Tools menu (default).** The GUI's **Custom Wheels** tab → "Install for HyperHQ → Tools menu" runs, for example:
    ```bat
-   spindoctor install-tools --add-to-system Toolkit
+   spindoctor install-tools --tool refresh-favorites,refresh-recently-played,refresh-most-played,refresh-all
+   ```
+   Writes one `.bat` file per helper into `<RocketLauncher>/Modules/HyperLaunch/Tools/spindoctor/`. Open `HyperHQ.exe`, go to the Tools tab, click Add, and point each entry at the matching `.bat`. They appear inside HyperSpin's in-cabinet Tools menu under their names, such as `Refresh Favorites` and `Refresh All`.
+
+2. **As games inside an existing wheel system (`--add-to-system`).** If you've built a "Toolkit" or "Tools" wheel (a HyperSpin system whose "games" are maintenance tasks), expose the helpers as wheel entries inside it. The GUI's **Custom Wheels** tab → "Install into an existing wheel system" runs, for example:
+   ```bat
+   spindoctor install-tools --tool refresh-all --add-to-system Toolkit
    ```
    Writes the bats and per-game PCLauncher INIs under `<RocketLauncher>/Modules/PCLauncher/Toolkit/`, and adds `<game>` entries (with `genre=Tools`, `manufacturer=SpinDoctor`) to `<HyperSpin>/Databases/Toolkit/Toolkit.xml`. Idempotent on re-run. The target system must already exist and use PCLauncher as its emulator.
 
@@ -135,7 +137,7 @@ The scheduled task points at the VBS shim via `wscript.exe //B spindoctor-refres
 
 > **If you have an existing task registered before v2.4.11**, click *Disable auto-run* then *Enable auto-run* again. The old task used `cmd /c bat` (normal priority, visible window). Re-registering generates the new shim pair and points the task at the VBS instead.
 
-> **Upgrading to v3 or moving the EXE?** Re-run `install-tools` and click *Enable auto-run* again once to rewrite embedded paths. For intro-video rotation, also re-run `introvideo install-autorun --apply` (or enable it again in the GUI). Status checks flag stale tasks, and `spindoctor doctor`'s **Refresh helpers** check flags `install-tools` `.bat` files that still name the old EXE.
+> **Upgrading to v3 or moving the EXE?** Re-run `install-tools` (with the same `--tool` picks) and click *Enable auto-run* again once to rewrite embedded paths. For intro-video rotation, also re-run `introvideo install-autorun --apply` (or enable it again in the GUI). Status checks flag stale tasks, and `spindoctor doctor`'s **SpinDoctor helpers** check flags `install-tools` `.bat` files that still name the old EXE.
 
 ### Manual registration
 

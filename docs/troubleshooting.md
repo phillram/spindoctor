@@ -354,17 +354,17 @@ If you believe you have zero-byte stubs from an older version, run `audit` and l
 
 This error appears when RocketLauncher's PCLauncher module finds a `[exe info]`-style INI for the helper entry, but the field for the monitored executable (or FadeTitle) is empty. PCLauncher needs that information to know when the launched program has finished — but the SpinDoctor refresh helpers are `.bat` files that run and exit on their own, so there is no process to monitor.
 
-**Fix — run `install-tools` once:**
+**Fix — run `install-tools` once, with the helpers you want on the wheel:**
 
 ```bat
-spindoctor install-tools --add-to-system Toolkit
+spindoctor install-tools --tool refresh-favorites,refresh-recently-played,refresh-most-played,refresh-all --add-to-system Toolkit --apply
 ```
 
 This writes everything RocketLauncher and PCLauncher need in one step:
 
 | File written | Purpose |
 |---|---|
-| `Modules/PCLauncher/Toolkit/*.bat` | The four refresh scripts |
+| `Modules/PCLauncher/Toolkit/*.bat` | The helpers you picked |
 | `Modules/PCLauncher/Toolkit/*.ini` | Per-game PCLauncher INIs (`[Settings]` format — no FadeTitle needed) |
 | `Databases/Toolkit/Toolkit.xml` | HyperSpin `<game>` entries |
 | `Settings/Toolkit.ini` | RocketLauncher system INI — tells RL to use PCLauncher and where the per-game INIs live |
@@ -380,7 +380,7 @@ doesn't yet:
 ```bat
 spindoctor add-system "Toolkit"
 spindoctor mainmenu add "Toolkit" --apply
-spindoctor install-tools --add-to-system Toolkit
+spindoctor install-tools --tool refresh-all --add-to-system Toolkit --apply
 ```
 
 The command is idempotent — safe to re-run after an upgrade.
@@ -711,15 +711,17 @@ rebuild --apply` (v2 named `spindoctor-fav.exe` in its install folder).
 Portable releases unzip into a folder of their own, so once the old folder is
 removed the helpers run a program that isn't there.
 
-**Find it:** run `spindoctor doctor`. Its **Refresh helpers** check lists each
-folder whose helpers run a program that no longer exists, with the
+**Find it:** run `spindoctor doctor`. Its **SpinDoctor helpers** check lists
+each folder whose helpers run a program that no longer exists, with the
 `install-tools` command that rewrites them on its `fix:` line.
 
 **Fix:** re-run `install-tools` from the new install, the way it was first
-run: `spindoctor install-tools` for the Tools menu, or
-`spindoctor install-tools --add-to-system Toolkit --apply` for a Toolkit wheel
-(with `--output-dir <folder>` if one was used). Keeping SpinDoctor in a folder
-whose name has no version number avoids this on later upgrades.
+run and with the same helpers: for example
+`spindoctor install-tools --tool refresh-all` for the Tools menu, or
+`spindoctor install-tools --tool refresh-all --add-to-system Toolkit --apply`
+for a Toolkit wheel (with `--output-dir <folder>` if one was used). The `fix:`
+line names the helpers it found. Keeping SpinDoctor in a folder whose name has
+no version number avoids this on later upgrades.
 
 ## Intro Video Randomizer
 
