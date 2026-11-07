@@ -364,6 +364,11 @@ class Config:
     test_screenshot_width: int = 480
     # Where run folders go; blank = ~/.spindoctor/tests.
     test_results_dir: str = ""
+    # --with-hyperspin: seconds to wait for HyperSpin's Main Menu, harmless
+    # log.txt lines (substrings), and whether to skip the intro video.
+    test_hyperspin_timeout: int = 180
+    test_ignore_hyperspin_log: list[str] = field(default_factory=list)
+    test_skip_intro_video: bool = True
 
     # ── derived paths ──────────────────────────────────────────────────────────
 
