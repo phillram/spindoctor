@@ -256,6 +256,9 @@ class Config:
     gui_window_dpi_scale: float = 1.0
     gui_window_maximized: bool = False
     gui_last_active_tab: int = -1
+    # The last page by name ("" = use gui_last_active_tab, which counts pages
+    # in the order before the Test games page, as older versions read it).
+    gui_last_active_page: str = ""
     # Last-selected system per tab, keyed by tab label. Saved when the
     # user changes a combobox; restored on the next launch so cabinet
     # owners who live in a few systems don't re-pick every session.

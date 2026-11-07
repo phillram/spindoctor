@@ -917,7 +917,7 @@ PNG mode is gated on `pip install -e .[preview]` (Pillow). When Pillow isn't ins
 
 ### `test`
 
-Launches games through RocketLauncher the way HyperSpin does (`RocketLauncher.exe "<System>" "<Game>"`), lets each one run, and judges it. Without `--apply` nothing is launched: the picked games are listed, each with its file check. `--apply` needs Windows. Games open full screen, so leave the cabinet alone while a run goes.
+Launches games through RocketLauncher the way HyperSpin does (`RocketLauncher.exe "<System>" "<Game>"`), lets each one run, and judges it. In the GUI it's the [Test games](gui.md#test-games) page. Without `--apply` nothing is launched: the picked games are listed, each with its file check. `--apply` needs Windows. Games open full screen, so leave the cabinet alone while a run goes.
 
 ```bat
 spindoctor test --system "Nintendo Entertainment System" --all          :: list only
