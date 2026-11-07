@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Docs
+
+- **Dolphin with an arcade panel and a gamepad on the same controller is documented.** `docs/cabinet-architecture-reference.md` has a new section in its Dolphin part. Each panel key goes after the pad's bind as a device-qualified term (`` Buttons/A = `Button A` | `DInput/0/Keyboard Mouse:A` ``), so the pad's binds stay exactly as they were. GameCube ports need `Options/Always Connected = True`: Dolphin treats a port as unplugged while its pad is off, and then ignores the panel's keys too. It also covers a Wii pointer from a trackball or mouse that gives way to the pad's stick, sideways-remote games on a joystick through a per-game Wii Remote profile (`GameSettings\<GAMEID>.ini`, `[Controls]` `WiimoteProfile1`), Wii motion on keys, and why RocketLauncher's `UseCustomWiimoteProfiles` / `UseCustomGCPadProfiles` should stay off (they copy a stored profile over `WiimoteNew.ini` / `GCPadNew.ini` at every launch). `docs/troubleshooting.md` has an entry for each symptom, and `docs/controller-input.md` links to the new section.
+
 ## [3.1.0] - 2026-11-06
 
 ### Added
