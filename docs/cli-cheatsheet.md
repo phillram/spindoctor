@@ -58,6 +58,19 @@ spindoctor doctor --apply      :: also run safe, idempotent repairs (write missi
 
 Reference: [Command reference → doctor](commands.md#doctor).
 
+### `test` — launch games and see which ones break
+
+```bat
+spindoctor test --system "Nintendo Entertainment System" --all          :: list the games and their file check, launch nothing
+spindoctor test --system "Nintendo Entertainment System" --all --apply  :: launch every game, one after another
+spindoctor test --genre Shooter --count 8 --apply                       :: 8 random Shooter games from any wheel
+spindoctor test --all-systems --per-system 3 --apply                    :: a quick check of every wheel
+spindoctor test --only-failed --apply                                   :: try the last run's failures again
+spindoctor test --recover                                               :: after a run was stopped from the GUI or crashed
+```
+
+Results, screenshots and RocketLauncher logs go to `%USERPROFILE%\.spindoctor\tests\<run>\`. Play statistics are put back after every game. Reference: [Command reference → test](commands.md#test).
+
 ### `audit` — compare ROMs vs the HyperSpin DB
 
 ```bat

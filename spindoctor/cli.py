@@ -276,6 +276,21 @@ def config_set(key: str, value: str):
       mame_executable           Path to MAME binary (used for -listxml)
       metadata_cache_ttl_days   Days to keep cached API responses (default 30)
       metadata_cache_enabled    true | false (default true)
+      test_skip_systems         Wheels `spindoctor test` never launches unless named
+      test_skip_pclauncher      true | false (default true): skip PCLauncher games
+      test_skip_custom_wheels   true | false (default true): skip SpinDoctor's
+                                Favorites / Recently Played / Most Played
+      test_helper_processes     Programs RocketLauncher starts that aren't the game,
+                                added to the built-in list; !name removes one
+      test_ignore_log_errors    Harmless RocketLauncher log errors (substrings)
+      test_error_window_words   Regex for pop-up titles that mean trouble
+      test_game_seconds         Seconds a game runs before it is judged (default 20)
+      test_launch_timeout       Seconds to wait for a game window (default 90)
+      test_close_timeout        Seconds to wait after the exit key (default 25)
+      test_cooldown             Seconds between games (default 3)
+      test_per_system           Games per wheel when no count is given (default 3)
+      test_screenshot_width     Screenshot width in pixels (default 480)
+      test_results_dir          Where test runs go (blank = ~/.spindoctor/tests)
     """
     config = _cfg()
     if not hasattr(config, key) or key in (
@@ -292,6 +307,12 @@ def config_set(key: str, value: str):
         "max_concurrent_downloads": (1, 64),
         "metadata_cache_ttl_days": (0, 3650),
         "ui_scale": (0.6, 2.0),
+        "test_game_seconds": (1, 3600),
+        "test_launch_timeout": (5, 3600),
+        "test_close_timeout": (1, 600),
+        "test_cooldown": (0, 600),
+        "test_per_system": (1, 100000),
+        "test_screenshot_width": (64, 3840),
     }
     current = getattr(config, key)
     _metadata_sources = ("auto", "screenscraper", "thegamesdb", "both")
@@ -2589,15 +2610,20 @@ def recent_rebuild(limit, target_system, media_mode, apply_changes, verbose):
             "[yellow bold][DRY RUN][/yellow bold] No files will be written. "
             "Re-run with [cyan]--apply[/cyan] to commit."
         )
-    summary = rebuild(
-        config,
-        target_system=target_system,
-        limit=limit,
-        media_mode=mode,
-        skip_media=skip_media,
-        dry_run=not apply_changes,
-        verbose=verbose,
-    )
+    from ._testrun import ActiveRunError
+    try:
+        summary = rebuild(
+            config,
+            target_system=target_system,
+            limit=limit,
+            media_mode=mode,
+            skip_media=skip_media,
+            dry_run=not apply_changes,
+            verbose=verbose,
+        )
+    except ActiveRunError as exc:
+        err_console.print(f"[red]{escape(str(exc))}[/red]")
+        sys.exit(1)
     _print_synth_summary("Recently Played", summary)
     if apply_changes:
         _sync_ledblinky_collection(config, target_system, apply_changes)
@@ -3342,15 +3368,20 @@ def stats_report_build_wheel(limit, target_system, media_mode,
         _warn_rocketlauncher_dir(config)
     skip_media = media_mode == "none"
     mode = LinkMode.AUTO if skip_media else LinkMode(media_mode)
-    summary = build_most_played_wheel(
-        config,
-        target_system=target_system,
-        limit=limit,
-        media_mode=mode,
-        skip_media=skip_media,
-        skip_launchers=staging,
-        verbose=verbose,
-    )
+    from ._testrun import ActiveRunError
+    try:
+        summary = build_most_played_wheel(
+            config,
+            target_system=target_system,
+            limit=limit,
+            media_mode=mode,
+            skip_media=skip_media,
+            skip_launchers=staging,
+            verbose=verbose,
+        )
+    except ActiveRunError as exc:
+        err_console.print(f"[red]{escape(str(exc))}[/red]")
+        sys.exit(1)
     if staging:
         console.print(
             "[dim]Staging to --output-dir: wrote database + media only; "
@@ -3395,33 +3426,11 @@ def stats_report_clear_wheel(target_system, apply_changes):
 
 
 def _collect_stat_files(rl: Path) -> list[Path]:
-    """Return all RocketLauncher Statistics.ini paths across every known layout.
+    """Return all RocketLauncher Statistics.ini paths across every known layout
+    (:func:`spindoctor.playtime.stat_files`)."""
+    from .playtime import stat_files
 
-    Three layouts are scanned (a cabinet may use more than one):
-    - Classic  : ``Settings/Global Statistics/<System>.ini``
-    - Legacy   : ``Settings/<System>/Statistics.ini``
-    - Newer    : ``Data/Statistics/<System>.ini`` (including the aggregate
-                 ``Global Statistics.ini`` — RL regenerates it on next launch)
-    """
-    stat_files: list[Path] = []
-
-    global_dir = rl / "Settings" / "Global Statistics"
-    if global_dir.is_dir():
-        stat_files.extend(global_dir.glob("*.ini"))
-
-    settings_dir = rl / "Settings"
-    if settings_dir.is_dir():
-        for sys_dir in settings_dir.iterdir():
-            if sys_dir.is_dir():
-                s = sys_dir / "Statistics.ini"
-                if s.is_file():
-                    stat_files.append(s)
-
-    data_stats_dir = rl / "Data" / "Statistics"
-    if data_stats_dir.is_dir():
-        stat_files.extend(data_stats_dir.glob("*.ini"))
-
-    return stat_files
+    return stat_files(rl)
 
 
 def _scrub_backup(
@@ -7648,6 +7657,269 @@ def self_doctor(fix):
     report = run_self_checks(config, fix=fix)
     render_report(report, console)
     if report.overall() == _S.FAIL:
+        sys.exit(2)
+
+
+# ─── test ─────────────────────────────────────────────────────────────────────
+
+_TEST_STYLE = {"PASS": "green", "WARN": "yellow", "FAIL": "red", "SKIPPED": "dim"}
+
+
+def _print_test_plan(plan, verbose: bool) -> None:
+    """The picked games, each with its file check.  Long plans list only the
+    games that won't launch, plus a count per wheel."""
+    for system, why in plan.skipped_systems:
+        console.print(f"[dim]Skipping wheel {escape(system)}: {escape(why)}[/dim]")
+    if not plan.games:
+        return
+    show = plan.games if verbose or len(plan.games) <= 60 else [g for g in plan.games if not g.launch]
+    # One line per game, not a table: reasons are long and must not wrap.
+    for g in show:
+        if g.launch:
+            console.print(f"  [green]ready[/green]  {escape(g.system)} > {escape(g.game)}")
+        else:
+            console.print(f"  [dim]skip[/dim]   {escape(g.system)} > {escape(g.game)}: {escape(g.reason)}")
+            if verbose and g.fix:
+                console.print(f"         [dim]fix:[/dim] {escape(g.fix)}")
+    if len(show) < len(plan.games):
+        per: dict[str, list[int]] = {}
+        for g in plan.games:
+            counts = per.setdefault(g.system, [0, 0])
+            counts[0 if g.launch else 1] += 1
+        for system, (ready, skip) in per.items():
+            console.print(f"  {escape(system)}: {ready} ready, {skip} skipped")
+        console.print("[dim]Add --verbose to list every game.[/dim]")
+
+
+def _print_test_recovery(report) -> None:
+    console.print(f"[yellow]Finished an interrupted test run:[/yellow] {escape(str(report.run_dir))}")
+    if report.closed:
+        console.print(f"  Closed: {escape(', '.join(report.closed))}")
+    for msg in report.messages:
+        console.print(f"  {escape(msg)}")
+
+
+@cli.command("test")
+@click.option("--system", "-s", "systems", multiple=True,
+              help="Wheel to test (repeatable). Naming a skipped wheel launches it anyway.")
+@click.option("--all-systems", is_flag=True, help="Every Main Menu wheel except skipped ones.")
+@click.option("--genre", "genres", multiple=True,
+              help="Only games of this genre: the whole genre, ignoring case; * and ? "
+                   "wildcards (e.g. \"Shoot*\"). Repeatable. Without --system, searches every wheel.")
+@click.option("--game", "-g", "games", multiple=True,
+              help="Only these games (* and ? wildcards). Repeatable.")
+@click.option("--all", "all_games", is_flag=True, help="Every matching game of the picked wheels.")
+@click.option("--count", type=click.IntRange(1), default=None, help="N random games in total.")
+@click.option("--per-system", type=click.IntRange(1), default=None,
+              help="N random games per wheel (default: test_per_system, 3).")
+@click.option("--seed", type=int, default=None, help="Seed for the random picks, to repeat them.")
+@click.option("--include-skipped", is_flag=True,
+              help="Also launch skipped wheels and PCLauncher games.")
+@click.option("--seconds", type=click.IntRange(1, 3600), default=None,
+              help="How long each game runs before it is judged (default: test_game_seconds, 20).")
+@click.option("--resume", is_flag=True, help="Carry on the newest run that didn't finish.")
+@click.option("--only-failed", is_flag=True,
+              help="Launch again the games that failed in the newest run with results.")
+@click.option("--recover", "recover_only", is_flag=True,
+              help="Finish a run that was stopped or killed: close what it left open and put "
+                   "the play statistics back. Runs right away, even without --apply.")
+@click.option("--list-runs", is_flag=True, help="List past runs, newest first.")
+@click.option("--json", "as_json", is_flag=True, help="Print the plan or the results as JSON.")
+@click.option("--verbose", "-v", is_flag=True, help="List every picked game.")
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Launch the games. Without it, only list them with their file check.")
+def game_test_cmd(systems, all_systems, genres, games, all_games, count, per_system, seed,
+                  include_skipped, seconds, resume, only_failed, recover_only, list_runs,
+                  as_json, verbose, apply_changes):
+    """Launch games through RocketLauncher, the way HyperSpin does, and judge them.
+
+    Each game runs for --seconds, then SpinDoctor looks for what went wrong:
+    the game didn't start or closed by itself, an error pop-up, a Windows
+    crash report, "not responding", errors in RocketLauncher's log, or a
+    black screen. It takes a screenshot, closes the game with the system's
+    exit key and moves on. RocketLauncher's play statistics are put back
+    after every game, so test launches stay out of Recently Played and
+    Most Played.
+
+    Without --apply nothing is launched: the picked games are listed with
+    the same file check `doctor` does. Windows only for --apply.
+
+    \b
+    Examples:
+      spindoctor test --system "Nintendo Entertainment System" --all
+      spindoctor test --genre Shooter --count 8 --apply
+      spindoctor test --all-systems --per-system 3 --apply
+      spindoctor test --resume --apply
+    """
+    from . import _testrun, gametest
+    from .playtime import format_duration
+
+    config = _cfg()
+    root = _testrun.tests_dir(config)
+    if list_runs:
+        runs = gametest.list_runs(root)
+        if as_json:
+            click.echo(json.dumps([{"run_dir": str(d), **info} for d, info in runs], indent=2))
+            return
+        if not runs:
+            console.print(f"No test runs in {escape(str(root))}.")
+            return
+        table = Table(box=box.SIMPLE)
+        for col in ("Run", "Started", "State", "Results"):
+            table.add_column(col)
+        for d, info in runs:
+            rows = gametest.read_csv(d / "results.csv")
+            tally = {}
+            for r in rows:
+                tally[r.get("Status", "")] = tally.get(r.get("Status", ""), 0) + 1
+            state = ("finished" if info.get("finished") else
+                     "interrupted" if info.get("interrupted") else "not finished")
+            table.add_row(escape(d.name), escape(str(info.get("started", ""))), state,
+                          ", ".join(f"{v} {k.lower()}" for k, v in sorted(tally.items())))
+        console.print(table)
+        console.print(f"[dim]{escape(str(root))}[/dim]")
+        return
+    if not config.hyperspin_dir or not config.rocketlauncher_dir:
+        err_console.print("[red]Set hyperspin_dir and rocketlauncher_dir first[/red] "
+                          "([cyan]spindoctor config set[/cyan]).")
+        sys.exit(1)
+    windows = sys.platform == "win32"
+    platform = gametest.WindowsPlatform() if windows and (apply_changes or recover_only) else None
+
+    if recover_only:
+        try:
+            report = gametest.recover(config, platform)
+        except _testrun.ActiveRunError as exc:
+            err_console.print(f"[red]{escape(str(exc))}[/red]")
+            sys.exit(1)
+        if report is None:
+            console.print("No interrupted test run to finish.")
+        else:
+            _print_test_recovery(report)
+        return
+
+    run_dir = None
+    selection = {"systems": list(systems), "all_systems": all_systems, "genres": list(genres),
+                 "games": list(games), "all": all_games, "count": count,
+                 "per_system": per_system, "seed": seed, "include_skipped": include_skipped}
+    if resume:
+        unfinished = [(d, info) for d, info in gametest.list_runs(root) if not info.get("finished")]
+        if not unfinished:
+            console.print("There's no unfinished test run to resume.")
+            return
+        run_dir, info = unfinished[0]
+        plan = gametest.plan_from_rows(gametest.read_csv(run_dir / "plan.csv"))
+        seconds = seconds or info.get("seconds")
+        console.print(f"Resuming test run {escape(run_dir.name)}.")
+    elif only_failed:
+        # The newest run that launched anything, as the PowerShell tester did.
+        latest = None
+        for d, _info in gametest.list_runs(root):
+            rows = gametest.read_csv(d / "results.csv")
+            if any(r.get("Status") != gametest.SKIPPED for r in rows):
+                latest = (d, rows)
+                break
+        if latest is None:
+            console.print("No earlier test run launched any games.")
+            return
+        failed = [(r["System"], r["Game"]) for r in latest[1] if r.get("Status") == gametest.FAIL]
+        if not failed:
+            console.print(f"Nothing failed in the newest run ({escape(latest[0].name)}).")
+            return
+        console.print(f"Re-testing {len(failed)} games that failed in run {escape(latest[0].name)}.")
+        plan = gametest.recheck(config, failed)
+        selection = {"only_failed": latest[0].name}
+    else:
+        try:
+            plan = gametest.pick_games(
+                config, systems=list(systems), all_systems=all_systems, genres=list(genres),
+                games=list(games), all_games=all_games, count=count, per_system=per_system,
+                seed=seed, include_skipped=include_skipped)
+        except gametest.PlanError as exc:
+            err_console.print(f"[red]{escape(str(exc))}[/red]")
+            sys.exit(1)
+
+    if not apply_changes:
+        if as_json:
+            click.echo(json.dumps({
+                "games": gametest.plan_rows(plan),
+                "skipped_systems": [{"system": s, "reason": r} for s, r in plan.skipped_systems],
+            }, indent=2))
+            return
+        _print_test_plan(plan, verbose)
+        console.print(
+            f"\n[yellow bold][DRY RUN][/yellow bold] Nothing was launched: {len(plan.to_launch)} "
+            f"of {len(plan.games)} picked games are ready. Re-run with [cyan]--apply[/cyan] to launch them."
+        )
+        return
+
+    if not windows:
+        err_console.print("[red]Launch tests need Windows: RocketLauncher only runs there.[/red]")
+        sys.exit(1)
+    rl_exe = Path(config.rocketlauncher_dir) / "RocketLauncher.exe"
+    if not rl_exe.is_file():
+        err_console.print(f"[red]RocketLauncher.exe not found:[/red] {escape(str(rl_exe))}")
+        sys.exit(1)
+    try:
+        report = gametest.recover(config, platform)
+    except _testrun.ActiveRunError as exc:
+        err_console.print(f"[red]{escape(str(exc))}[/red]")
+        sys.exit(1)
+    if report is not None:
+        _print_test_recovery(report)
+    if gametest.rocketlauncher_running(platform):
+        err_console.print("[red]RocketLauncher is already running (a game is open).[/red] "
+                          "Close it and run the test again.")
+        sys.exit(1)
+    if not as_json:
+        _print_test_plan(plan, verbose)
+    if not plan.to_launch:
+        console.print("Nothing to launch: no games matched, or none of them can launch.")
+        return
+    settings = gametest.settings_from_config(config, seconds)
+    if not as_json:
+        console.print(
+            f"\n{len(plan.to_launch)} games to launch, about "
+            f"{format_duration(len(plan.to_launch) * (settings.game_seconds + 15))}. "
+            "Games open full screen, so leave the cabinet alone while this runs.\n"
+            "To stop: Ctrl+C here, or create a file named stop-request in the run folder. "
+            "[cyan]spindoctor test --resume --apply[/cyan] carries on."
+        )
+
+    def show(number, total, item, result, left):
+        if as_json:
+            return
+        style = _TEST_STYLE.get(result.status, "")
+        console.print(
+            f"[{number:>5}/{total}] {escape(item.system)} > {escape(item.game)}  "
+            f"[{style}]{result.status}[/{style}]  {escape(result.reason)}  "
+            f"[dim]({result.seconds}s, {format_duration(int(left))} left)[/dim]"
+        )
+
+    try:
+        summary = gametest.run_plan(config, plan, settings, platform, run_dir=run_dir,
+                                    selection=selection, on_result=show)
+    except KeyboardInterrupt:
+        err_console.print("\n[yellow]Stopped.[/yellow] The play statistics are back; "
+                          "[cyan]spindoctor test --resume --apply[/cyan] carries on.")
+        sys.exit(130)
+    if as_json:
+        click.echo(json.dumps({
+            "run_dir": str(summary.run_dir), "finished": summary.finished,
+            "counts": summary.counts,
+            "results": gametest.read_csv(summary.run_dir / "results.csv"),
+        }, indent=2))
+    else:
+        c = summary.counts
+        console.print(
+            f"\nLaunched {summary.launched}: [green]{c.get('PASS', 0)} passed[/green], "
+            f"[yellow]{c.get('WARN', 0)} warnings[/yellow], [red]{c.get('FAIL', 0)} failed[/red]"
+            f"{', ' + str(c.get('SKIPPED', 0)) + ' skipped' if c.get('SKIPPED') else ''}."
+        )
+        if not summary.finished:
+            console.print("The run stopped early. [cyan]spindoctor test --resume --apply[/cyan] carries on.")
+        console.print(f"Results: {escape(str(summary.run_dir))}")
+    if summary.counts.get("FAIL"):
         sys.exit(2)
 
 

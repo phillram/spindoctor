@@ -32,10 +32,44 @@ from .config import Config, get_systems, load_config
 from .favorites import FavoriteEntry
 from .medialink import LinkMode
 from .recent import _STATS_EXCLUDE, _build_synthetic_wheel, _parse_time
+from ._testrun import ActiveRunError, refuse_during_test_run
 
 
 DEFAULT_PLAYED_SYSTEM = "Most Played"
 DEFAULT_TOP_N = 20
+
+
+def stat_files(rl: Path) -> list[Path]:
+    """Return all RocketLauncher Statistics.ini paths across every known layout.
+
+    Three layouts are scanned (a cabinet may use more than one):
+    - Classic  : ``Settings/Global Statistics/<System>.ini``
+    - Legacy   : ``Settings/<System>/Statistics.ini``
+    - Newer    : ``Data/Statistics/<System>.ini`` (including the aggregate
+                 ``Global Statistics.ini`` — RL regenerates it on next launch)
+
+    Used by ``scrub --stats`` and by ``spindoctor test``, which backs these
+    files up before launching games and puts them back after each one.
+    """
+    found: list[Path] = []
+
+    global_dir = rl / "Settings" / "Global Statistics"
+    if global_dir.is_dir():
+        found.extend(global_dir.glob("*.ini"))
+
+    settings_dir = rl / "Settings"
+    if settings_dir.is_dir():
+        for sys_dir in settings_dir.iterdir():
+            if sys_dir.is_dir():
+                s = sys_dir / "Statistics.ini"
+                if s.is_file():
+                    found.append(s)
+
+    data_stats_dir = rl / "Data" / "Statistics"
+    if data_stats_dir.is_dir():
+        found.extend(data_stats_dir.glob("*.ini"))
+
+    return found
 
 
 @dataclass
@@ -558,6 +592,7 @@ def build_most_played_wheel(
     if not config.hyperspin_dir:
         from .recent import RecentSummary
         return RecentSummary(target_system=target_system)
+    refuse_during_test_run(f"build the {target_system} wheel")
 
     # Restrict to real source systems only — exclude synthetic wheel directories
     # (Databases/Favorites/ etc. exist on disk and would otherwise pass the
@@ -752,14 +787,18 @@ def main(argv: Optional[list[str]] = None) -> int:
             return 0
         skip_media = args.media_mode == "none"
         mode = LinkMode.AUTO if skip_media else LinkMode(args.media_mode)
-        summary = build_most_played_wheel(
-            config,
-            target_system=args.target_system,
-            limit=args.limit,
-            media_mode=mode,
-            skip_media=skip_media,
-            verbose=getattr(args, "verbose", False),
-        )
+        try:
+            summary = build_most_played_wheel(
+                config,
+                target_system=args.target_system,
+                limit=args.limit,
+                media_mode=mode,
+                skip_media=skip_media,
+                verbose=getattr(args, "verbose", False),
+            )
+        except ActiveRunError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 1
         print(f"Most Played system: {summary.target_system}")
         for note in summary.read_notes:
             print(f"  source:     {note}")

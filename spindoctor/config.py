@@ -342,6 +342,29 @@ class Config:
     #   }
     emulator_window_titles: dict[str, str] = field(default_factory=dict)
 
+    # `spindoctor test` (launch-testing games through RocketLauncher).
+    # Wheels never launched unless named with --system or --include-skipped.
+    test_skip_systems: list[str] = field(default_factory=list)
+    # PCLauncher games often need a manual exit, so they are skipped too.
+    test_skip_pclauncher: bool = True
+    # SpinDoctor's Favorites / Recently Played / Most Played copy other wheels' games.
+    test_skip_custom_wheels: bool = True
+    # Programs RocketLauncher starts that aren't the game, added to the
+    # built-in list (AutoHotkey, 7z, DTLite, keymappers…); "!name" removes one.
+    test_helper_processes: list[str] = field(default_factory=list)
+    # Substrings of harmless RocketLauncher log ERROR lines.
+    test_ignore_log_errors: list[str] = field(default_factory=lambda: ["No CRC defined"])
+    # Regex for pop-up titles that mean trouble; blank = the built-in list.
+    test_error_window_words: str = ""
+    test_game_seconds: int = 20      # how long a game runs before it is judged
+    test_launch_timeout: int = 90    # how long to wait for a game window
+    test_close_timeout: int = 25     # how long to wait after the exit key
+    test_cooldown: int = 3           # pause between games
+    test_per_system: int = 3         # games per wheel when no count is given
+    test_screenshot_width: int = 480
+    # Where run folders go; blank = ~/.spindoctor/tests.
+    test_results_dir: str = ""
+
     # ── derived paths ──────────────────────────────────────────────────────────
 
     @property
