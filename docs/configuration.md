@@ -82,6 +82,8 @@ Settings that hold a mapping (`system_overrides`, `game_overrides`, `ignore_list
 | `test_hyperspin_timeout` | With `spindoctor test --with-hyperspin`: seconds to wait for HyperSpin to log `wheel loaded successfully` (default `180`). |
 | `test_ignore_hyperspin_log` | Harmless HyperSpin `log.txt` lines, as case-insensitive substrings (list, default `[]`). |
 | `test_skip_intro_video` | Skip HyperSpin's intro video with a key press when the test opens it (bool, default `true`; `--play-intro` plays it for one run). |
+| `test_cleanup` | What `spindoctor test` does with files the games create: `report` (default: list them in `cleanup.csv`), `remove` (back each up to `<backup_dir>\test-cleanup\<run>\`, then delete it) or `off`. Files that existed before the run are never touched. |
+| `test_cleanup_skip` | Folders the cleanup leaves alone, relative to `hyperspin_dir` or absolute (list, default `["cache", "RocketLauncher\\Data\\Statistics"]`). RocketLauncher's statistics and 7-Zip extract folder are always left alone. |
 
 Apply / dry-run toggles for destructive operations (backup restore, migrate, curate apply, etc.) are deliberately NOT persisted across launches — those re-arm to OFF on every GUI startup so cabinet owners always make an explicit per-run opt-in.
 

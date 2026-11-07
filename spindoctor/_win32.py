@@ -12,6 +12,7 @@ exist there.  DXGI Desktop Duplication (Windows 8+) and the command-line query
 """
 from __future__ import annotations
 
+import os
 import re
 import struct
 import subprocess
@@ -773,3 +774,107 @@ def start_process(args: list[str], cwd: str) -> subprocess.Popen:
     _require()
     return subprocess.Popen(args, cwd=cwd, close_fds=True, stdin=subprocess.DEVNULL,
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+# ─── folder watching ──────────────────────────────────────────────────────────
+
+class DirectoryWatcher:
+    """Names created anywhere under one folder, from ``ReadDirectoryChangesW``
+    on a background thread.
+
+    Only additions are kept (a new file or folder, or the new name of a
+    rename); what they mean is the caller's business.  When Windows' buffer
+    overflows, events were lost: :meth:`drain` then reports ``overflowed``
+    and the caller has to list the folder itself."""
+
+    _ADDED, _RENAMED_NEW = 1, 5
+
+    def __init__(self, root: str):
+        import threading
+
+        _require()
+        import ctypes
+        from ctypes import wintypes as w
+
+        k = _kernel32()
+        k.CreateFileW.argtypes = [w.LPCWSTR, w.DWORD, w.DWORD, ctypes.c_void_p, w.DWORD, w.DWORD, w.HANDLE]
+        k.CreateFileW.restype = w.HANDLE
+        k.ReadDirectoryChangesW.argtypes = [w.HANDLE, ctypes.c_void_p, w.DWORD, w.BOOL, w.DWORD,
+                                            ctypes.POINTER(w.DWORD), ctypes.c_void_p, ctypes.c_void_p]
+        k.ReadDirectoryChangesW.restype = w.BOOL
+        k.CancelIoEx.argtypes = [w.HANDLE, ctypes.c_void_p]
+        k.CancelIoEx.restype = w.BOOL
+        self.root = root
+        self._k = k
+        self._lock = threading.Lock()
+        self._added: set[str] = set()
+        self._overflowed = False
+        self._stop = False
+        # FILE_LIST_DIRECTORY, share everything, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS
+        self._handle = k.CreateFileW(root, 0x1, 0x7, None, 3, 0x02000000, None)
+        if self._handle in (None, ctypes.c_void_p(-1).value):
+            raise ctypes.WinError(ctypes.get_last_error())
+        self._thread = threading.Thread(target=self._run, name="spindoctor-watch", daemon=True)
+        self._thread.start()
+
+    def _run(self) -> None:
+        import ctypes
+        from ctypes import wintypes as w
+
+        buf = ctypes.create_string_buffer(64 * 1024)
+        got = w.DWORD(0)
+        while not self._stop:
+            # FILE_NOTIFY_CHANGE_FILE_NAME | FILE_NOTIFY_CHANGE_DIR_NAME, whole tree
+            ok = self._k.ReadDirectoryChangesW(self._handle, ctypes.addressof(buf), len(buf), True,
+                                               0x1 | 0x2, ctypes.byref(got), None, None)
+            if self._stop:
+                return
+            if not ok:
+                with self._lock:
+                    self._overflowed = True
+                return
+            if got.value == 0:  # the buffer overflowed: events were lost
+                with self._lock:
+                    self._overflowed = True
+                continue
+            raw, offset, found = buf.raw[:got.value], 0, []
+            while True:
+                nxt, action, length = struct.unpack_from("<III", raw, offset)
+                name = raw[offset + 12:offset + 12 + length].decode("utf-16-le", errors="replace")
+                if action in (self._ADDED, self._RENAMED_NEW):
+                    found.append(name)
+                if not nxt:
+                    break
+                offset += nxt
+            with self._lock:
+                self._added.update(os.path.join(self.root, n) for n in found)
+
+    def drain(self) -> tuple[set[str], bool]:
+        """``(paths added since the last call, whether events were lost)``."""
+        with self._lock:
+            added, over = self._added, self._overflowed
+            self._added, self._overflowed = set(), False
+        return added, over
+
+    def close(self) -> None:
+        """Stop watching: cancel the thread's blocked read (``CancelSynchronousIo``)."""
+        from ctypes import wintypes as w
+
+        self._stop = True
+        k = self._k
+        k.OpenThread.argtypes = [w.DWORD, w.BOOL, w.DWORD]
+        k.OpenThread.restype = w.HANDLE
+        k.CancelSynchronousIo.argtypes = [w.HANDLE]
+        k.CancelSynchronousIo.restype = w.BOOL
+        native = getattr(self._thread, "native_id", None)
+        thread = k.OpenThread(0x0001, False, native) if native else None  # THREAD_TERMINATE
+        for _attempt in range(20):
+            if not self._thread.is_alive():
+                break
+            if thread:
+                k.CancelSynchronousIo(thread)
+            k.CancelIoEx(self._handle, None)
+            self._thread.join(timeout=0.25)
+        if thread:
+            k.CloseHandle(thread)
+        k.CloseHandle(self._handle)

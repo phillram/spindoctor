@@ -369,6 +369,13 @@ class Config:
     test_hyperspin_timeout: int = 180
     test_ignore_hyperspin_log: list[str] = field(default_factory=list)
     test_skip_intro_video: bool = True
+    # Files the games create during a test run: "report" (list them),
+    # "remove" (back up, then delete) or "off".
+    test_cleanup: str = "report"
+    # Folders the cleanup leaves alone, relative to hyperspin_dir (or absolute):
+    # RocketLauncher's 7-Zip cache and the statistics the run restores itself.
+    test_cleanup_skip: list[str] = field(
+        default_factory=lambda: ["cache", "RocketLauncher\\Data\\Statistics"])
 
     # ── derived paths ──────────────────────────────────────────────────────────
 
