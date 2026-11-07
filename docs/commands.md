@@ -1005,6 +1005,7 @@ spindoctor install-tools --tool refresh-all --add-to-system Toolkit --apply :: i
 | `shut-down-cabinet` | `Shut Down Cabinet` | [`toolkit shutdown`](#toolkit): countdown, close HyperSpin, shut Windows down |
 | `restart-cabinet` | `Restart Cabinet` | [`toolkit restart`](#toolkit): countdown, close HyperSpin, restart Windows |
 | `exit-to-windows` | `Exit To Windows` | [`toolkit exit-to-windows`](#toolkit): countdown, close HyperSpin, bring the taskbar back |
+| `reset-button-lights` | `Reset Button Lights` | [`toolkit reset-button-lights`](#toolkit): stop PAC-LED64 boards flashing on their own |
 
 Only the helpers you pick are written. Helpers an earlier run installed stay as they are, so you can add one later without touching the others; remove one with `uninstall-tools --tool`. Without `--tool`, `install-tools` lists the helpers and exits with code 2, writing nothing. (Before this release it always wrote the four Refresh helpers: add `--tool refresh-favorites,refresh-recently-played,refresh-most-played,refresh-all` to scripts that relied on that.) See [Standalone tools → Tools menu](standalone-tools.md#wiring-into-hyperspin-tools-menu).
 
@@ -1054,6 +1055,7 @@ spindoctor toolkit shutdown                 :: countdown, close HyperSpin, shut 
 spindoctor toolkit shutdown --seconds 10    :: a longer countdown (0 skips it)
 spindoctor toolkit restart                  :: countdown, close HyperSpin, restart Windows
 spindoctor toolkit exit-to-windows          :: countdown, close HyperSpin, back to the desktop
+spindoctor toolkit reset-button-lights      :: zero the PAC-LED64 flash speeds (HyperSpin keeps running)
 
 :: put them on a Toolkit wheel
 spindoctor install-tools --tool shut-down-cabinet,restart-cabinet,exit-to-windows --add-to-system Toolkit --apply
@@ -1066,9 +1068,19 @@ The actions that leave HyperSpin share one sequence:
 3. **LEDBlinky is told to quit** with `LEDBlinky.exe 2` (the EXE that's running, else the one in `ledblinky_dir`). HyperSpin sends LEDBlinky that quit only on its own exit, not when it's closed from outside, so without it the panel stays on the last game's layout. A second quit can restart LEDBlinky's quit animation, so none is sent when HyperSpin's `log.txt` shows it sent one. Nothing waits for LEDBlinky's quit animation, which can take half a minute.
 4. **The action, at once.** `shutdown` and `restart` run `shutdown.exe /s /f /t 0` or `shutdown.exe /r /f /t 0` as soon as HyperSpin has closed: `/f` stops an "app is preventing shutdown" screen from stalling it, Windows ends LEDBlinky and anything HyperSpin's exit programs left running with the rest, and does a full shutdown or a full restart (a cold boot). After the countdown only HyperSpin's close takes time (3 s at most), and the black screen stays up while Windows closes everything. If Windows refuses (exit code not 0), the window closes and the HyperSpin that was running is started again, so the cabinet isn't left on the desktop; the command exits 1.
 
-   `exit-to-windows` doesn't wait either: only the countdown takes time. The window closes and Explorer is restarted (`taskkill /F /IM explorer.exe`, then `explorer.exe` unless Windows starts a new Explorer by itself within 1.5 s). HyperSpin hides the taskbar and shows it again only on its own exit, not after an outside close, and a fresh Explorer brings it back. Explorer windows that were open close. LEDBlinky's quit animation finishes on the panel while you're on the desktop; the command waits for it (or ends LEDBlinky after 30 s), and for HyperSpin's startup script (`HyperSpin Startup Script.exe`, up to 5 s), without a window.
+   `exit-to-windows` doesn't wait either: only the countdown takes time. The window closes and Explorer is restarted (`taskkill /F /IM explorer.exe`, then `explorer.exe` unless Windows starts a new Explorer by itself within 1.5 s). HyperSpin hides the taskbar and shows it again only on its own exit, not after an outside close, and a fresh Explorer brings it back. Explorer windows that were open close. LEDBlinky's quit animation finishes on the panel while you're on the desktop; the command waits for it (or ends LEDBlinky after 30 s), and for HyperSpin's startup script (`HyperSpin Startup Script.exe`, up to 5 s), without a window. Once LEDBlinky is gone, every PAC-LED64 light is set to 0 through the `PacDrive32.dll` in `ledblinky_dir` (as `reset-button-lights` uses, below), because LEDBlinky's quit can leave a board lit; skipped when there's no DLL there.
 
 The helper `install-tools` writes starts the command with `start ""` and returns at once, so RocketLauncher ends and HyperSpin comes back while the countdown takes the front. The window is drawn by Windows itself (no tkinter), so it works from both EXEs. Each step is logged to `%USERPROFILE%\.spindoctor\toolkit.log` (see [Storage locations](spindoctor-files.md#toolkitlog)).
+
+**`reset-button-lights`** stops Ultimarc PAC-LED64 boards flashing on their own (see [Troubleshooting](troubleshooting.md#buttons-on-one-led-board-flash-constantly-even-during-calm-animations)). It sets every port's flash speed to 0 on every PAC-LED64 (product IDs `0x1401`-`0x1404`): `Pac64SetLEDFlashSpeeds(id, 0)`, then `Pac64SetLEDFlashSpeed(id, port, 0)` for ports 0-63. Colours and which buttons are lit stay with LEDBlinky, which can keep running, and HyperSpin isn't closed.
+
+```bat
+spindoctor toolkit reset-button-lights                          :: uses <ledblinky_dir>\PacDrive32.dll
+spindoctor toolkit reset-button-lights --dll D:\Tools\PacDrive32.dll
+spindoctor toolkit reset-button-lights --no-note                :: no note on screen (for scripts)
+```
+
+`PacDrive32.dll`, which LEDBlinky ships, is 32-bit, so the calls run in 32-bit Windows PowerShell (`SysWOW64`), whatever SpinDoctor's own bitness. It prints one line per board and a summary (`2 Ultimarc device(s), 2 LED board(s) reset`), writes them to `toolkit.log`, and shows a 3-second note at the top of the screen that never takes the focus: "Button lights reset", "No button light boards found" or "Button light reset failed". Exit code 1 when the DLL is missing or the reset failed. Add it to HyperSpin's startup programs, before LEDBlinky starts, to repeat the reset at every start. The same script, with `Pac64SetLEDIntensities` to 0, turns the lights off at the end of `exit-to-windows`.
 
 ---
 

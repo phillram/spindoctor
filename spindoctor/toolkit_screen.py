@@ -6,7 +6,9 @@ tkinter: the helpers run through either frozen EXE, and the CLI one has no
 tkinter.  HyperSpin takes the front back as soon as RocketLauncher closes, so
 the window re-asserts topmost and focus every quarter second, and Esc is a
 system-wide hotkey while the countdown runs, so HyperSpin never sees it (it
-would open its own exit menu).  Windows only; nothing here runs at import.
+would open its own exit menu).  :func:`note` is the small one-line notice the
+quick helpers show at the top of the screen without taking the focus.
+Windows only; nothing here runs at import.
 """
 from __future__ import annotations
 
@@ -104,6 +106,9 @@ def _api():
         (gdi32, "GetStockObject", [ctypes.c_int], w.HGDIOBJ),
         (gdi32, "SetTextColor", [w.HDC, w.COLORREF], w.COLORREF),
         (gdi32, "SetBkMode", [w.HDC, ctypes.c_int], ctypes.c_int),
+        (gdi32, "CreateSolidBrush", [w.COLORREF], w.HBRUSH),
+        (user32, "GetDC", [w.HWND], w.HDC),
+        (user32, "ReleaseDC", [w.HWND, w.HDC], ctypes.c_int),
         (kernel32, "GetModuleHandleW", [w.LPCWSTR], w.HMODULE),
         (kernel32, "GetCurrentThreadId", [], w.DWORD),
     )
@@ -334,3 +339,89 @@ class Screen:
             api.SelectObject(hdc, old)
         finally:
             api.EndPaint(hwnd, ctypes.byref(ps))
+
+
+def note(text: str, seconds: float = 3.0) -> None:
+    """Show *text* in a small box at the top of the screen for *seconds*.
+
+    The box never takes the focus and lets clicks through, so HyperSpin keeps
+    the keyboard and its music; it just stays on top while it's shown.
+    """
+    api = _api()
+    ctypes, w = api.ctypes, api.w
+    try:
+        api.SetProcessDPIAware()
+    except OSError:
+        pass
+    height = api.GetSystemMetrics(1)
+    font = api.CreateFontW(-max(16, height * 4 // 100), 0, 0, 0, 600, 0, 0, 0, 1, 0, 0, 5, 0,
+                           "Segoe UI Semibold")
+    brush = api.CreateSolidBrush(0x1A1A1A)
+    hinst = api.GetModuleHandleW(None)
+    cls = f"SpinDoctorNote{id(text):x}{int(time.monotonic() * 1000) & 0xFFFF:x}"
+
+    def wndproc(hwnd, message, wparam, lparam):
+        try:
+            if message == _WM_PAINT:
+                ps = api.PAINTSTRUCT()
+                hdc = api.BeginPaint(hwnd, ctypes.byref(ps))
+                try:
+                    rect = w.RECT()
+                    api.GetClientRect(hwnd, ctypes.byref(rect))
+                    api.FillRect(hdc, ctypes.byref(rect), brush)
+                    api.SetBkMode(hdc, 1)  # TRANSPARENT
+                    old = api.SelectObject(hdc, font)
+                    api.SetTextColor(hdc, 0xFFFFFF)
+                    api.DrawTextW(hdc, text, -1, ctypes.byref(rect), 0x1 | 0x4 | 0x20 | 0x800)
+                    api.SelectObject(hdc, old)
+                finally:
+                    api.EndPaint(hwnd, ctypes.byref(ps))
+                return 0
+        except Exception:  # noqa: BLE001 — never let an error escape into Windows
+            pass
+        return api.DefWindowProcW(hwnd, message, wparam, lparam)
+
+    proc = api.WNDPROC(wndproc)
+    wc = api.WNDCLASSEXW()
+    wc.cbSize = ctypes.sizeof(wc)
+    wc.lpfnWndProc = proc
+    wc.hInstance = hinst
+    wc.lpszClassName = cls
+    hwnd = None
+    try:
+        if not api.RegisterClassExW(ctypes.byref(wc)):
+            raise ctypes.WinError(ctypes.get_last_error())
+        # Size the box to the text: measure it with the font on the screen's DC.
+        dc = api.GetDC(None)
+        old = api.SelectObject(dc, font)
+        size = w.RECT()
+        api.DrawTextW(dc, text, -1, ctypes.byref(size), 0x400 | 0x20 | 0x800)  # DT_CALCRECT
+        api.SelectObject(dc, old)
+        api.ReleaseDC(None, dc)
+        pad_x, pad_y = max(20, height * 37 // 1000), max(10, height * 18 // 1000)
+        box_w, box_h = size.right + 2 * pad_x, size.bottom + 2 * pad_y
+        x = (api.GetSystemMetrics(0) - box_w) // 2
+        y = height * 74 // 1000
+        # WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_TRANSPARENT
+        hwnd = api.CreateWindowExW(0x8 | 0x80 | 0x08000000 | 0x20, cls, "SpinDoctor", 0x80000000,
+                                   x, y, box_w, box_h, None, None, hinst, None)
+        if not hwnd:
+            raise ctypes.WinError(ctypes.get_last_error())
+        api.ShowWindow(hwnd, 4)  # SW_SHOWNOACTIVATE
+        msg = w.MSG()
+        end = time.monotonic() + seconds
+        while time.monotonic() < end:
+            # HWND_TOPMOST, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE
+            api.SetWindowPos(hwnd, -1, 0, 0, 0, 0, 0x2 | 0x1 | 0x10)
+            stop = min(end, time.monotonic() + 0.25)
+            while time.monotonic() < stop:
+                while api.PeekMessageW(ctypes.byref(msg), None, 0, 0, _PM_REMOVE):
+                    api.TranslateMessage(ctypes.byref(msg))
+                    api.DispatchMessageW(ctypes.byref(msg))
+                time.sleep(0.02)
+    finally:
+        if hwnd:
+            api.DestroyWindow(hwnd)
+        api.UnregisterClassW(cls, hinst)
+        api.DeleteObject(font)
+        api.DeleteObject(brush)

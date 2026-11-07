@@ -950,6 +950,10 @@ The board itself is doing it. The PAC-LED64 has its own per-port flash mode, whi
 1. Close HyperSpin, then light every LED solid straight through Ultimarc's `PacDrive32.dll`. If the same buttons still blink, the board is in flash mode.
 2. Set every port's flash speed to 0 with `Pac64SetLEDFlashSpeeds` and `Pac64SetLEDFlashSpeed`. `Pac64ClearFlash` alone did not stop it. A full power-off also clears it.
 
+**Fix:** run `spindoctor toolkit reset-button-lights`. It does step 2 on every PAC-LED64 through the `PacDrive32.dll` in `ledblinky_dir`, with HyperSpin and LEDBlinky still running. To fix it from the cabinet, put it on a Toolkit wheel with `spindoctor install-tools --tool reset-button-lights --add-to-system Toolkit --apply`. "No button light boards found" means PacDrive saw no PAC-LED64 (check USB); "Button light reset failed" has its reason in `%USERPROFILE%\.spindoctor\toolkit.log`. See [`toolkit`](commands.md#toolkit).
+
+**One board still lit after LEDBlinky quits** (seen on the same cabinet: the second board stayed purple) is a different thing. Exit To Windows turns every PAC-LED64 light off once LEDBlinky has quit, through the same DLL, and logs it to `toolkit.log` (`lights off: board 1 off: True, …`). Shut Down Cabinet and Restart Cabinet don't wait for LEDBlinky, so they leave the lights to Windows.
+
 The script, the diagnosis and a HyperSpin startup step that repeats the reset at every start are in [Diagnosing buttons that flash on one board](cabinet-architecture-reference.md#diagnosing-buttons-that-flash-on-one-board-pac-led64-on-board-flash-mode) in `cabinet-architecture-reference.md`.
 
 ### Where does `ledblinky generate` pull its data from?
