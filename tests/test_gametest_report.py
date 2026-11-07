@@ -7,7 +7,7 @@ from pathlib import Path
 from spindoctor import coin_start, gametest, gametest_notes
 from spindoctor.gametest_report import write_report
 
-from tests.gametest_helpers import FakeWindows, GameBehaviour, build_cabinet, home  # noqa: F401
+from tests.gametest_helpers import FakeWindows, GameBehaviour, build_cabinet
 
 
 def _embedded(html: str) -> dict:
