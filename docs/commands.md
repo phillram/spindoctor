@@ -986,39 +986,48 @@ Sorted by `last_played` desc — newest game first, deduped on `(system, rom)`. 
 
 ### `install-tools`
 
-Writes `.bat` wrappers HyperSpin's Tools menu can invoke directly — so cabinet end-users can refresh wheels from the UI without a console.
+Writes `.bat` wrappers HyperSpin's Tools menu can invoke directly — so cabinet end-users can refresh wheels from the UI without a console. Pick each helper you want with `--tool`: repeat it, or separate names with commas. Each helper takes its key or its name (`refresh-all` or `"Refresh All"`).
 
 ```bat
-spindoctor install-tools                                    :: write to RocketLauncher Tools dir (HyperHQ → Tools)
-spindoctor install-tools --output-dir D:\Tools              :: write somewhere else
-spindoctor install-tools --add-to-system Toolkit            :: dry-run — preview XML entries that would be added
-spindoctor install-tools --add-to-system Toolkit --apply    :: install as games inside an existing wheel
+spindoctor install-tools                                                  :: list the helpers (writes nothing)
+spindoctor install-tools --tool refresh-all                               :: write to RocketLauncher Tools dir (HyperHQ → Tools)
+spindoctor install-tools --tool refresh-favorites,refresh-recently-played --output-dir D:\Tools
+spindoctor install-tools --tool refresh-all --add-to-system Toolkit         :: dry-run — preview XML entries that would be added
+spindoctor install-tools --tool refresh-all --add-to-system Toolkit --apply :: install as games inside an existing wheel
 ```
 
-Four files are produced (Refresh Favorites, Refresh Recently Played, Refresh Most Played, Refresh All). See [Standalone tools → Tools menu](standalone-tools.md#wiring-into-hyperspin-tools-menu).
+| `--tool` | File / wheel entry | What it runs |
+|---|---|---|
+| `refresh-favorites` | `Refresh Favorites` | `spindoctor-fav rebuild --apply` |
+| `refresh-recently-played` | `Refresh Recently Played` | `spindoctor-recent rebuild --apply` |
+| `refresh-most-played` | `Refresh Most Played` | `spindoctor-stats build-wheel --apply` |
+| `refresh-all` | `Refresh All` | all three, stopping at the first that fails |
+
+Only the helpers you pick are written. Helpers an earlier run installed stay as they are, so you can add one later without touching the others; remove one with `uninstall-tools --tool`. Without `--tool`, `install-tools` lists the helpers and exits with code 2, writing nothing. (Before this release it always wrote the four Refresh helpers: add `--tool refresh-favorites,refresh-recently-played,refresh-most-played,refresh-all` to scripts that relied on that.) See [Standalone tools → Tools menu](standalone-tools.md#wiring-into-hyperspin-tools-menu).
 
 `--add-to-system <NAME>` is a second integration pattern for cabinets that already have a "Toolkit" or "Tools" wheel (a HyperSpin system whose "games" are maintenance tasks). Instead of writing the bats under `Modules\HyperLaunch\Tools\spindoctor\`, this mode:
 
 1. Writes the `.bat` helpers and per-game placeholder INIs to the system's `Rom_Path` (reads from the existing `Settings\<NAME>\Emulators.ini`) — or `Modules\PCLauncher\<NAME>\` for new systems.
-2. Writes or updates `Modules\PCLauncher\<NAME>.ini` (the PCLauncher module INI) with `[<tool name>]` sections containing `Application=<bat>` and `WorkingFolder=`. **This file is required** — PCLauncher.ahk reads game settings from it; without it every launch shows *"You have not set up \<tool\> in RocketLauncherUI yet, so PCLauncher does not know what exe, FadeTitle, and/or SteamID to watch for."* Existing user-configured sections in this file are preserved.
+2. Writes or updates `Modules\PCLauncher\<NAME>.ini` (the PCLauncher module INI) with `[<tool name>]` sections containing `Application=<bat>` and `WorkingFolder=`. **This file is required** — PCLauncher.ahk reads game settings from it; without it every launch shows *"You have not set up \<tool\> in RocketLauncherUI yet, so PCLauncher does not know what exe, FadeTitle, and/or SteamID to watch for."* Only the picked helpers' sections are replaced (matched ignoring case, as RocketLauncher does); every other line, including user-configured sections, stays byte for byte, in the file's own encoding and newlines.
 3. Adds matching `<game>` entries to `<HyperSpin>\Databases\<NAME>\<NAME>.xml`, with `genre=Tools` and `manufacturer=SpinDoctor` so they display correctly on the wheel.
 
-Idempotent — re-running upserts the same four entries instead of duplicating them. The target system must already exist and use PCLauncher as its emulator (HyperHQ → Settings → Emulator → PCLauncher). Pair with `spindoctor mainmenu add "<NAME>" --apply` if the wheel isn't on the Main Menu yet.
+Idempotent — re-running upserts the picked entries instead of duplicating them. The target system must already exist and use PCLauncher as its emulator (HyperHQ → Settings → Emulator → PCLauncher). Pair with `spindoctor mainmenu add "<NAME>" --apply` if the wheel isn't on the Main Menu yet.
 
 > **Note:** The `.bat` helpers and PCLauncher INI are written immediately (they are non-HyperSpin files and safe to create); only the step that mutates the HyperSpin database XML requires `--apply`. Without `--apply`, the command prints a dry-run preview of what `<game>` entries would be added and exits cleanly.
 
-The GUI's **Custom Wheels** tab covers both modes plus a Windows-only "Auto-refresh on cabinet startup" panel that wraps `schtasks.exe` (Schedule / Remove / Check Status buttons) — see [Standalone tools → Tools menu](standalone-tools.md#wiring-into-hyperspin-tools-menu).
+The GUI's **Custom Wheels** tab covers both modes, with a checklist of the helpers to install, plus a Windows-only "Auto-refresh on cabinet startup" panel that wraps `schtasks.exe` (Schedule / Remove / Check Status buttons) — see [Standalone tools → Tools menu](standalone-tools.md#wiring-into-hyperspin-tools-menu).
 
-The helpers run SpinDoctor by its full path, so after upgrading or moving SpinDoctor, re-run `install-tools` the same way. [`doctor`](#doctor)'s **Refresh helpers** check flags helpers whose EXE is gone.
+The helpers run SpinDoctor by its full path, so after upgrading or moving SpinDoctor, re-run `install-tools` the same way, with the same helpers. [`doctor`](#doctor)'s **SpinDoctor helpers** check flags helpers whose EXE is gone and prints that command.
 
 ### `uninstall-tools`
 
-Reverses `install-tools`. Removes the `.bat` wrappers (and, when `--add-to-system` was used, the PCLauncher `.ini` files and database entries) that `install-tools` wrote. Dry-run by default — pass `--apply` to commit.
+Reverses `install-tools`. Removes the `.bat` wrappers (and, when `--add-to-system` was used, the PCLauncher `.ini` files and database entries) that `install-tools` wrote. Dry-run by default — pass `--apply` to commit. Without `--tool` it removes every SpinDoctor helper, including names older versions wrote; with `--tool` (same names as `install-tools`) only those, and the others stay.
 
 ```bat
 :: Standard Tools-menu install (bats in HyperLaunch\Tools\spindoctor\)
 spindoctor uninstall-tools              :: dry-run — show what would be removed
 spindoctor uninstall-tools --apply      :: remove the .bat files
+spindoctor uninstall-tools --tool refresh-most-played --apply   :: remove just that one
 
 :: Toolkit-wheel install (pass the same system name used with install-tools)
 spindoctor uninstall-tools --add-to-system Toolkit
@@ -1028,8 +1037,8 @@ spindoctor uninstall-tools --add-to-system Toolkit --apply
 When `--add-to-system <SYSTEM>` is given:
 
 1. Removes the `.bat` and `.ini` files from the PCLauncher directory used for that system (reads the first `Rom_Path` from `Settings/<SYSTEM>/Emulators.ini`, falls back to `Modules/PCLauncher/<SYSTEM>`; also checks the legacy path so files written by older versions are cleaned up).
-2. Removes the SpinDoctor-written `[Refresh …]` sections from the PCLauncher module INI (`Modules/PCLauncher/<SYSTEM>.ini`). Non-SpinDoctor sections are left in place. If the file becomes empty after removal it is deleted.
-3. Deletes the four SpinDoctor `<game>` entries from `<HyperSpin>/Databases/<SYSTEM>/<SYSTEM>.xml`.
+2. Removes those helpers' sections from the PCLauncher module INI (`Modules/PCLauncher/<SYSTEM>.ini`). Every other line is left byte for byte. If the file becomes empty after removal it is deleted.
+3. Deletes those helpers' `<game>` entries from `<HyperSpin>/Databases/<SYSTEM>/<SYSTEM>.xml`.
 
 Only files and entries that exist are touched — missing ones are silently skipped.
 
@@ -2153,7 +2162,7 @@ A **LED coverage** check reports how many games in the wheels that use MAME ROM 
 
 If you use the intro-video randomizer, an **Intro video** check surfaces the failures that otherwise have no symptom until the boot video stops changing: an empty pool (`introvideo swap` is a silent no-op), a target whose folder no longer exists, and a logon auto-run task that's registered but stale after a portable upgrade (re-run `introvideo install-autorun --apply`). It also reads every enabled clip's length (headers only) and shows the longest, with how long the logon swap will wait for it. A clip too long for the swap to wait out (over 29 minutes) is a WARN, with `introvideo remove` as the fix. Clips whose length can't be read (not MP4 / M4V / MOV) are listed as INFO.
 
-A **Refresh helpers** check finds the `Refresh Favorites`, `Refresh Recently Played`, `Refresh Most Played` and `Refresh All` `.bat` files (and the old `Refresh Both`) that [`install-tools`](#install-tools) wrote: in `<rocketlauncher_dir>\Modules\HyperLaunch\Tools\spindoctor`, and for every PCLauncher system in the folders `--add-to-system` uses, which are those of the `.bat` files run by the `[Refresh …]` sections of `Modules\PCLauncher\<System>.ini`, the first `Rom_Path` entry of `Settings\<System>\Emulators.ini` and `Modules\PCLauncher\<System>\`. Each helper runs SpinDoctor by full path (`"<exe>" --run-tool spindoctor-fav …` in v3, `"<install folder>\spindoctor-fav.exe" …` before), so once SpinDoctor is moved or upgraded into a new folder and the old one removed, they refresh nothing. A quoted `.exe` that no longer exists is a WARN per folder; the fix is the `install-tools` command that rewrites those files, with the same `--output-dir`, `--add-to-system` and `--apply`. Helpers that call bare command names from PATH (a source install) are INFO.
+A **SpinDoctor helpers** check finds the `.bat` files [`install-tools`](#install-tools) wrote (`Refresh Favorites`, `Refresh All` and every other helper in its `--tool` list, and the old `Refresh Both`): in `<rocketlauncher_dir>\Modules\HyperLaunch\Tools\spindoctor`, and for every PCLauncher system in the folders `--add-to-system` uses, which are those of the `.bat` files run by the helper sections of `Modules\PCLauncher\<System>.ini`, the first `Rom_Path` entry of `Settings\<System>\Emulators.ini` and `Modules\PCLauncher\<System>\`. Each helper runs SpinDoctor by full path (`"<exe>" --run-tool spindoctor-fav …` in v3, `"<install folder>\spindoctor-fav.exe" …` before), so once SpinDoctor is moved or upgraded into a new folder and the old one removed, they do nothing. A quoted `.exe` that no longer exists is a WARN per folder; the fix is the `install-tools` command that rewrites those files, with `--tool` naming the helpers found there (`Refresh Both` as `refresh-all`) and the same `--output-dir`, `--add-to-system` and `--apply`. Helpers that call bare command names from PATH (a source install) are INFO.
 
 An **Orphan media** check reports leftover media files (wheels, videos, themes) with no matching game — disk bloat left behind after games were removed. It's INFO-only and never deletes anything (doctor's contract); it points at `find-orphan-media --all` to preview and remove.
 

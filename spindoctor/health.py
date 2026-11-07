@@ -2622,7 +2622,7 @@ def check_intro_video(config: Config) -> Check:
 
 @dataclass
 class _HelperFolder:
-    """A folder `install-tools` may have written its Refresh .bat helpers to."""
+    """A folder `install-tools` may have written its .bat helpers to."""
 
     folder: Path
     system: Optional[str] = None   # the --add-to-system wheel, None for the Tools menu
@@ -2649,13 +2649,13 @@ def _install_tools_folders(rl_dir: Path) -> list[_HelperFolder]:
     The Tools-menu default first, then for each PCLauncher system (a
     ``Modules\\PCLauncher\\<System>.ini`` module INI or ``<System>\\`` folder)
     the folders ``--add-to-system`` uses: those of the ``.bat`` files its
-    module INI's ``[Refresh …]`` sections run, the first ``Rom_Path`` entry of
+    module INI's helper sections run, the first ``Rom_Path`` entry of
     ``Settings\\<System>\\Emulators.ini`` (where a run without ``--apply``
     leaves the ``.bat`` files too) and ``Modules\\PCLauncher\\<System>\\``.
     """
-    from .rocketlauncher import _TOOLKIT_TOOL_NAMES
+    from .toolkit_helpers import ALL_NAMES
 
-    tool_sections = {n.lower() for n in _TOOLKIT_TOOL_NAMES}
+    tool_sections = {n.lower() for n in ALL_NAMES}
     out = [_HelperFolder(rl_dir / "Modules" / "HyperLaunch" / "Tools" / "spindoctor")]
     pcl = rl_dir / "Modules" / "PCLauncher"
     try:
@@ -2714,22 +2714,23 @@ def _bat_programs(bat: Path) -> list[str]:
 
 
 def check_refresh_helpers(config: Config) -> Check:
-    """Do the Refresh .bat helpers `install-tools` wrote still find SpinDoctor?
+    """Do the .bat helpers `install-tools` wrote still find SpinDoctor?
 
     They run SpinDoctor by full path: v3 ``"<the EXE that ran install-tools>"
     --run-tool spindoctor-fav …``, v2 ``"<install folder>\\spindoctor-fav.exe"``.
     Portable installs unzip each release into a new folder, so once the old
     one is gone every helper fails, from the Tools menu, a Toolkit wheel or a
     scheduled task, and the wheels stop refreshing while nothing else looks
-    wrong.  Re-running `install-tools` the same way rewrites them.  Reads only
-    the ``.bat`` files and RocketLauncher INIs; diagnosis only.
+    wrong.  Re-running `install-tools` the same way, with the same helpers,
+    rewrites them.  Reads only the ``.bat`` files and RocketLauncher INIs;
+    diagnosis only.
     """
     if not config.rocketlauncher_dir:
-        return Check(name="Refresh helpers", status=Status.INFO,
+        return Check(name="SpinDoctor helpers", status=Status.INFO,
                      detail="rocketlauncher_dir not set; skipping")
     from pathlib import PureWindowsPath
 
-    from .rocketlauncher import _TOOLKIT_TOOL_NAMES
+    from . import toolkit_helpers as th
 
     # One row per folder; what two finds of the same wheel's folder say is merged.
     merged: dict[str, _HelperFolder] = {}
@@ -2739,9 +2740,9 @@ def check_refresh_helpers(config: Config) -> Check:
         if first is not hf and first.system is not None and first.system.lower() == (hf.system or "").lower():
             first.wired |= hf.wired
             first.system_default |= hf.system_default
-    parent = Check(name="Refresh helpers", status=Status.OK)
+    parent = Check(name="SpinDoctor helpers", status=Status.OK)
     for hf in merged.values():
-        bats = [hf.folder / f"{stem}.bat" for stem in sorted(_TOOLKIT_TOOL_NAMES)
+        bats = [hf.folder / f"{stem}.bat" for stem in sorted(th.ALL_NAMES)
                 if (hf.folder / f"{stem}.bat").is_file()]
         if not bats:
             continue
@@ -2766,8 +2767,11 @@ def check_refresh_helpers(config: Config) -> Check:
         name = hf.system or "Tools menu"
         where = f"{len(bats)} helper(s) in {hf.folder}"
         if missing:
-            # Re-run install-tools the way it was run: same folder, same wheel.
-            fix = "spindoctor install-tools"
+            # Re-run install-tools the way it was run: same helpers (a renamed
+            # one as its new name), same folder, same wheel.
+            names = {th.RENAMED.get(b.stem, b.stem) for b in bats}
+            fix = "spindoctor install-tools " + th.tool_option(
+                [h for h in th.HELPERS if h.name in names])
             if hf.system is not None:
                 if not hf.system_default:
                     fix += f' --output-dir "{hf.folder}"'
@@ -2789,7 +2793,7 @@ def check_refresh_helpers(config: Config) -> Check:
                 detail=f"{where} run no program that can be checked here (commands from PATH)",
             ))
     if not parent.children:
-        return Check(name="Refresh helpers", status=Status.INFO,
+        return Check(name="SpinDoctor helpers", status=Status.INFO,
                      detail="no install-tools helpers found (optional)")
     parent.status = _worst(c.status for c in parent.children)
     return parent
@@ -2872,7 +2876,7 @@ def run_health_checks(config: Config, fix: bool = False) -> HealthReport:
     _safe("LEDBlinky", lambda: check_ledblinky(config))
     _safe("LED coverage", lambda: check_led_coverage(config))
     _safe("Intro video", lambda: check_intro_video(config))
-    _safe("Refresh helpers", lambda: check_refresh_helpers(config))
+    _safe("SpinDoctor helpers", lambda: check_refresh_helpers(config))
     _safe("Orphan media", lambda: check_orphan_media(config))
     _safe("Metadata APIs", lambda: check_api_creds(config))
     _safe("Media folders", lambda: check_media_skeletons(config, fix, report.fixes_applied))
