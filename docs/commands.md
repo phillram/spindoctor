@@ -1004,6 +1004,7 @@ spindoctor install-tools --tool refresh-all --add-to-system Toolkit --apply :: i
 | `refresh-all` | `Refresh All` | all three, stopping at the first that fails |
 | `shut-down-cabinet` | `Shut Down Cabinet` | [`toolkit shutdown`](#toolkit): countdown, close HyperSpin, shut Windows down |
 | `restart-cabinet` | `Restart Cabinet` | [`toolkit restart`](#toolkit): countdown, close HyperSpin, restart Windows |
+| `exit-to-windows` | `Exit To Windows` | [`toolkit exit-to-windows`](#toolkit): countdown, close HyperSpin, bring the taskbar back |
 
 Only the helpers you pick are written. Helpers an earlier run installed stay as they are, so you can add one later without touching the others; remove one with `uninstall-tools --tool`. Without `--tool`, `install-tools` lists the helpers and exits with code 2, writing nothing. (Before this release it always wrote the four Refresh helpers: add `--tool refresh-favorites,refresh-recently-played,refresh-most-played,refresh-all` to scripts that relied on that.) See [Standalone tools → Tools menu](standalone-tools.md#wiring-into-hyperspin-tools-menu).
 
@@ -1052,17 +1053,20 @@ Cabinet actions for a Toolkit wheel or HyperSpin's Tools menu. They're what the 
 spindoctor toolkit shutdown                 :: countdown, close HyperSpin, shut Windows down
 spindoctor toolkit shutdown --seconds 10    :: a longer countdown (0 skips it)
 spindoctor toolkit restart                  :: countdown, close HyperSpin, restart Windows
+spindoctor toolkit exit-to-windows          :: countdown, close HyperSpin, back to the desktop
 
 :: put them on a Toolkit wheel
-spindoctor install-tools --tool shut-down-cabinet,restart-cabinet --add-to-system Toolkit --apply
+spindoctor install-tools --tool shut-down-cabinet,restart-cabinet,exit-to-windows --add-to-system Toolkit --apply
 ```
 
 The actions that leave HyperSpin share one sequence:
 
-1. **Countdown.** A black full-screen window shows "Shutting down in 5" (or "Restarting in 5") over "Press Esc to cancel" (`--seconds`, 0 to 60). It stays on top and takes the focus back every quarter second, because HyperSpin returns to the front as soon as RocketLauncher closes. While it counts, Esc is a system-wide hotkey, so HyperSpin never sees it (it would open its own exit menu). Esc, the Exit button on most panels, cancels: the window closes and HyperSpin comes back to the front.
+1. **Countdown.** A black full-screen window shows "Shutting down in 5" (or "Restarting in 5", "Exiting to Windows in 5") over "Press Esc to cancel" (`--seconds`, 0 to 60). It stays on top and takes the focus back every quarter second, because HyperSpin returns to the front as soon as RocketLauncher closes. While it counts, Esc is a system-wide hotkey, so HyperSpin never sees it (it would open its own exit menu). Esc, the Exit button on most panels, cancels: the window closes and HyperSpin comes back to the front.
 2. **HyperSpin closes the polite way**, with `WM_CLOSE` to its windows, so it saves its settings and runs its exit programs. A `RocketLauncher.exe` still running is ended first, because HyperSpin waiting for its "game" ignores the close. HyperSpin closes in under a second; if it's still running after 3 s it's ended.
 3. **LEDBlinky is told to quit** with `LEDBlinky.exe 2` (the EXE that's running, else the one in `ledblinky_dir`). HyperSpin sends LEDBlinky that quit only on its own exit, not when it's closed from outside, so without it the panel stays on the last game's layout. A second quit can restart LEDBlinky's quit animation, so none is sent when HyperSpin's `log.txt` shows it sent one. Nothing waits for LEDBlinky's quit animation, which can take half a minute.
 4. **The action, at once.** `shutdown` and `restart` run `shutdown.exe /s /f /t 0` or `shutdown.exe /r /f /t 0` as soon as HyperSpin has closed: `/f` stops an "app is preventing shutdown" screen from stalling it, Windows ends LEDBlinky and anything HyperSpin's exit programs left running with the rest, and does a full shutdown or a full restart (a cold boot). After the countdown only HyperSpin's close takes time (3 s at most), and the black screen stays up while Windows closes everything. If Windows refuses (exit code not 0), the window closes and the HyperSpin that was running is started again, so the cabinet isn't left on the desktop; the command exits 1.
+
+   `exit-to-windows` doesn't wait either: only the countdown takes time. The window closes and Explorer is restarted (`taskkill /F /IM explorer.exe`, then `explorer.exe` unless Windows starts a new Explorer by itself within 1.5 s). HyperSpin hides the taskbar and shows it again only on its own exit, not after an outside close, and a fresh Explorer brings it back. Explorer windows that were open close. LEDBlinky's quit animation finishes on the panel while you're on the desktop; the command waits for it (or ends LEDBlinky after 30 s), and for HyperSpin's startup script (`HyperSpin Startup Script.exe`, up to 5 s), without a window.
 
 The helper `install-tools` writes starts the command with `start ""` and returns at once, so RocketLauncher ends and HyperSpin comes back while the countdown takes the front. The window is drawn by Windows itself (no tkinter), so it works from both EXEs. Each step is logged to `%USERPROFILE%\.spindoctor\toolkit.log` (see [Storage locations](spindoctor-files.md#toolkitlog)).
 
