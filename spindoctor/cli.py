@@ -4579,6 +4579,7 @@ def install_tools(tools, output_dir, add_to_system, apply_changes):
             f"Would add {len(written_bats)} entry(ies) to "
             f"[cyan]{db_path.name}[/cyan]: "
             + ", ".join(f"[bold]{p.stem}[/bold]" for p in written_bats)
+            + ", with wheel art where the wheel has none"
         )
         return
 
@@ -4628,6 +4629,23 @@ def install_tools(tools, output_dir, add_to_system, apply_changes):
     )
     for _stale in removed_db:
         console.print(f"[yellow]-[/yellow] removed stale DB entry [bold]{_stale!r}[/bold]")
+
+    # Wheel art for the entries, from SpinDoctor's bundled logos; art that's
+    # already there (the wheel's own) is kept.
+    from .rocketlauncher import install_toolkit_wheel_art
+    art = [install_toolkit_wheel_art(Path(config.hyperspin_dir), add_to_system, h) for h in picked]
+    new_art = [p for p, status in art if status == "installed"]
+    kept_art = [p for p, status in art if status == "skipped"]
+    if new_art:
+        console.print(
+            f"[green]+[/green] added wheel art for {len(new_art)} entry(ies) → "
+            f"[cyan]{new_art[0].parent}[/cyan]"
+        )
+    if kept_art:
+        console.print(
+            f"[dim]kept the wheel art already there for {len(kept_art)} entry(ies): "
+            + ", ".join(p.stem for p in kept_art) + "[/dim]"
+        )
 
     # Write the PCLauncher module INI (Modules/PCLauncher/<system>.ini).
     # PCLauncher.ahk reads *this* file to look up [<game>] sections containing
@@ -4849,6 +4867,19 @@ def uninstall_tools(tools, add_to_system, apply_changes):
                                 if getattr(config, "backup_dir", "") else None)
                     db.save(backup_dir=_bak_dir,
                             tmp_dir=config.effective_atomic_tmp_dir)
+                # Their wheel art, if it's still SpinDoctor's own logo.
+                from .rocketlauncher import remove_toolkit_wheel_art
+                art = [remove_toolkit_wheel_art(Path(config.hyperspin_dir), add_to_system, h,
+                                                apply=apply_changes)
+                       for h in (th.find(s) for s in present_entries) if h is not None]
+                art = [p for p in art if p is not None]
+                if art:
+                    console.print(
+                        f"[{'green' if apply_changes else 'yellow'}]"
+                        f"{'–' if apply_changes else '?'}[/{'green' if apply_changes else 'yellow'}] "
+                        f"{verb} SpinDoctor's wheel art for {len(art)} entry(ies) from "
+                        f"[cyan]{art[0].parent}[/cyan]"
+                    )
             else:
                 console.print(
                     f"[dim]No SpinDoctor entries found in[/dim] "

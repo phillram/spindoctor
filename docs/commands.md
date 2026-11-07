@@ -1015,6 +1015,7 @@ Only the helpers you pick are written. Helpers an earlier run installed stay as 
 1. Writes the `.bat` helpers and per-game placeholder INIs to the system's `Rom_Path` (reads from the existing `Settings\<NAME>\Emulators.ini`) — or `Modules\PCLauncher\<NAME>\` for new systems.
 2. Writes or updates `Modules\PCLauncher\<NAME>.ini` (the PCLauncher module INI) with `[<tool name>]` sections containing `Application=<bat>` and `WorkingFolder=`. **This file is required** — PCLauncher.ahk reads game settings from it; without it every launch shows *"You have not set up \<tool\> in RocketLauncherUI yet, so PCLauncher does not know what exe, FadeTitle, and/or SteamID to watch for."* Only the picked helpers' sections are replaced (matched ignoring case, as RocketLauncher does); every other line, including user-configured sections, stays byte for byte, in the file's own encoding and newlines.
 3. Adds matching `<game>` entries to `<HyperSpin>\Databases\<NAME>\<NAME>.xml`, with `genre=Tools` and `manufacturer=SpinDoctor` so they display correctly on the wheel.
+4. Copies each entry's wheel logo, bundled with SpinDoctor, to `<HyperSpin>\Media\<NAME>\Images\Wheel\<entry>.png` (pink italic capitals over a blue glow, 400x156), unless the wheel already has art for it: your own logos are never replaced.
 
 Idempotent — re-running upserts the picked entries instead of duplicating them. The target system must already exist and use PCLauncher as its emulator (HyperHQ → Settings → Emulator → PCLauncher). Pair with `spindoctor mainmenu add "<NAME>" --apply` if the wheel isn't on the Main Menu yet.
 
@@ -1044,6 +1045,7 @@ When `--add-to-system <SYSTEM>` is given:
 1. Removes the `.bat` and `.ini` files from the PCLauncher directory used for that system (reads the first `Rom_Path` from `Settings/<SYSTEM>/Emulators.ini`, falls back to `Modules/PCLauncher/<SYSTEM>`; also checks the legacy path so files written by older versions are cleaned up).
 2. Removes those helpers' sections from the PCLauncher module INI (`Modules/PCLauncher/<SYSTEM>.ini`). Every other line is left byte for byte. If the file becomes empty after removal it is deleted.
 3. Deletes those helpers' `<game>` entries from `<HyperSpin>/Databases/<SYSTEM>/<SYSTEM>.xml`.
+4. Deletes their wheel logos from `<HyperSpin>/Media/<SYSTEM>/Images/Wheel/`, but only files that are still SpinDoctor's own logo byte for byte; art you put there stays.
 
 Only files and entries that exist are touched — missing ones are silently skipped.
 

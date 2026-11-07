@@ -788,6 +788,22 @@ and pick **Set Windows Resolution**. It sets Windows back to HyperSpin's
 `%USERPROFILE%\.spindoctor\toolkit.log` has the reason, for example a size the
 display doesn't support.
 
+### A Toolkit helper shows as plain text on the wheel, or with the wrong logo
+
+The entries `install-tools --add-to-system` added show their name in
+HyperSpin's default font, or an old logo, instead of SpinDoctor's pink-on-blue
+wheel art.
+
+**Cause:** the art is copied to `<HyperSpin>\Media\<System>\Images\Wheel\<entry>.png`
+only when `--apply` writes the entries, and only when no file of that name is
+there: a logo already in place is kept, so your own art is never replaced. An
+install from before SpinDoctor shipped the art wrote none.
+
+**Fix:** re-run the same `install-tools … --add-to-system <System> --apply`
+for a missing logo. To swap an old logo for SpinDoctor's, delete
+`<entry>.png` first, then re-run it. HyperSpin reads wheel art at start, so
+restart HyperSpin to see it.
+
 ## Intro Video Randomizer
 
 ### `introvideo` commands fail with "intro_randomizer_dir is not set" / "intro_video_target is not set"
