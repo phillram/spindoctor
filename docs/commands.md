@@ -1006,6 +1006,7 @@ spindoctor install-tools --tool refresh-all --add-to-system Toolkit --apply :: i
 | `restart-cabinet` | `Restart Cabinet` | [`toolkit restart`](#toolkit): countdown, close HyperSpin, restart Windows |
 | `exit-to-windows` | `Exit To Windows` | [`toolkit exit-to-windows`](#toolkit): countdown, close HyperSpin, bring the taskbar back |
 | `reset-button-lights` | `Reset Button Lights` | [`toolkit reset-button-lights`](#toolkit): stop PAC-LED64 boards flashing on their own |
+| `set-windows-resolution` | `Set Windows Resolution` | [`toolkit set-resolution`](#toolkit): put Windows back to HyperSpin's resolution |
 
 Only the helpers you pick are written. Helpers an earlier run installed stay as they are, so you can add one later without touching the others; remove one with `uninstall-tools --tool`. Without `--tool`, `install-tools` lists the helpers and exits with code 2, writing nothing. (Before this release it always wrote the four Refresh helpers: add `--tool refresh-favorites,refresh-recently-played,refresh-most-played,refresh-all` to scripts that relied on that.) See [Standalone tools → Tools menu](standalone-tools.md#wiring-into-hyperspin-tools-menu).
 
@@ -1056,6 +1057,7 @@ spindoctor toolkit shutdown --seconds 10    :: a longer countdown (0 skips it)
 spindoctor toolkit restart                  :: countdown, close HyperSpin, restart Windows
 spindoctor toolkit exit-to-windows          :: countdown, close HyperSpin, back to the desktop
 spindoctor toolkit reset-button-lights      :: zero the PAC-LED64 flash speeds (HyperSpin keeps running)
+spindoctor toolkit set-resolution           :: Windows back to HyperSpin's [Resolution]
 
 :: put them on a Toolkit wheel
 spindoctor install-tools --tool shut-down-cabinet,restart-cabinet,exit-to-windows --add-to-system Toolkit --apply
@@ -1081,6 +1083,16 @@ spindoctor toolkit reset-button-lights --no-note                :: no note on sc
 ```
 
 `PacDrive32.dll`, which LEDBlinky ships, is 32-bit, so the calls run in 32-bit Windows PowerShell (`SysWOW64`), whatever SpinDoctor's own bitness. It prints one line per board and a summary (`2 Ultimarc device(s), 2 LED board(s) reset`), writes them to `toolkit.log`, and shows a 3-second note at the top of the screen that never takes the focus: "Button lights reset", "No button light boards found" or "Button light reset failed". Exit code 1 when the DLL is missing or the reset failed. Add it to HyperSpin's startup programs, before LEDBlinky starts, to repeat the reset at every start. The same script, with `Pac64SetLEDIntensities` to 0, turns the lights off at the end of `exit-to-windows`.
+
+**`set-resolution`** puts Windows back to HyperSpin's resolution. A game that crashes, or an emulator that doesn't restore the display, can leave Windows at its own resolution, and HyperSpin then starts stretched or in a corner (see [Troubleshooting](troubleshooting.md#hyperspin-starts-stretched-or-in-a-corner-after-a-game)).
+
+```bat
+spindoctor toolkit set-resolution                               :: HyperSpin's Settings\Settings.ini [Resolution]
+spindoctor toolkit set-resolution --width 1920 --height 1080    :: a size of your own
+spindoctor toolkit set-resolution --no-note                     :: no note on screen
+```
+
+It reads `[Resolution] Width` and `Height` from `<hyperspin_dir>\Settings\Settings.ini`, keeps the primary display's colour depth and lets Windows pick the refresh rate, tests the mode first (`ChangeDisplaySettingsExW` with `CDS_TEST`) and then sets and saves it (`CDS_UPDATEREGISTRY`), so it sticks after a restart. Nothing changes when the display is already at that size. It logs `set-resolution: 1280x720 -> 1920x1080` to `toolkit.log` and shows a 3-second note ("Resolution set to 1920 × 1080", "Already 1920 × 1080" or "Couldn't set 1920 × 1080") that never takes the focus. Exit code 1 when there's no size to set or the display refused it. No separate resolution tool is needed.
 
 ---
 

@@ -771,6 +771,23 @@ starting `explorer.exe` is what gives you a desktop at all.
 **If the buttons stay lit on the desktop for a while:** that's LEDBlinky's quit
 animation finishing (up to 30 s); Exit To Windows doesn't make you wait for it.
 
+### HyperSpin starts stretched or in a corner after a game
+
+HyperSpin comes back from a game (or starts after a crash) filling only part of
+the screen, stretched, or with black bars, and the Windows desktop is at a
+different resolution than before.
+
+**Cause:** the game or emulator changed the display mode and didn't put it
+back, usually because it crashed. HyperSpin draws at the size in its
+`Settings\Settings.ini` `[Resolution]` section, whatever Windows is set to.
+
+**Fix:** run `spindoctor toolkit set-resolution`, or put it on the wheel with
+`spindoctor install-tools --tool set-windows-resolution --add-to-system Toolkit --apply`
+and pick **Set Windows Resolution**. It sets Windows back to HyperSpin's
+`[Resolution] Width` × `Height` and saves it. If the note says "Couldn't set",
+`%USERPROFILE%\.spindoctor\toolkit.log` has the reason, for example a size the
+display doesn't support.
+
 ## Intro Video Randomizer
 
 ### `introvideo` commands fail with "intro_randomizer_dir is not set" / "intro_video_target is not set"
