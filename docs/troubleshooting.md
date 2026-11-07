@@ -791,6 +791,21 @@ The same recovery runs at the start of every `spindoctor test --apply`.
   (for example a joystick that isn't plugged in): add a piece of it to
   `test_ignore_hyperspin_log`.
 
+### After a test run, new save files and configs are left in the emulator folders
+
+That's the default (`test_cleanup = report`): the run lists what the games
+created in `cleanup.csv` and the report, and leaves it. To have the next runs
+back each new file up and delete it:
+
+```bat
+spindoctor config set test_cleanup remove
+```
+
+or pass `--cleanup remove` for one run. Files that existed before the run are
+never touched. To remove what an earlier run listed, use its `cleanup.csv`. If a
+folder of yours fills with files the cleanup shouldn't look at, add it to
+`test_cleanup_skip`.
+
 ## Light guns
 
 ### Model 3: player 2's gun does nothing, or both guns move one crosshair

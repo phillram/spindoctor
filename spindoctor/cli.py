@@ -294,6 +294,9 @@ def config_set(key: str, value: str):
       test_hyperspin_timeout    Seconds to wait for HyperSpin's Main Menu (default 180)
       test_ignore_hyperspin_log Harmless HyperSpin log.txt lines (substrings)
       test_skip_intro_video     true | false (default true): skip HyperSpin's intro
+      test_cleanup              report | remove | off (default report): files the
+                                test's games create
+      test_cleanup_skip         Folders the cleanup leaves alone (relative to hyperspin_dir)
     """
     config = _cfg()
     if not hasattr(config, key) or key in (
@@ -326,6 +329,14 @@ def config_set(key: str, value: str):
             err_console.print(
                 f"[red]Invalid value for[/red] {key}: {value!r} "
                 f"(expected one of: {', '.join(_metadata_sources)})"
+            )
+            sys.exit(1)
+    if key == "test_cleanup":
+        from .gametest_cleanup import MODES
+        value = value.strip().lower()
+        if value not in MODES:
+            err_console.print(
+                f"[red]Invalid value for[/red] {key}: {value!r} (expected one of: {', '.join(MODES)})"
             )
             sys.exit(1)
     if isinstance(current, dict):
@@ -7739,11 +7750,15 @@ def _print_test_recovery(report, out=None) -> None:
               help="With --with-hyperspin: let HyperSpin's intro video play instead of skipping it.")
 @click.option("--leave-hyperspin-open", is_flag=True,
               help="With --with-hyperspin: don't close HyperSpin when the run ends.")
+@click.option("--cleanup", "cleanup_mode", type=click.Choice(["report", "remove", "off"]), default=None,
+              help="Files the games create: list them (report), back them up and delete "
+                   "them (remove), or don't look (off). Default: test_cleanup (report).")
 @click.option("--apply", "apply_changes", is_flag=True,
               help="Launch the games. Without it, only list them with their file check.")
 def game_test_cmd(systems, all_systems, genres, games, all_games, count, per_system, seed,
                   include_skipped, seconds, resume, only_failed, recover_only, list_runs,
-                  as_json, verbose, with_hyperspin, play_intro, leave_hyperspin_open, apply_changes):
+                  as_json, verbose, with_hyperspin, play_intro, leave_hyperspin_open, cleanup_mode,
+                  apply_changes):
     """Launch games through RocketLauncher, the way HyperSpin does, and judge them.
 
     Each game runs for --seconds, then SpinDoctor looks for what went wrong:
@@ -7926,7 +7941,7 @@ def game_test_cmd(systems, all_systems, genres, games, all_games, count, per_sys
                                     selection=selection, on_result=show,
                                     with_hyperspin=with_hyperspin, play_intro=play_intro,
                                     leave_hyperspin_open=leave_hyperspin_open,
-                                    on_hyperspin=show_hyperspin)
+                                    on_hyperspin=show_hyperspin, cleanup=cleanup_mode)
     except KeyboardInterrupt:
         err_console.print("\n[yellow]Stopped.[/yellow] The play statistics are back; "
                           "[cyan]spindoctor test --resume --apply[/cyan] carries on.")
@@ -7947,6 +7962,18 @@ def game_test_cmd(systems, all_systems, genres, games, all_games, count, per_sys
         if not summary.finished:
             console.print("The run stopped early. [cyan]spindoctor test --resume --apply[/cyan] carries on.")
         console.print(f"Results: {escape(str(summary.run_dir))}")
+        clean = gametest.read_run(summary.run_dir).get("cleanup")
+        if clean:
+            if not clean["found"]:
+                console.print("The games created no new files.")
+            elif clean["mode"] == "remove":
+                console.print(f"Removed {clean['removed']} new file(s) and folder(s) the games created "
+                              f"(backed up to {escape(clean['backup_dir'])}).")
+            else:
+                console.print(f"The games created {clean['found']} new file(s) and folder(s), left in place "
+                              "(see cleanup.csv; --cleanup remove backs them up and deletes them).")
+            if clean["left"]:
+                console.print(f"[yellow]{clean['left']} could not be removed; see cleanup.csv.[/yellow]")
         console.print(f"Report:  {escape(str(summary.run_dir / 'report.html'))}")
     if summary.counts.get("FAIL"):
         sys.exit(2)
