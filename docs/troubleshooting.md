@@ -752,6 +752,25 @@ Windows down or restarts it at once, and Windows ends LEDBlinky part-way through
 its quit animation (which can take half a minute). Windows takes over a few
 seconds after the countdown.
 
+### Exit To Windows leaves the desktop without a taskbar
+
+After **Exit To Windows** HyperSpin is gone, but the desktop has no taskbar or
+Start button.
+
+**Cause:** HyperSpin hides the taskbar while it runs and shows it again only on
+its own exit, so `spindoctor toolkit exit-to-windows` restarts Explorer to bring
+it back. If Explorer couldn't be started, the taskbar stays hidden.
+
+**Find it:** `%USERPROFILE%\.spindoctor\toolkit.log` ends with
+`could not start …explorer.exe`, or has no `on the desktop` line.
+
+**Fix:** press Ctrl+Shift+Esc for Task Manager, then **File → Run new task**,
+`explorer.exe`. On a cabinet whose Windows shell was replaced with HyperSpin,
+starting `explorer.exe` is what gives you a desktop at all.
+
+**If the buttons stay lit on the desktop for a while:** that's LEDBlinky's quit
+animation finishing (up to 30 s); Exit To Windows doesn't make you wait for it.
+
 ## Intro Video Randomizer
 
 ### `introvideo` commands fail with "intro_randomizer_dir is not set" / "intro_video_target is not set"

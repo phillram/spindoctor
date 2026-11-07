@@ -99,6 +99,9 @@ HELPERS: tuple = (
     Helper("Restart Cabinet", "count down 5 seconds (Esc cancels), close HyperSpin, then restart Windows",
            _toolkit("restart", "Restart Cabinet: a 5-second countdown (Esc cancels), "
                                "then HyperSpin closes and Windows restarts.")),
+    Helper("Exit To Windows", "count down 5 seconds (Esc cancels), close HyperSpin, then bring the taskbar back",
+           _toolkit("exit-to-windows", "Exit To Windows: a 5-second countdown (Esc cancels), "
+                                       "then HyperSpin closes and Explorer restarts so the taskbar returns.")),
 )
 
 #: Names older versions wrote and this one never does, with the helper that

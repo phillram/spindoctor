@@ -4448,6 +4448,7 @@ def install_tools(tools, output_dir, add_to_system, apply_changes):
       • refresh-all             → fav + recent + most-played
       • shut-down-cabinet       → spindoctor toolkit shutdown
       • restart-cabinet         → spindoctor toolkit restart
+      • exit-to-windows         → spindoctor toolkit exit-to-windows
 
     Drop them into HyperSpin's Tools folder (or point HyperSpin at the
     output directory) so users can refresh the wheels from the cabinet
@@ -4952,6 +4953,20 @@ def toolkit_restart(seconds):
     shutdown /r /f /t 0. If Windows refuses, HyperSpin is started again.
     """
     _run_toolkit_power("restart", seconds)
+
+
+@toolkit_group.command("exit-to-windows")
+@_COUNTDOWN_OPTION
+def toolkit_exit_to_windows(seconds):
+    """Close HyperSpin and go to the Windows desktop, after a countdown.
+
+    The same countdown and polite close as `toolkit shutdown`, then Explorer
+    is restarted: HyperSpin hides the taskbar and shows it again only on its
+    own exit, so after an outside close a fresh Explorer brings it back.
+    Explorer windows that were open close. Only the countdown takes time:
+    LEDBlinky's quit animation finishes while you're on the desktop.
+    """
+    _run_toolkit_power("exit-to-windows", seconds)
 
 
 # ─── ignore ───────────────────────────────────────────────────────────────────
