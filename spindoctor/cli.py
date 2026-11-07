@@ -4447,6 +4447,7 @@ def install_tools(tools, output_dir, add_to_system, apply_changes):
       • refresh-most-played     → spindoctor-stats build-wheel --apply
       • refresh-all             → fav + recent + most-played
       • shut-down-cabinet       → spindoctor toolkit shutdown
+      • restart-cabinet         → spindoctor toolkit restart
 
     Drop them into HyperSpin's Tools folder (or point HyperSpin at the
     output directory) so users can refresh the wheels from the cabinet
@@ -4939,6 +4940,18 @@ def toolkit_shutdown(seconds):
        again.
     """
     _run_toolkit_power("shutdown", seconds)
+
+
+@toolkit_group.command("restart")
+@_COUNTDOWN_OPTION
+def toolkit_restart(seconds):
+    """Close HyperSpin, then restart Windows, after a countdown.
+
+    The same sequence as `toolkit shutdown` ("Restarting in 5 … Press Esc to
+    cancel", then HyperSpin closes the polite way), ending in
+    shutdown /r /f /t 0. If Windows refuses, HyperSpin is started again.
+    """
+    _run_toolkit_power("restart", seconds)
 
 
 # ─── ignore ───────────────────────────────────────────────────────────────────
