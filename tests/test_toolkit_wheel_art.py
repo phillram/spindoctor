@@ -29,7 +29,7 @@ def _png_size(path):
     return width, height, color_type
 
 
-@pytest.mark.parametrize("helper", th.HELPERS, ids=lambda h: h.key)
+@pytest.mark.parametrize("helper", th.WHEEL_HELPERS, ids=lambda h: h.key)
 def test_every_helper_has_a_400x156_transparent_logo(helper):
     path = ASSETS / f"toolkit_{helper.key}.png"
     assert path.is_file(), f"no wheel art for {helper.name}: run build/make_toolkit_art.py"
@@ -37,7 +37,8 @@ def test_every_helper_has_a_400x156_transparent_logo(helper):
 
 
 def test_no_logo_without_a_helper():
-    keys = {h.key for h in th.HELPERS}
+    # Helpers that start with HyperSpin are never wheel entries, so have none.
+    keys = {h.key for h in th.WHEEL_HELPERS}
     strays = [p.name for p in ASSETS.glob("toolkit_*.png") if p.stem[len("toolkit_"):] not in keys]
     assert strays == []
 

@@ -804,6 +804,79 @@ for a missing logo. To swap an old logo for SpinDoctor's, delete
 `<entry>.png` first, then re-run it. HyperSpin reads wheel art at start, so
 restart HyperSpin to see it.
 
+### The idle tour never changes wheels
+
+HyperSpin's idle mode spins and plays videos, but always on the same wheel,
+although the [idle tour](idle-tour.md) is installed.
+
+**Check first:** `spindoctor doctor` (the **Idle tour** check), and
+`spindoctor toolkit idle-tour --self-test`, whose last line says what would
+stop a key press now. `%USERPROFILE%\.spindoctor\toolkit.log` has an
+`idle-tour:` line for each start, wheel change and pause.
+
+**Causes, most common first:**
+
+- **It never started.** `install-tools --tool idle-tour` without `--apply`
+  writes the `.bat` but doesn't add it to HyperSpin's Startup Script; re-run it
+  with `--apply`. An entry numbered after a gap in the Startup Script's
+  `[Startup]` list never starts, because the script stops at the first missing
+  number: number the entries 1, 2, 3 … without gaps. After moving or upgrading
+  SpinDoctor, the `.bat` runs an EXE that's gone (the **SpinDoctor helpers**
+  check): re-run `install-tools --tool idle-tour`. No `idle-tour: started` line
+  in `toolkit.log` means one of these.
+- **HyperSpin's idle mode or LEDBlinky calls are off.** The tour needs
+  `Settings\Settings.ini` `[AttractMode] Active=true` and `[LEDBlinky]
+  Active=true` (it reads every selection and idle spin from HyperSpin's
+  LEDBlinky calls in `log.txt`). Edit them with HyperSpin closed. Its `started`
+  line is followed by a warning when either is off. In single mode
+  (`[Main] Menu_Mode=single`) there is no main menu, and the tour presses
+  nothing.
+- **It's waiting on purpose.** It acts only right after an idle spin lands, so
+  nothing happens before HyperSpin's idle mode has started (`[AttractMode]
+  Time`, 300 s by default) and shown the set number of games or consoles. On
+  the main menu it opens only a console that isn't in `Skip=` and has a
+  database; landing on a skipped one means waiting for the next spin. After
+  `TourMaxMinutes` (60) it stops until someone uses a control. `Enabled=0` in
+  `Idle Tour settings.ini` switches it off.
+- **Something else is in front, or "uses a control".** It presses nothing
+  while HyperSpin isn't the front window (a tool that steals the focus at
+  start), or while a `PauseWhile` program runs. Any keyboard or mouse input,
+  including a program sending keys or a mouse that drifts, counts as someone
+  using a control: the tour then waits for HyperSpin's idle mode to start
+  again.
+
+### The cabinet's screen no longer turns off when nobody plays
+
+Since the idle tour was installed, the display stays on all night.
+
+**Cause:** Windows counts the tour's key presses as input, so its screen
+timeout starts over at each wheel change (HyperSpin's own idle timer ignores
+them).
+
+**Fix:** the tour stops changing wheels after `TourMaxMinutes` (60 by default)
+and leaves HyperSpin's idle mode on the main menu, so the screen turns off
+after Windows' own timeout from then. Lower `TourMaxMinutes` in
+`Idle Tour settings.ini` (beside `Idle Tour.bat`) for a shorter tour; `0`
+means it never stops.
+
+### A script's key presses to HyperSpin go missing, or open the wrong thing
+
+A script or helper that drives HyperSpin with key presses works only some of
+the time: presses are lost, the wheel keeps moving after the script stops, or
+an Esc-then-Enter meant to close HyperSpin opens a console or a game instead.
+
+**Cause:** HyperSpin drops a key that goes down and up at once, queues presses
+it gets faster than it moves (about 2 entries a second), and swallows keys
+during its idle spins. Its exit menu writes nothing to `log.txt` and defaults
+to Yes, so a lost Esc turns the following Enter into "open the selected
+entry". Its idle timer also ignores keys sent by a program, so a script can't
+hold HyperSpin's idle mode off.
+
+**Fix:** hold each key about 80 ms, send one key at a time and wait for
+`log.txt` to show its effect, and never send Exit unless the log shows
+HyperSpin is inside a console. See [Idle tour → Scripting
+HyperSpin](idle-tour.md#scripting-hyperspin-what-to-know).
+
 ## Intro Video Randomizer
 
 ### `introvideo` commands fail with "intro_randomizer_dir is not set" / "intro_video_target is not set"

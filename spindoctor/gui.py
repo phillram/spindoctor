@@ -12461,7 +12461,7 @@ class _SpinDoctorGUI:
         hhq_frame.pack(fill="x", padx=6, pady=(2, 8))
         self._help_text(
             hhq_frame,
-            text="Blank output directory uses <rocketlauncher_dir>/Modules/HyperLaunch/Tools/spindoctor. To use HyperSpin's Tools menu, register the generated shortcuts in HyperHQ > Tools.",
+            text="Blank output directory uses <rocketlauncher_dir>/Modules/HyperLaunch/Tools/spindoctor. To use HyperSpin's Tools menu, register the generated shortcuts in HyperHQ > Tools. Idle Tour starts with HyperSpin instead: with Apply ticked it is added to HyperSpin's Startup Script.",
         ).pack(fill="x", padx=6, pady=(2, 4))
 
         out_row = self.ttk.Frame(hhq_frame)
@@ -12710,6 +12710,10 @@ class _SpinDoctorGUI:
         outdir = self._tools_outdir_var.get().strip()
         if outdir:
             args += ["--output-dir", outdir]
+        # Only the Idle Tour's Startup Script entry waits for --apply here.
+        apply_var = self._global_apply_var
+        if any(h.startup for h in picked) and apply_var is not None and apply_var.get():
+            args.append("--apply")
         self._run_cli("spindoctor", args)
 
     def _run_install_tools_into_wheel(self) -> None:
@@ -12722,6 +12726,14 @@ class _SpinDoctorGUI:
             return
         picked = self._ticked_tool_helpers("Install into wheel")
         if picked is None:
+            return
+        # Idle Tour starts with HyperSpin and is never a wheel entry.
+        picked = [h for h in picked if not h.startup]
+        if not picked:
+            self._flash_validation(
+                "Idle Tour starts with HyperSpin, not from a wheel: use "
+                "Install Tools-menu helpers for it."
+            )
             return
         self._run_cli(
             "spindoctor",

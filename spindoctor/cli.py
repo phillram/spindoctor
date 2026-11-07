@@ -3834,6 +3834,131 @@ def _install_tools_pclauncher_ini(bat_path: Path) -> str:
     return pclauncher_settings_text(bat_path)
 
 
+def _install_startup_helpers(config, out: Path, helpers, apply_changes: bool) -> None:
+    """Start each of *helpers* (already written to *out*) with HyperSpin.
+
+    Writes the idle tour's settings file when there is none, warns about the
+    HyperSpin settings the tour needs, and adds the ``.bat`` to the
+    ``[Startup]`` list of HyperSpin's Startup Script (only with --apply,
+    after a backup).  Exits 1 when --apply can't add it, or the list can't
+    be changed safely.
+    """
+    from . import startup_script as ss
+    from ._text import read_windows_text_with_encoding
+    from ._utils import atomic_write_bytes
+    from .idle_tour import (DEFAULT_SETTINGS_TEXT, SETTINGS_FILE, hyperspin_setting,
+                            other_tours, single_mode)
+
+    # The Startup Script runs it from this folder, so never a relative one.
+    out = out.resolve()
+    settings = out / SETTINGS_FILE
+    if settings.is_file():
+        console.print(f"[dim]kept the settings already there: {escape(str(settings))}[/dim]")
+    else:
+        atomic_write_bytes(settings, DEFAULT_SETTINGS_TEXT.encode("utf-8"))
+        console.print(f"[green]+[/green] wrote [cyan]{escape(str(settings))}[/cyan]")
+    for section, why in (
+        ("AttractMode", "the tour only changes wheels while HyperSpin's own idle mode runs"),
+        ("LEDBlinky", "the tour reads every selection and idle spin from HyperSpin's "
+                      "LEDBlinky calls in its log.txt"),
+    ):
+        value = hyperspin_setting(config.hyperspin_dir, section, "Active")
+        if value.strip().lower() != "true":
+            err_console.print(
+                f"[yellow]warning:[/yellow] HyperSpin's Settings\\Settings.ini has "
+                f"[{section}] Active={escape(value) or '(not set)'}: {why}. Set it to true "
+                "with HyperSpin closed (HyperSpin rewrites the file when it exits).",
+                highlight=False,
+            )
+    single = single_mode(config.hyperspin_dir)
+    if single:
+        err_console.print(f"[yellow]warning:[/yellow] {escape(single)}, so the tour presses "
+                          "nothing.", highlight=False)
+    script = ss.find(config.hyperspin_dir)
+    for helper in helpers:
+        bat = out / f"{helper.name}.bat"
+        if script.path is None:
+            err_console.print(
+                f"[yellow]{helper.name} isn't started with HyperSpin yet:[/yellow] "
+                f"{escape(script.problem)}. Have your startup program run {escape(str(bat))} "
+                "(hidden) each time HyperSpin starts.", highlight=False,
+            )
+            if apply_changes:
+                sys.exit(1)
+            continue
+        where = escape(str(script.path))
+        current, encoding = read_windows_text_with_encoding(script.path)
+        if encoding in ("utf-8", "cp1252") and not str(out).isascii():
+            # No BOM: the Startup Script reads it as ANSI, so a UTF-8 path would arrive garbled.
+            err_console.print(
+                f"[red]Not added to {where}:[/red] the folder {escape(str(out))} has characters "
+                "the Startup Script would read wrongly. Use --output-dir with a folder whose "
+                "path is plain ASCII.", highlight=False)
+            sys.exit(1)
+        items = ss.entries(current.lstrip("﻿"))
+        for other in other_tours(items, bat.name):
+            err_console.print(
+                f"[yellow]warning:[/yellow] {where} also starts {escape(other)}, another idle "
+                "tour: two tours press keys over each other. Take one of them out.",
+                highlight=False)
+        try:
+            text, number, action = ss.add(current.lstrip("﻿"), bat.name, str(out))
+        except ss.StartupScriptError as exc:
+            err_console.print(f"[red]Not added to {where}:[/red] {escape(str(exc))}", highlight=False)
+            sys.exit(1)
+        keys = escape(f"Program_To_Run_Target_{number}={bat.name}, "
+                      f"Program_To_Run_Working_Dir_{number}={out}, "
+                      f"Program_To_Run_MaxMinHide_{number}=Hide")
+        if action == "unchanged":
+            console.print(f"[dim]{escape(script.path.name)} already starts {bat.name} "
+                          f"([Startup] entry {number}).[/dim]", highlight=False)
+            continue
+        if not apply_changes:
+            console.print(
+                f"[yellow bold][DRY RUN][/yellow bold] Would "
+                f"{'add' if action == 'added' else 'update'} [Startup] entry "
+                f"{number} in {where}: {keys}. Re-run with [cyan]--apply[/cyan] to change it.",
+                highlight=False,
+            )
+            continue
+        saved = ss.backup(script.path, config)
+        ss.write(script.path, text)
+        console.print(
+            f"[green]+[/green] {action} [Startup] entry {number} in {where}: {keys}"
+            + (f" (backup: {escape(saved.name)})" if saved else ""), highlight=False,
+        )
+        console.print(
+            f"[dim]{helper.name} starts the next time HyperSpin does. It needs no [Exit] "
+            "entry: it quits by itself once HyperSpin has closed.[/dim]"
+        )
+
+
+def _uninstall_startup_helpers(config, helpers, apply_changes: bool) -> None:
+    """Take *helpers* out of the Startup Script's ``[Startup]`` list; the later
+    entries are numbered down so the list keeps no gap."""
+    from . import startup_script as ss
+
+    script = ss.find(config.hyperspin_dir)
+    if script.path is None:
+        return
+    for helper in helpers:
+        text, removed = ss.remove(read_editable_text(script.path), f"{helper.name}.bat")
+        if not removed:
+            continue
+        numbers = ", ".join(str(n) for n in removed)
+        where = escape(str(script.path))
+        if not apply_changes:
+            console.print(f"[yellow]?[/yellow] would remove [Startup] entry {numbers} "
+                          f"({helper.name}.bat) from {where}, numbering the later "
+                          "entries down", highlight=False)
+            continue
+        saved = ss.backup(script.path, config)
+        ss.write(script.path, text)
+        console.print(f"[green]–[/green] removed [Startup] entry {numbers} ({helper.name}.bat) "
+                      f"from {where}" + (f" (backup: {escape(saved.name)})" if saved else ""),
+                      highlight=False)
+
+
 @cli.command("theme-scan")
 @click.option("--system", "-s", default=None,
               help="Restrict to one system's Special A/B buckets. "
@@ -4433,8 +4558,9 @@ def _resolve_tools_output_dir(add_to_system: str, rl_dir: "Path") -> "Path":
                    "system's database XML must already exist; existing "
                    "entries with the same name are overwritten.")
 @click.option("--apply", "apply_changes", is_flag=True,
-              help="Commit database changes (default: dry-run preview). "
-                   "Required when --add-to-system is set.")
+              help="Commit database changes, and for idle-tour the Startup "
+                   "Script entry (default: dry-run preview). Required when "
+                   "--add-to-system is set.")
 def install_tools(tools, output_dir, add_to_system, apply_changes):
     """Install the HyperSpin helpers you pick with --tool, one by one.
 
@@ -4451,6 +4577,13 @@ def install_tools(tools, output_dir, add_to_system, apply_changes):
       • exit-to-windows         → spindoctor toolkit exit-to-windows
       • reset-button-lights     → spindoctor toolkit reset-button-lights
       • set-windows-resolution  → spindoctor toolkit set-resolution
+      • idle-tour               → spindoctor toolkit idle-tour (starts with HyperSpin)
+
+    \b
+    idle-tour isn't for a menu or a wheel: it runs beside HyperSpin. With
+    --apply it is added to the [Startup] list of HyperSpin's Startup Script
+    (the Startup Program HyperSpin's Settings.ini names), after a backup,
+    and its settings file is written next to it if there is none.
 
     Drop them into HyperSpin's Tools folder (or point HyperSpin at the
     output directory) so users can refresh the wheels from the cabinet
@@ -4470,11 +4603,20 @@ def install_tools(tools, output_dir, add_to_system, apply_changes):
       spindoctor install-tools --tool refresh-all
       spindoctor install-tools --tool refresh-favorites,refresh-recently-played
       spindoctor install-tools --tool refresh-all --add-to-system Toolkit --apply
+      spindoctor install-tools --tool idle-tour --apply
     """
     from . import toolkit_helpers as th
     from ._utils import atomic_write_bytes
 
     picked = _picked_helpers(tools, required=True)
+    startup = [h for h in picked if h.startup]
+    if add_to_system and startup:
+        err_console.print(
+            f"[red]{', '.join(h.name for h in startup)} can't be a wheel entry:[/red] it runs "
+            "beside HyperSpin, started with it by the Startup Script. Install it without "
+            "--add-to-system (add --apply to add it to the Startup Script)."
+        )
+        sys.exit(2)
     config = _cfg()
 
     if add_to_system:
@@ -4546,11 +4688,12 @@ def install_tools(tools, output_dir, add_to_system, apply_changes):
                     )
 
     if not add_to_system:
-        console.print(
-            "[dim]Add[/dim] [cyan]" + str(out) + "[/cyan] [dim]to "
-            "HyperSpin's Tools folder, or register the .bat files in "
-            "HyperHQ → Tools.[/dim]"
-        )
+        if len(startup) < len(picked):
+            console.print(
+                "[dim]Add[/dim] [cyan]" + str(out) + "[/cyan] [dim]to "
+                "HyperSpin's Tools folder, or register the .bat files in "
+                "HyperHQ → Tools.[/dim]"
+            )
         if any(p.stem == "Refresh All" for p in written_bats):
             console.print(
                 "[dim]Run on boot:[/dim] use the GUI's Custom Wheels tab → "
@@ -4558,6 +4701,8 @@ def install_tools(tools, output_dir, add_to_system, apply_changes):
                 "the generated [cyan]Refresh All.bat[/cyan] via Windows Task "
                 "Scheduler (trigger: 'At log on')."
             )
+        if startup:
+            _install_startup_helpers(config, out, startup, apply_changes)
         return
 
     # ── --add-to-system path: also add wheel entries + per-game INIs ─────────
@@ -4728,7 +4873,9 @@ def uninstall_tools(tools, add_to_system, apply_changes):
     Without --add-to-system:
       Shows (or removes with --apply) every SpinDoctor-written .bat from
       the default output directory
-      (<rocketlauncher_dir>/Modules/HyperLaunch/Tools/spindoctor).
+      (<rocketlauncher_dir>/Modules/HyperLaunch/Tools/spindoctor). For
+      idle-tour, also its settings file and its [Startup] entry in
+      HyperSpin's Startup Script (later entries are numbered down).
 
     \b
     With --add-to-system <SYSTEM>:
@@ -4922,6 +5069,22 @@ def uninstall_tools(tools, add_to_system, apply_changes):
                 f"[cyan]{out}[/cyan] — nothing to delete."
             )
 
+        # The idle tour also has a settings file and a Startup Script entry.
+        startup = [h for h in th.STARTUP_HELPERS if h.name in stems]
+        if startup:
+            from .idle_tour import SETTINGS_FILE
+
+            settings = out / SETTINGS_FILE
+            if settings.is_file():
+                console.print(
+                    f"[{'green' if apply_changes else 'yellow'}]"
+                    f"{'–' if apply_changes else '?'}[/{'green' if apply_changes else 'yellow'}] "
+                    f"{verb} [dim]{settings.name}[/dim]"
+                )
+                if apply_changes:
+                    settings.unlink()
+            _uninstall_startup_helpers(config, startup, apply_changes)
+
     if not apply_changes:
         console.print(
             "\n[dim]Dry-run — nothing was removed. "
@@ -4938,8 +5101,10 @@ def toolkit_group():
     \b
     These are what the helpers `install-tools --tool` writes run; for example
       spindoctor install-tools --tool shut-down-cabinet --add-to-system Toolkit --apply
-    puts Shut Down Cabinet on a Toolkit wheel. Windows only. Each run is
-    logged to ~/.spindoctor/toolkit.log.
+    puts Shut Down Cabinet on a Toolkit wheel, and
+      spindoctor install-tools --tool idle-tour --apply
+    starts the idle tour with HyperSpin. Windows only. Each run is logged to
+    ~/.spindoctor/toolkit.log.
     """
 
 
@@ -5086,6 +5251,43 @@ def toolkit_set_resolution(width, height, no_note):
 
         note(outcome.note)
     sys.exit(0 if outcome.code == 0 else 1)
+
+
+@toolkit_group.command("idle-tour")
+@click.option("--settings", "settings_path", type=click.Path(dir_okay=False), default=None,
+              help="The tour's settings file (install-tools writes \"Idle Tour "
+                   "settings.ini\" beside Idle Tour.bat). Default: the built-in settings.")
+@click.option("--self-test", is_flag=True,
+              help="Show what the tour sees now (HyperSpin's folder, settings and log) "
+                   "and press nothing.")
+def toolkit_idle_tour(settings_path, self_test):
+    """Make HyperSpin's idle mode visit random consoles.
+
+    \b
+    Runs beside HyperSpin until it closes; HyperSpin's Startup Script starts
+    it (spindoctor install-tools --tool idle-tour --apply). HyperSpin's own
+    idle mode (Settings.ini [AttractMode] Active=true) spins only the wheel
+    you are on. While it runs, the tour changes wheels (default settings):
+      • after 5 games or 5 minutes in a console, whichever first, it presses
+        Exit, back to the main menu;
+      • after 5 consoles or 5 minutes on the main menu it presses Start on
+        the console the idle spin landed on (unless skipped).
+    It knows where HyperSpin is from HyperSpin's log.txt, which shows the
+    selections and idle spins only while [LEDBlinky] Active=true. It acts only
+    right after an idle spin lands, never presses Exit on the main menu (that
+    opens HyperSpin's exit menu), and does nothing while a game runs, while
+    HyperSpin isn't in front, or once someone uses a control. Logged to
+    ~/.spindoctor/toolkit.log.
+    """
+    if sys.platform != "win32":
+        err_console.print("[red]spindoctor toolkit idle-tour runs on Windows only.[/red]")
+        sys.exit(1)
+    from . import idle_tour
+
+    sys.exit(idle_tour.run(
+        _cfg(), Path(settings_path) if settings_path else None, self_test=self_test,
+        echo=lambda line: console.print(line, markup=False, highlight=False),
+    ))
 
 
 # ─── ignore ───────────────────────────────────────────────────────────────────
