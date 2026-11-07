@@ -23,7 +23,8 @@ the one sequence in :func:`run`:
    started again so the cabinet isn't left on the desktop.  Exit To Windows:
    the screen goes, Explorer is restarted so the taskbar HyperSpin hid comes
    back, and only then, with no window, are HyperSpin's startup script and
-   LEDBlinky's quit waited for (:func:`settle`).
+   LEDBlinky's quit waited for (:func:`settle`), and every PAC-LED64 light is
+   set to 0 (:func:`lights_off`), since LEDBlinky's quit can leave a board lit.
 
 Every step is logged to ``~/.spindoctor/toolkit.log``.  The Windows calls sit
 behind :class:`WindowsOps`, so tests drive the sequence with fakes.
@@ -246,22 +247,47 @@ def settle(ctx: _Context) -> None:
 
     Exit To Windows runs this once the desktop is back, with no window.
     LEDBlinky still running after :data:`LEDBLINKY_WAIT` (its quit animation)
-    is ended.
+    is ended.  Then every PAC-LED64 light is turned off.
     """
     script = ctx.ops.pids(STARTUP_SCRIPT)
     if script and not ctx.ops.wait_exit(script, HELPER_WAIT):
         ctx.log(f"  {STARTUP_SCRIPT} still running after {HELPER_WAIT:g} s")
     ledblinky = ctx.ops.pids(LEDBLINKY)
-    if not ledblinky:
+    if ledblinky:
+        started = time.monotonic()
+        if ctx.ops.wait_exit(ledblinky, LEDBLINKY_WAIT):
+            ctx.log(f"  LEDBlinky quit (waited {time.monotonic() - started:.1f} s)")
+        else:
+            for pid in ledblinky:
+                ctx.ops.terminate(pid)
+            ctx.ops.wait_exit(ledblinky, FORCE_WAIT)
+            ctx.log(f"  LEDBlinky still running after {LEDBLINKY_WAIT:g} s, ended it")
+    lights_off(ctx)
+
+
+def lights_off(ctx: _Context) -> None:
+    """Every PAC-LED64 light to 0, through the ``PacDrive32.dll`` in ``ledblinky_dir``.
+
+    LEDBlinky's quit can leave a board lit (on a real cabinet, the second board
+    stayed purple).  Skipped while LEDBlinky runs, so the two never fight, and
+    when there's no DLL to use.
+    """
+    if ctx.ops.pids(LEDBLINKY):
+        ctx.log("  LEDBlinky is running: lights left to it")
         return
-    started = time.monotonic()
-    if ctx.ops.wait_exit(ledblinky, LEDBLINKY_WAIT):
-        ctx.log(f"  LEDBlinky quit (waited {time.monotonic() - started:.1f} s)")
+    from . import button_lights
+
+    dll = button_lights.find_dll(ctx.config)
+    if dll is None:
+        if getattr(ctx.config, "ledblinky_dir", ""):
+            ctx.log(f"  no {button_lights.DLL_NAME} in ledblinky_dir: lights left as they are")
         return
-    for pid in ledblinky:
-        ctx.ops.terminate(pid)
-    ctx.ops.wait_exit(ledblinky, FORCE_WAIT)
-    ctx.log(f"  LEDBlinky still running after {LEDBLINKY_WAIT:g} s, ended it")
+    result = button_lights.lights_off(dll)
+    if result.error:
+        ctx.log(f"  lights off failed: {result.error}")
+    elif result.boards:
+        ctx.log("  lights off: " + ", ".join(f"board {b.number} off: {b.all_ok}" for b in result.boards)
+                + f" ({result.devices} Ultimarc device(s))")
 
 
 def restart_hyperspin(ctx: _Context) -> None:

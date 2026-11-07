@@ -102,6 +102,9 @@ HELPERS: tuple = (
     Helper("Exit To Windows", "count down 5 seconds (Esc cancels), close HyperSpin, then bring the taskbar back",
            _toolkit("exit-to-windows", "Exit To Windows: a 5-second countdown (Esc cancels), "
                                        "then HyperSpin closes and Explorer restarts so the taskbar returns.")),
+    Helper("Reset Button Lights", "stop PAC-LED64 boards flashing on their own (LEDBlinky keeps running)",
+           _toolkit("reset-button-lights", "Reset Button Lights: zero the PAC-LED64 flash speeds; "
+                                           "colours stay with LEDBlinky.")),
 )
 
 #: Names older versions wrote and this one never does, with the helper that

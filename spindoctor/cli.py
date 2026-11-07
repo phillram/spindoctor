@@ -4449,6 +4449,7 @@ def install_tools(tools, output_dir, add_to_system, apply_changes):
       • shut-down-cabinet       → spindoctor toolkit shutdown
       • restart-cabinet         → spindoctor toolkit restart
       • exit-to-windows         → spindoctor toolkit exit-to-windows
+      • reset-button-lights     → spindoctor toolkit reset-button-lights
 
     Drop them into HyperSpin's Tools folder (or point HyperSpin at the
     output directory) so users can refresh the wheels from the cabinet
@@ -4967,6 +4968,46 @@ def toolkit_exit_to_windows(seconds):
     LEDBlinky's quit animation finishes while you're on the desktop.
     """
     _run_toolkit_power("exit-to-windows", seconds)
+
+
+@toolkit_group.command("reset-button-lights")
+@click.option("--dll", "dll_path", type=click.Path(dir_okay=False), default=None,
+              help="PacDrive32.dll to use. Default: the one in ledblinky_dir.")
+@click.option("--no-note", is_flag=True,
+              help="Don't show the 3-second note at the top of the screen.")
+def toolkit_reset_button_lights(dll_path, no_note):
+    """Stop Ultimarc PAC-LED64 boards flashing on their own.
+
+    \b
+    Sets every port's flash speed to 0 on every PAC-LED64 board, through
+    Ultimarc's PacDrive32.dll (32-bit PowerShell runs it). After a USB
+    dropout a board can keep some buttons blinking whatever LEDBlinky plays,
+    and LEDBlinky never resets this. Colours and which buttons are lit stay
+    with LEDBlinky, which can keep running. Shows a short note at the top of
+    the screen without taking the focus from HyperSpin.
+    """
+    if sys.platform != "win32":
+        err_console.print("[red]spindoctor toolkit reset-button-lights runs on Windows only.[/red]")
+        sys.exit(1)
+    from . import button_lights, cabinet_power
+
+    config = _cfg()
+    dll = button_lights.find_dll(config, dll_path)
+    if dll is None:
+        where = dll_path or (
+            f"{config.ledblinky_dir}\\{button_lights.DLL_NAME}" if config.ledblinky_dir
+            else "ledblinky_dir (not set)")
+        result = button_lights.Result(error=f"{button_lights.DLL_NAME} not found: {where}")
+    else:
+        result = button_lights.reset(dll)
+    for line in result.lines():
+        cabinet_power.log_to_file(line)
+        (err_console if result.error else console).print(line, markup=False, highlight=False)
+    if not no_note:
+        from .toolkit_screen import note
+
+        note(result.note)
+    sys.exit(1 if result.error else 0)
 
 
 # ─── ignore ───────────────────────────────────────────────────────────────────
