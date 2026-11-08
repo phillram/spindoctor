@@ -12710,7 +12710,7 @@ class _SpinDoctorGUI:
         lf.pack(fill="x", padx=6, pady=(2, 8))
         self._help_text(
             lf,
-            text="While HyperSpin's own idle mode runs, Idle Tour changes wheels as a video ends: back to the main menu after the games or minutes in a console, and into the console just shown after the consoles or minutes on the main menu, whichever comes first (0 switches one off). On a game or console with no video, where HyperSpin would wait its whole idle time, it presses Down after the seconds set (0 = wait). Ticked consoles are never opened. Save writes these values to Idle Tour settings.ini at once and leaves the rest of the file as it is; the tour reads them when HyperSpin starts.",
+            text="While HyperSpin's own idle mode runs, Idle Tour changes wheels as a video ends: back to the main menu after the games or minutes in a console, and into the console just shown after the consoles or minutes on the main menu, whichever comes first (0 switches one off). On a game or console with no video, where HyperSpin would wait its whole idle time, it presses Down after the seconds set (0 = wait). Ticked consoles are never opened. It keeps touring for as long as HyperSpin runs; its key presses count as input to Windows, so to let Windows turn the screen off, set Stop touring after to a number of minutes. Save writes these values to Idle Tour settings.ini at once and leaves the rest of the file as it is; the tour reads them when HyperSpin starts.",
         ).pack(fill="x", padx=6, pady=(2, 4))
         self._idle_tour_file_label = self.ttk.Label(lf, text="", foreground=_FG_DIM)
         self._idle_tour_file_label.pack(anchor="w", padx=6, pady=(0, 2))

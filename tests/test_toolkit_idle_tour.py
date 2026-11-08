@@ -393,9 +393,11 @@ def test_settings_default_without_a_file(tmp_path):
     s = it.Settings()
     assert (s.console_minutes, s.games_per_console, s.main_menu_minutes, s.consoles_on_main_menu,
             s.tour_max_minutes, s.key_hold_ms, s.quiet_ms, s.end_margin_ms, s.no_video_seconds) == (
-        5, 5, 5, 5, 60, 80, 1500, 1500, 8)
+        5, 5, 5, 5, 0, 80, 1500, 1500, 8)
     assert s.skips("toolkit") and s.skips("Favorites ") and not s.skips("MAME")
     assert s.summary().endswith("Down past items with no video after 8 s")
+    assert "; no tour limit," in s.summary()
+    assert "; tour limit 60 min," in s._replace(tour_max_minutes=60).summary()
     assert s._replace(no_video_seconds=0).summary().endswith("no Down past items with no video")
 
 
@@ -447,7 +449,7 @@ def test_change_settings_keeps_every_other_byte(tmp_path):
     original = b"\xef\xbb\xbf" + it.DEFAULT_SETTINGS_TEXT.encode("utf-8")
     path.write_bytes(original)
     made = it.change_settings(path, enabled=True, games_per_console=10, console_minutes=0,
-                              consoles_on_main_menu=1, main_menu_minutes=0.0, tour_max_minutes=60,
+                              consoles_on_main_menu=1, main_menu_minutes=0.0, tour_max_minutes=0,
                               no_video_seconds=8, skip=("Toolkit", "Apple II"))
     assert made == [
         it.SettingChange("GamesPerConsole", "5", "10"),
@@ -1171,6 +1173,18 @@ def test_tour_limit_reached_while_waiting_for_a_spin_opens_nothing_more(tmp_path
     _drive(tour, fake, 10 * 60)
     assert fake.presses == []
     assert any("tour limit reached" in line for line in lines)
+
+
+def test_by_default_the_tour_never_stops(tmp_path):
+    # TourMaxMinutes is 0 by default: still changing wheels well past an hour.
+    assert it.Settings().tour_max_minutes == 0
+    tour, fake, lines = _tour(tmp_path, _settings(tour_max_minutes=it.Settings().tour_max_minutes))
+    fake.lists[MAIN] = ["Atari 2600", "Sega Genesis"]
+    _drive(tour, fake, 90 * 60)
+    late = [p.vk for i, p in enumerate(fake.presses) if _at(fake, i) > 75 * 60_000]
+    assert START in late and EXIT in late
+    assert not any("tour limit reached" in line for line in lines)
+    _assert_safe(fake, tour)
 
 
 def test_letter_jumps_dont_restart_the_count(tmp_path):

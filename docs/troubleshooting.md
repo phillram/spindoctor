@@ -836,8 +836,9 @@ stop a key press now. `%USERPROFILE%\.spindoctor\toolkit.log` has an
   number of games or consoles; then it changes wheels as the last one's video
   ends, so a long video means a long wait. On the main menu it opens only a
   console that isn't in `Skip=` and has a database; a skipped one counts, and
-  it waits for the next. After `TourMaxMinutes` (60) it stops until someone
-  uses a control. `Enabled=0` in `Idle Tour settings.ini` switches it off.
+  it waits for the next. With a tour limit (`TourMaxMinutes`; `0`, the
+  default, is none) it stops after that many minutes, until someone uses a
+  control. `Enabled=0` in `Idle Tour settings.ini` switches it off.
   `spindoctor toolkit idle-tour-settings` (or the GUI's **Idle Tour
   settings** box) shows the values it uses.
 - **Something else is in front, or "uses a control".** It presses nothing
@@ -891,13 +892,15 @@ Since the idle tour was installed, the display stays on all night.
 
 **Cause:** Windows counts the tour's key presses as input, so its screen
 timeout starts over at each wheel change (HyperSpin's own idle timer ignores
-them).
+them). By default (`TourMaxMinutes=0`) the tour never stops, so the screen
+stays on for as long as HyperSpin runs.
 
-**Fix:** the tour stops changing wheels after `TourMaxMinutes` (60 by default)
-and leaves HyperSpin's idle mode on the main menu, so the screen turns off
-after Windows' own timeout from then. Lower `TourMaxMinutes` in
-`Idle Tour settings.ini` (beside `Idle Tour.bat`) for a shorter tour; `0`
-means it never stops.
+**Fix:** set a tour limit: `TourMaxMinutes` in `Idle Tour settings.ini`
+(beside `Idle Tour.bat`), `spindoctor toolkit idle-tour-settings
+--tour-max-minutes 60`, or **Stop touring after** in the GUI's **Idle Tour
+settings** box. After that many minutes the tour stops changing wheels and
+leaves HyperSpin's idle mode on the main menu, so the screen turns off after
+Windows' own timeout from then. It starts again after someone uses a control.
 
 ### A script's key presses to HyperSpin go missing, or open the wrong thing
 

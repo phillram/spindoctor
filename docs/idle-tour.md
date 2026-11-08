@@ -8,7 +8,7 @@ The idle tour, `spindoctor toolkit idle-tour`, runs beside HyperSpin and changes
 - **On the main menu:** after 5 consoles or 5 minutes, it presses Start on the console whose video just played, just as that video ends. Skipped consoles count but are never opened; it waits for the next one.
 - **On a game or console with no video,** where HyperSpin's idle mode would wait its whole idle time (5 minutes) before spinning again, it presses Down after 8 seconds. The item that brings up counts like any other.
 - **When someone uses a control,** HyperSpin's idle mode stops as it always does, and the tour stops with it. It starts counting again when HyperSpin's idle mode comes back.
-- **After 60 minutes** it stops changing wheels and leaves HyperSpin's idle mode on the main menu, so Windows can turn the screen off.
+- **It keeps touring** for as long as HyperSpin's idle mode runs. Its key presses count as input to Windows, so the screen stays on meanwhile. With a tour limit (`TourMaxMinutes`) it stops changing wheels after that many minutes and leaves HyperSpin's idle mode on the main menu, so Windows can turn the screen off.
 
 The counts and times are [settings](#settings), which the GUI and `spindoctor toolkit idle-tour-settings` change. Windows only.
 
@@ -87,7 +87,7 @@ To switch the tour off without uninstalling it, set `Enabled=0` in its settings 
 | `ConsoleMinutes` | `5` | Minutes in a console before going back. `0` switches it off. |
 | `ConsolesOnMainMenu` | `5` | Consoles shown by HyperSpin's idle spins on the main menu before opening one, skipped ones included. `0` switches it off. |
 | `MainMenuMinutes` | `5` | Minutes on the main menu before opening a console. `0` switches it off. |
-| `TourMaxMinutes` | `60` | After this long it stops changing wheels and ends on the main menu, so Windows can turn the screen off (the tour's key presses count as input to Windows). It starts again after someone uses a control. `0` = never stop. |
+| `TourMaxMinutes` | `0` | The tour limit. `0` = never stop: it tours for as long as HyperSpin's idle mode runs. With a number of minutes, it stops changing wheels after that long and ends on the main menu, so Windows can turn the screen off (the tour's key presses count as input to Windows). It starts again after someone uses a control. |
 | `Skip` | `Toolkit\|Favorites\|Most Played\|Recently Played` | Consoles it never opens, by main-menu name, separated by `\|`, ignoring case. Wheels with no `Databases\<name>\<name>.xml` are skipped too. |
 | `PauseWhile` | (none) | Programs, by EXE name separated by `\|` (`.exe` may be left off), during which it presses nothing, for example a tool that drives HyperSpin itself. |
 | `NoVideoSeconds` | `8` | Seconds on a game or console with no video before it presses Down to the next one ([below](#items-with-no-video)); at least 2. `0` = wait for HyperSpin's own next spin. |
@@ -154,7 +154,7 @@ Worth knowing for any script that drives HyperSpin with key presses (seen on Hyp
 The tour logs to `%USERPROFILE%\.spindoctor\toolkit.log` (see [Storage locations](spindoctor-files.md#toolkitlog)), in `idle-tour:` lines:
 
 ```
-2026-11-07 17:19:02  idle-tour: started (a console for 3 games, the main menu for 1 consoles, whichever first; tour limit 60 min, 4 wheel(s) skipped, Down past items with no video after 8 s)
+2026-11-07 17:19:02  idle-tour: started (a console for 3 games, the main menu for 1 consoles, whichever first; no tour limit, 4 wheel(s) skipped, Down past items with no video after 8 s)
 2026-11-07 17:19:40  idle-tour: HyperSpin's idle mode is running in Main Menu
 2026-11-07 17:19:40  idle-tour: main menu: console 1 is Sammy Atomiswave (45.9 s): opening it as its video ends
 2026-11-07 17:20:25  idle-tour: opened Sammy Atomiswave after 0.8 min, 1 consoles on the main menu

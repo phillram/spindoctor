@@ -107,7 +107,7 @@ class Settings(NamedTuple):
     games_per_console: int = 5
     main_menu_minutes: float = 5.0
     consoles_on_main_menu: int = 5
-    tour_max_minutes: float = 60.0
+    tour_max_minutes: float = 0.0       # 0 = never stop
     skip: tuple = DEFAULT_SKIP
     pause_while: tuple = ()
     key_hold_ms: int = 80
@@ -126,8 +126,9 @@ class Settings(NamedTuple):
             return " or ".join(parts) if parts else "never"
         return (f"a console for {limit(self.console_minutes, self.games_per_console, 'games')}, "
                 f"the main menu for {limit(self.main_menu_minutes, self.consoles_on_main_menu, 'consoles')}, "
-                "whichever first; tour limit "
-                + (f"{self.tour_max_minutes:g} min" if self.tour_max_minutes > 0 else "none")
+                "whichever first; "
+                + (f"tour limit {self.tour_max_minutes:g} min" if self.tour_max_minutes > 0
+                   else "no tour limit")
                 + f", {len(self.skip)} wheel(s) skipped, "
                 + (f"Down past items with no video after {self.no_video_seconds:g} s"
                    if self.no_video_seconds > 0 else "no Down past items with no video"))
@@ -161,10 +162,12 @@ DEFAULT_SETTINGS_TEXT = (
     "GamesPerConsole=5\r\n"
     "MainMenuMinutes=5\r\n"
     "ConsolesOnMainMenu=5\r\n"
-    "; The tour's key presses keep the screen awake. After this many minutes it\r\n"
-    "; stops changing wheels, ending on the main menu, so Windows can turn the\r\n"
-    "; screen off. It starts again after someone uses a control. 0 = never stop.\r\n"
-    "TourMaxMinutes=60\r\n"
+    "; Tour limit. 0 = never stop: it tours for as long as HyperSpin's idle mode\r\n"
+    "; runs. With a number of minutes it stops changing wheels after that long,\r\n"
+    "; ending on the main menu, so Windows can turn the screen off (the tour's key\r\n"
+    "; presses count as input to Windows). It starts again after someone uses a\r\n"
+    "; control.\r\n"
+    "TourMaxMinutes=0\r\n"
     "; Consoles it never opens (main-menu names, separated by |). Wheels with no\r\n"
     "; database are skipped too.\r\n"
     "Skip=" + "|".join(DEFAULT_SKIP) + "\r\n"

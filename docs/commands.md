@@ -1118,7 +1118,8 @@ Without `--settings` it uses the built-in settings. It exits 0 when HyperSpin cl
 ```bat
 spindoctor toolkit idle-tour-settings                                        :: show them
 spindoctor toolkit idle-tour-settings --consoles-on-main-menu 1 --games-per-console 10
-spindoctor toolkit idle-tour-settings --console-minutes 0 --main-menu-minutes 0 --tour-max-minutes 60
+spindoctor toolkit idle-tour-settings --console-minutes 0 --main-menu-minutes 0   :: counts only
+spindoctor toolkit idle-tour-settings --tour-max-minutes 60                  :: stop after an hour (0 = never, the default)
 spindoctor toolkit idle-tour-settings --skip "Toolkit|Favorites|Apple II"    :: "" for none
 spindoctor toolkit idle-tour-settings --no-video-seconds 0                   :: no Down past items with no video
 spindoctor toolkit idle-tour-settings --disabled                             :: Enabled=0 (--enabled for 1)

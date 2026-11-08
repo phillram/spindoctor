@@ -507,12 +507,14 @@ def test_settings_command_changes_only_the_keys_given(cabinet):
     assert result.exit_code == 0, result.output
     assert "GamesPerConsole: 5 → 10" in result.output and "ConsolesOnMainMenu: 5 → 1" in result.output
     assert "NoVideoSeconds: 8 → 12" in result.output
-    assert "TourMaxMinutes" not in result.output and "Enabled" not in result.output   # already so
+    assert "TourMaxMinutes: 0 → 60" in result.output     # a tour limit (none by default)
+    assert "Enabled" not in result.output   # already so
     expected = before
     for old, new in ((b"GamesPerConsole=5\r", b"GamesPerConsole=10\r"),
                      (b"ConsoleMinutes=5\r", b"ConsoleMinutes=0\r"),
                      (b"ConsolesOnMainMenu=5\r", b"ConsolesOnMainMenu=1\r"),
                      (b"MainMenuMinutes=5\r", b"MainMenuMinutes=0\r"),
+                     (b"TourMaxMinutes=0\r", b"TourMaxMinutes=60\r"),
                      (b"NoVideoSeconds=8\r", b"NoVideoSeconds=12\r"),
                      (b"Skip=Toolkit|Favorites|Most Played|Recently Played\r", b"Skip=Toolkit|Apple II\r")):
         assert expected.count(old) == 1, old
@@ -591,7 +593,7 @@ def test_gui_settings_form_loads_and_saves_the_idle_tour_settings(cabinet, monke
         # Loaded at start: the file's values, the main menu as the skip list
         # (skipped names that aren't on it at the end), the file's place.
         assert app._idle_tour_vars["games_per_console"].get() == "10"
-        assert app._idle_tour_vars["tour_max_minutes"].get() == "60"
+        assert app._idle_tour_vars["tour_max_minutes"].get() == "0"      # no tour limit by default
         assert app._idle_tour_vars["no_video_seconds"].get() == "8"
         lb = app._idle_tour_skip_lb
         assert list(lb.get(0, "end")) == ["MAME", "Toolkit", "Atari 2600", "Favorites"]
@@ -604,6 +606,7 @@ def test_gui_settings_form_loads_and_saves_the_idle_tour_settings(cabinet, monke
         app._idle_tour_enabled_var.set(False)
         app._idle_tour_vars["consoles_on_main_menu"].set("1")
         app._idle_tour_vars["main_menu_minutes"].set("2.5")
+        app._idle_tour_vars["tour_max_minutes"].set("45")
         app._idle_tour_vars["no_video_seconds"].set("0")
         lb.selection_clear(0, "end")
         lb.selection_set(2)
@@ -611,7 +614,7 @@ def test_gui_settings_form_loads_and_saves_the_idle_tour_settings(cabinet, monke
         assert ran == [["toolkit", "idle-tour-settings", "--settings", str(path), "--disabled",
                         "--games-per-console", "10", "--console-minutes", "5",
                         "--consoles-on-main-menu", "1", "--main-menu-minutes", "2.5",
-                        "--tour-max-minutes", "60", "--no-video-seconds", "0", "--skip", "Atari 2600"]]
+                        "--tour-max-minutes", "45", "--no-video-seconds", "0", "--skip", "Atari 2600"]]
         # What it runs writes what the form shows; Load reads it back.
         assert _run(*ran[0]).exit_code == 0
         app._load_idle_tour_settings()
@@ -619,6 +622,8 @@ def test_gui_settings_form_loads_and_saves_the_idle_tour_settings(cabinet, monke
         assert app._idle_tour_vars["main_menu_minutes"].get() == "2.5"
         assert app._idle_tour_vars["no_video_seconds"].get() == "0"
         assert it.read_settings(path).no_video_seconds == 0
+        assert app._idle_tour_vars["tour_max_minutes"].get() == "45"
+        assert it.read_settings(path).tour_max_minutes == 45
         assert [lb.get(i) for i in lb.curselection()] == ["Atari 2600"]
         assert list(lb.get(0, "end")) == ["MAME", "Toolkit", "Atari 2600"]
 

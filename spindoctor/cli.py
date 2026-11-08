@@ -5314,7 +5314,8 @@ def toolkit_idle_tour(settings_path, self_test):
 @click.option("--main-menu-minutes", type=click.FloatRange(0, 1440), default=None,
               help="Minutes on the main menu before it opens a console (0 = no time limit).")
 @click.option("--tour-max-minutes", type=click.FloatRange(0, 1440), default=None,
-              help="Minutes after which it stops on the main menu so the screen can turn off (0 = never).")
+              help="Tour limit: minutes after which it stops on the main menu, so Windows can turn "
+                   "the screen off (0 = never stop, the default).")
 @click.option("--no-video-seconds", type=click.FloatRange(0, 3600), default=None,
               help="Seconds on a game or console with no video before it presses Down to the "
                    "next one (0 = wait for HyperSpin's idle Time).")
