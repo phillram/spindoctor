@@ -1065,6 +1065,7 @@ spindoctor toolkit exit-to-windows          :: countdown, close HyperSpin, back 
 spindoctor toolkit reset-button-lights      :: zero the PAC-LED64 flash speeds (HyperSpin keeps running)
 spindoctor toolkit set-resolution           :: Windows back to HyperSpin's [Resolution]
 spindoctor toolkit idle-tour --self-test    :: what the idle tour sees now (presses nothing)
+spindoctor toolkit idle-tour-settings       :: show the idle tour's settings; options change them
 
 :: put them on a Toolkit wheel
 spindoctor install-tools --tool shut-down-cabinet,restart-cabinet,exit-to-windows --add-to-system Toolkit --apply
@@ -1103,14 +1104,27 @@ spindoctor toolkit set-resolution --no-note                     :: no note on sc
 
 It reads `[Resolution] Width` and `Height` from `<hyperspin_dir>\Settings\Settings.ini`, keeps the primary display's colour depth and lets Windows pick the refresh rate, tests the mode first (`ChangeDisplaySettingsExW` with `CDS_TEST`) and then sets and saves it (`CDS_UPDATEREGISTRY`), so it sticks after a restart. Nothing changes when the display is already at that size. It logs `set-resolution: 1280x720 -> 1920x1080` to `toolkit.log` and shows a 3-second note ("Resolution set to 1920 × 1080", "Already 1920 × 1080" or "Couldn't set 1920 × 1080") that never takes the focus. Exit code 1 when there's no size to set or the display refused it. No separate resolution tool is needed.
 
-**`idle-tour`** makes HyperSpin's idle mode visit random consoles. It runs beside HyperSpin until HyperSpin closes, started with it by the Startup Script (`install-tools --tool idle-tour --apply`). While HyperSpin's own idle mode runs, it presses Exit in a console after `GamesPerConsole` games or `ConsoleMinutes` (5 and 5 by default), and Start on the main menu after `ConsolesOnMainMenu` consoles or `MainMenuMinutes`, on the console the idle spin landed on unless it's skipped. It reads where HyperSpin is from HyperSpin's live `log.txt`, acts only right after an idle spin lands, never presses Exit on the main menu (that opens HyperSpin's exit menu, default Yes), and presses nothing while a game runs, while HyperSpin isn't in front, or once someone uses a control. HyperSpin's Start and Exit keys come from its `[P1 Controls]`. Its lines in `toolkit.log` start with `idle-tour:`.
+**`idle-tour`** makes HyperSpin's idle mode visit random consoles. It runs beside HyperSpin until HyperSpin closes, started with it by the Startup Script (`install-tools --tool idle-tour --apply`). While HyperSpin's own idle mode runs, it presses Exit in a console after `GamesPerConsole` games or `ConsoleMinutes` (5 and 5 by default; the first game after it opened the console counts), and Start on the main menu after `ConsolesOnMainMenu` consoles or `MainMenuMinutes`, on the console whose video just played unless it's skipped, each time just as that video ends (the length comes from the `.mp4` or `.flv`; when it can't be read, right after the next idle spin lands). On a game or console with no video, where HyperSpin would wait its whole idle `Time`, it presses Down after `NoVideoSeconds` (8). It reads where HyperSpin is from HyperSpin's live `log.txt`, presses only while a video plays with nothing logged since it began or right after an idle spin lands, never presses Exit on the main menu (that opens HyperSpin's exit menu, default Yes), and presses nothing while a game runs, while HyperSpin isn't in front, or once someone uses a control. When HyperSpin reads a joystick itself (`[P1 Joystick] Enabled=true`), which Windows doesn't see, it changes wheels only right after an idle spin lands. HyperSpin's Start, Exit and Down keys come from its `[P1 Controls]`. Its lines in `toolkit.log` start with `idle-tour:`.
 
 ```bat
 spindoctor toolkit idle-tour --settings "D:\Arcade\RocketLauncher\Modules\HyperLaunch\Tools\spindoctor\Idle Tour settings.ini"
-spindoctor toolkit idle-tour --self-test    :: settings, HyperSpin's folder, keys and log state; presses nothing
+spindoctor toolkit idle-tour --self-test    :: settings, HyperSpin's folder, keys, log state, video length; presses nothing
 ```
 
 Without `--settings` it uses the built-in settings. It exits 0 when HyperSpin closes, when switched off (`Enabled=0`) or when another copy runs. How it works, the settings and the hazards: [Idle tour](idle-tour.md).
+
+**`idle-tour-settings`** shows or changes the idle tour's settings file, `Idle Tour settings.ini` beside the `Idle Tour.bat` that HyperSpin's Startup Script starts (else in install-tools' folder; `--settings` picks another). With no option it lists them; each option sets one key, and every other byte of the file stays as it is. The GUI's **Idle Tour settings** box (Custom Wheels tab) runs it. Not Windows-only.
+
+```bat
+spindoctor toolkit idle-tour-settings                                        :: show them
+spindoctor toolkit idle-tour-settings --consoles-on-main-menu 1 --games-per-console 10
+spindoctor toolkit idle-tour-settings --console-minutes 0 --main-menu-minutes 0 --tour-max-minutes 60
+spindoctor toolkit idle-tour-settings --skip "Toolkit|Favorites|Apple II"    :: "" for none
+spindoctor toolkit idle-tour-settings --no-video-seconds 0                   :: no Down past items with no video
+spindoctor toolkit idle-tour-settings --disabled                             :: Enabled=0 (--enabled for 1)
+```
+
+It prints each change (`GamesPerConsole: 5 → 10`); a value the file already has isn't rewritten, and a key the file doesn't have yet is added to its `[IdleTour]` section. Counts are whole numbers from 0 to 9999, minutes 0 to 1440 and `--no-video-seconds` 0 to 3600, where 0 switches that limit or step off. Exit code 1 when there's no settings file (install the tour first) or a value can't be written (a name the file's code page can't hold). The tour reads them the next time HyperSpin starts.
 
 ---
 

@@ -5268,16 +5268,26 @@ def toolkit_idle_tour(settings_path, self_test):
     it (spindoctor install-tools --tool idle-tour --apply). HyperSpin's own
     idle mode (Settings.ini [AttractMode] Active=true) spins only the wheel
     you are on. While it runs, the tour changes wheels (default settings):
-      • after 5 games or 5 minutes in a console, whichever first, it presses
-        Exit, back to the main menu;
+      • after 5 games or 5 minutes in a console, whichever first (the first
+        game after it opened the console counts), it presses Exit, back to
+        the main menu, as the last game's video ends;
       • after 5 consoles or 5 minutes on the main menu it presses Start on
-        the console the idle spin landed on (unless skipped).
-    It knows where HyperSpin is from HyperSpin's log.txt, which shows the
-    selections and idle spins only while [LEDBlinky] Active=true. It acts only
-    right after an idle spin lands, never presses Exit on the main menu (that
-    opens HyperSpin's exit menu), and does nothing while a game runs, while
-    HyperSpin isn't in front, or once someone uses a control. Logged to
-    ~/.spindoctor/toolkit.log.
+        the console whose video just played, as that video ends (skipped
+        consoles count but are never opened).
+    Video lengths come from the .mp4 and .flv files; when one can't be read it
+    changes right after the next idle spin lands. On a game or console with
+    no video, where HyperSpin would wait its whole idle Time, it presses Down
+    after 8 seconds (NoVideoSeconds). It knows where HyperSpin is from HyperSpin's
+    log.txt, which shows the selections and idle spins only while [LEDBlinky]
+    Active=true. It presses only while a video plays with nothing logged since
+    it began, or right after an idle spin lands, never presses Exit on the
+    main menu (that opens HyperSpin's exit menu), and does nothing while a
+    game runs, while HyperSpin isn't in front, or once someone uses a control.
+    When HyperSpin reads a joystick itself ([P1 Joystick] Enabled=true), which
+    Windows doesn't see, it changes wheels only right after an idle spin lands,
+    and presses no Down.
+    Change the settings with `spindoctor toolkit idle-tour-settings` or the
+    GUI's Custom Wheels tab. Logged to ~/.spindoctor/toolkit.log.
     """
     if sys.platform != "win32":
         err_console.print("[red]spindoctor toolkit idle-tour runs on Windows only.[/red]")
@@ -5288,6 +5298,79 @@ def toolkit_idle_tour(settings_path, self_test):
         _cfg(), Path(settings_path) if settings_path else None, self_test=self_test,
         echo=lambda line: console.print(line, markup=False, highlight=False),
     ))
+
+
+@toolkit_group.command("idle-tour-settings")
+@click.option("--settings", "settings_path", type=click.Path(dir_okay=False), default=None,
+              help="The settings file. Default: \"Idle Tour settings.ini\" beside the Idle "
+                   "Tour.bat HyperSpin's Startup Script starts, else in install-tools' folder.")
+@click.option("--enabled/--disabled", default=None, help="Switch the tour on or off (Enabled=1 / 0).")
+@click.option("--games-per-console", type=click.IntRange(0, 9999), default=None,
+              help="Games shown in a console before it goes back to the main menu (0 = no count).")
+@click.option("--console-minutes", type=click.FloatRange(0, 1440), default=None,
+              help="Minutes in a console before it goes back (0 = no time limit).")
+@click.option("--consoles-on-main-menu", type=click.IntRange(0, 9999), default=None,
+              help="Consoles shown on the main menu before it opens one (0 = no count).")
+@click.option("--main-menu-minutes", type=click.FloatRange(0, 1440), default=None,
+              help="Minutes on the main menu before it opens a console (0 = no time limit).")
+@click.option("--tour-max-minutes", type=click.FloatRange(0, 1440), default=None,
+              help="Minutes after which it stops on the main menu so the screen can turn off (0 = never).")
+@click.option("--no-video-seconds", type=click.FloatRange(0, 3600), default=None,
+              help="Seconds on a game or console with no video before it presses Down to the "
+                   "next one (0 = wait for HyperSpin's idle Time).")
+@click.option("--skip", default=None,
+              help='Main-menu consoles it never opens, separated by | ("" for none).')
+def toolkit_idle_tour_settings(settings_path, enabled, games_per_console, console_minutes,
+                               consoles_on_main_menu, main_menu_minutes, tour_max_minutes,
+                               no_video_seconds, skip):
+    """Show or change the idle tour's settings.
+
+    \b
+    With no option it shows them. Each option sets one key of the tour's
+    settings file ("Idle Tour settings.ini", which install-tools writes beside
+    Idle Tour.bat); every other byte of the file stays as it is (comments,
+    other keys, encoding and line ends), and a value the file already has
+    isn't rewritten. The tour reads them when it starts, which is when
+    HyperSpin starts. Whichever comes first changes wheels; 0 switches a
+    limit off. For example, one console on the main menu, then 10 games:
+      spindoctor toolkit idle-tour-settings --consoles-on-main-menu 1 --games-per-console 10
+    """
+    from . import idle_tour
+
+    path = Path(settings_path) if settings_path else idle_tour.settings_location(_cfg())
+    if path is None:
+        err_console.print("[red]No idle tour settings to show:[/red] hyperspin_dir and "
+                          "rocketlauncher_dir are not set. Pass --settings.")
+        sys.exit(1)
+    if not path.is_file():
+        err_console.print(
+            f"[red]No idle tour settings at[/red] {escape(str(path))}. Install the tour first "
+            "(spindoctor install-tools --tool idle-tour), or pass --settings.", highlight=False)
+        sys.exit(1)
+    changes = {name: value for name, value in (
+        ("enabled", enabled), ("games_per_console", games_per_console),
+        ("console_minutes", console_minutes), ("consoles_on_main_menu", consoles_on_main_menu),
+        ("main_menu_minutes", main_menu_minutes), ("tour_max_minutes", tour_max_minutes),
+        ("no_video_seconds", no_video_seconds), ("skip", skip)) if value is not None}
+    console.print(f"Idle tour settings: [cyan]{escape(str(path))}[/cyan]", highlight=False)
+    if changes:
+        try:
+            made = idle_tour.change_settings(path, **changes)
+        except (OSError, ValueError) as exc:   # UnicodeEncodeError is a ValueError
+            err_console.print(f"[red]Not changed:[/red] {escape(str(exc))}", highlight=False)
+            sys.exit(1)
+        for change in made:
+            console.print(f"[green]~[/green] {change.key}: {escape(change.old or '(empty)')} → "
+                          f"{escape(change.new or '(empty)')}", highlight=False)
+        if made:
+            console.print("[dim]The tour reads them the next time HyperSpin starts.[/dim]")
+        else:
+            console.print("[dim]Nothing to change: the file already has these values.[/dim]")
+        return
+    settings = idle_tour.read_settings(path)
+    for e in idle_tour.EDITABLE:
+        value = idle_tour.setting_text(e.kind, getattr(settings, e.field))
+        console.print(f"  {e.key:<20} {escape(value) or '(empty)'}", highlight=False)
 
 
 # ─── ignore ───────────────────────────────────────────────────────────────────

@@ -831,19 +831,59 @@ stop a key press now. `%USERPROFILE%\.spindoctor\toolkit.log` has an
   line is followed by a warning when either is off. In single mode
   (`[Main] Menu_Mode=single`) there is no main menu, and the tour presses
   nothing.
-- **It's waiting on purpose.** It acts only right after an idle spin lands, so
-  nothing happens before HyperSpin's idle mode has started (`[AttractMode]
-  Time`, 300 s by default) and shown the set number of games or consoles. On
-  the main menu it opens only a console that isn't in `Skip=` and has a
-  database; landing on a skipped one means waiting for the next spin. After
-  `TourMaxMinutes` (60) it stops until someone uses a control. `Enabled=0` in
-  `Idle Tour settings.ini` switches it off.
+- **It's waiting on purpose.** Nothing happens before HyperSpin's idle mode
+  has started (`[AttractMode] Time`, 300 s by default) and shown the set
+  number of games or consoles; then it changes wheels as the last one's video
+  ends, so a long video means a long wait. On the main menu it opens only a
+  console that isn't in `Skip=` and has a database; a skipped one counts, and
+  it waits for the next. After `TourMaxMinutes` (60) it stops until someone
+  uses a control. `Enabled=0` in `Idle Tour settings.ini` switches it off.
+  `spindoctor toolkit idle-tour-settings` (or the GUI's **Idle Tour
+  settings** box) shows the values it uses.
 - **Something else is in front, or "uses a control".** It presses nothing
   while HyperSpin isn't the front window (a tool that steals the focus at
   start), or while a `PauseWhile` program runs. Any keyboard or mouse input,
   including a program sending keys or a mouse that drifts, counts as someone
   using a control: the tour then waits for HyperSpin's idle mode to start
   again.
+
+### The idle tour changes wheels right after a spin, not as a video ends
+
+The idle tour opens a console (or goes back to the main menu) just after
+HyperSpin's idle spin lands, so the video of the console it opens isn't seen.
+
+**Cause:** that's its fallback when it can't time the video's end. Its
+`toolkit.log` line for the item says which:
+
+- **`(video length unknown)`:** a `.mp4` or `.flv` whose length can't be read
+  in the wheel's video folder (`Settings\<wheel>.ini` `[video defaults]
+  path=`, else `Media\<wheel>\Video`), or no video at all with
+  `NoVideoSeconds=0` (otherwise an item with no video gets a Down, below).
+  `spindoctor toolkit idle-tour --self-test` shows the selection's video
+  length and the folder.
+- **`the video ended early`:** HyperSpin spun before the end the file states,
+  for example a video cut short without its header updated.
+- **`(joystick)`:** HyperSpin reads a joystick itself (`[P1 Joystick]` or
+  `[P2 Joystick]` `Enabled=true`). Windows doesn't see those presses, so the
+  tour can't tell someone is playing, and pressing Start at a video's end
+  could answer Yes to an exit menu a joystick opened. It keeps to the spin
+  landings, which show HyperSpin's idle mode is still running, and presses
+  no Down past items with no video (`(no video, joystick)`). Mapping the pad
+  to keys (JoyToKey and the like) instead lets Windows see it.
+
+### The idle tour moves on from a game after a few seconds
+
+During HyperSpin's idle mode the wheel steps to the next game (or console) a
+few seconds after landing on one, instead of waiting for a spin.
+
+**Cause:** that item has no video (no `.mp4` or `.flv`, or only a still), and
+HyperSpin's idle mode would sit on it for its whole idle `Time` (5 minutes by
+default) before spinning again. After `NoVideoSeconds` (8) the idle tour
+presses Down once; its `toolkit.log` line says `(no video: stepping on in
+8 s)`. Adding the missing videos fixes it at the source. `NoVideoSeconds=0` in
+`Idle Tour settings.ini` (or `spindoctor toolkit idle-tour-settings
+--no-video-seconds 0`, or the GUI's **Idle Tour settings** box) switches the
+step off, and HyperSpin then waits as before.
 
 ### The cabinet's screen no longer turns off when nobody plays
 

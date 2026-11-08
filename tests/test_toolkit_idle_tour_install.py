@@ -16,6 +16,7 @@ from click.testing import CliRunner
 
 import spindoctor.config as config_mod
 from spindoctor import health
+from spindoctor import idle_tour as it
 from spindoctor import startup_script as ss
 from spindoctor import toolkit_helpers as th
 from spindoctor.cli import cli
@@ -463,6 +464,81 @@ def test_doctor_runs_the_idle_tour_check(cabinet):
     assert "Idle tour" in names and names.index("Idle tour") == names.index("SpinDoctor helpers") + 1
 
 
+# ── the settings: toolkit idle-tour-settings ─────────────────────────────────
+
+def test_settings_are_found_beside_the_bat_the_startup_script_starts(cabinet, tmp_path):
+    cfg = config_mod.load_config()
+    assert it.settings_location(cfg) == cabinet["menu"] / SETTINGS_FILE     # install-tools' folder
+    other = tmp_path / "elsewhere"
+    assert _run("install-tools", "--tool", "idle-tour", "--output-dir", str(other), "--apply").exit_code == 0
+    assert it.settings_location(cfg).resolve() == (other / SETTINGS_FILE).resolve()
+    assert it.settings_location(Config()) is None
+    # An entry edited by hand to run the .bat by its full path from another
+    # folder: the .bat reads the settings beside itself.
+    bat = (other / "Idle Tour.bat").resolve()
+    text = cabinet["ini"].read_text(encoding="utf-8")
+    text = text.replace("Program_To_Run_Target_3=Idle Tour.bat", f"Program_To_Run_Target_3={bat}")
+    text = text.replace(f"Program_To_Run_Working_Dir_3={other.resolve()}",
+                        f"Program_To_Run_Working_Dir_3={cabinet['hs']}")
+    cabinet["ini"].write_text(text, encoding="utf-8")
+    assert f"Program_To_Run_Target_3={bat}" in text and f"Working_Dir_3={cabinet['hs']}" in text
+    assert it.settings_location(cfg) == bat.parent / SETTINGS_FILE
+
+
+def test_settings_command_shows_the_installed_settings(cabinet):
+    missing = _run("toolkit", "idle-tour-settings")
+    assert missing.exit_code == 1 and "Install the tour first" in missing.output
+    assert _run("install-tools", "--tool", "idle-tour").exit_code == 0
+    result = _run("toolkit", "idle-tour-settings")
+    assert result.exit_code == 0, result.output
+    assert re.search(r"GamesPerConsole\s+5\b", result.output)
+    assert re.search(r"NoVideoSeconds\s+8\b", result.output)
+    assert re.search(r"Skip\s+Toolkit\|Favorites\|Most Played\|Recently Played", result.output)
+
+
+def test_settings_command_changes_only_the_keys_given(cabinet):
+    assert _run("install-tools", "--tool", "idle-tour").exit_code == 0
+    path = cabinet["menu"] / SETTINGS_FILE
+    before = path.read_bytes()
+    args = ("toolkit", "idle-tour-settings", "--consoles-on-main-menu", "1", "--games-per-console", "10",
+            "--console-minutes", "0", "--main-menu-minutes", "0", "--tour-max-minutes", "60",
+            "--no-video-seconds", "12", "--skip", "Toolkit|Apple II", "--enabled")
+    result = _run(*args)
+    assert result.exit_code == 0, result.output
+    assert "GamesPerConsole: 5 → 10" in result.output and "ConsolesOnMainMenu: 5 → 1" in result.output
+    assert "NoVideoSeconds: 8 → 12" in result.output
+    assert "TourMaxMinutes" not in result.output and "Enabled" not in result.output   # already so
+    expected = before
+    for old, new in ((b"GamesPerConsole=5\r", b"GamesPerConsole=10\r"),
+                     (b"ConsoleMinutes=5\r", b"ConsoleMinutes=0\r"),
+                     (b"ConsolesOnMainMenu=5\r", b"ConsolesOnMainMenu=1\r"),
+                     (b"MainMenuMinutes=5\r", b"MainMenuMinutes=0\r"),
+                     (b"NoVideoSeconds=8\r", b"NoVideoSeconds=12\r"),
+                     (b"Skip=Toolkit|Favorites|Most Played|Recently Played\r", b"Skip=Toolkit|Apple II\r")):
+        assert expected.count(old) == 1, old
+        expected = expected.replace(old, new)
+    assert path.read_bytes() == expected
+    again = _run(*args)
+    assert "Nothing to change" in again.output and path.read_bytes() == expected
+    assert _run("toolkit", "idle-tour-settings", "--disabled", "--skip", "").exit_code == 0
+    s = it.read_settings(path)
+    assert not s.enabled and s.skip == ()
+    assert _run("toolkit", "idle-tour-settings", "--games-per-console", "-1").exit_code == 2
+    assert _run("toolkit", "idle-tour-settings", "--console-minutes", "2000").exit_code == 2
+    assert _run("toolkit", "idle-tour-settings", "--no-video-seconds", "4000").exit_code == 2
+    before = path.read_bytes()
+    nan = _run("toolkit", "idle-tour-settings", "--console-minutes", "nan")   # click's range may let it by
+    assert nan.exit_code in (1, 2) and path.read_bytes() == before
+
+
+def test_settings_command_reports_a_file_it_cant_change(cabinet, tmp_path):
+    path = tmp_path / "ansi.ini"
+    path.write_bytes(b"[IdleTour]\r\nSkip=Pok\xe9mon Mini\r\n")
+    result = _run("toolkit", "idle-tour-settings", "--settings", str(path), "--skip", "漢字")
+    assert result.exit_code == 1 and "Not changed" in result.output
+    assert path.read_bytes() == b"[IdleTour]\r\nSkip=Pok\xe9mon Mini\r\n"
+
+
 # ── GUI ──────────────────────────────────────────────────────────────────────
 
 def test_gui_passes_apply_for_the_idle_tour_when_apply_is_ticked(monkeypatch):
@@ -494,5 +570,77 @@ def test_gui_passes_apply_for_the_idle_tour_when_apply_is_ticked(monkeypatch):
         app._tools_pick_vars["refresh-all"].set(False)
         app._run_install_tools_into_wheel()
         assert len(ran) == 4 and "starts with HyperSpin" in prompts[-1]
+    finally:
+        app.root.destroy()
+
+
+def test_gui_settings_form_loads_and_saves_the_idle_tour_settings(cabinet, monkeypatch):
+    from tests.test_gui import _build_gui_for_test
+
+    assert _run("install-tools", "--tool", "idle-tour").exit_code == 0
+    path = cabinet["menu"] / SETTINGS_FILE
+    it.change_settings(path, games_per_console=10, skip=("Toolkit", "Favorites"))
+    menu = cabinet["hs"] / "Databases" / "Main Menu"
+    menu.mkdir(parents=True)
+    (menu / "Main Menu.xml").write_text(
+        '<menu>\n<game name="MAME"/>\n<game name="Toolkit"/>\n<game name="Atari 2600"/>\n'
+        '<game name="toolkit"/>\n</menu>\n',                  # listed twice: shown once
+        encoding="utf-8")
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        # Loaded at start: the file's values, the main menu as the skip list
+        # (skipped names that aren't on it at the end), the file's place.
+        assert app._idle_tour_vars["games_per_console"].get() == "10"
+        assert app._idle_tour_vars["tour_max_minutes"].get() == "60"
+        assert app._idle_tour_vars["no_video_seconds"].get() == "8"
+        lb = app._idle_tour_skip_lb
+        assert list(lb.get(0, "end")) == ["MAME", "Toolkit", "Atari 2600", "Favorites"]
+        assert [lb.get(i) for i in lb.curselection()] == ["Toolkit", "Favorites"]
+        assert str(path) in app._idle_tour_file_label.cget("text")
+
+        ran = []
+        monkeypatch.setattr(app, "_run_cli",
+                            lambda _bin, args, on_complete=None: ran.append(list(args)))
+        app._idle_tour_enabled_var.set(False)
+        app._idle_tour_vars["consoles_on_main_menu"].set("1")
+        app._idle_tour_vars["main_menu_minutes"].set("2.5")
+        app._idle_tour_vars["no_video_seconds"].set("0")
+        lb.selection_clear(0, "end")
+        lb.selection_set(2)
+        app._save_idle_tour_settings()
+        assert ran == [["toolkit", "idle-tour-settings", "--settings", str(path), "--disabled",
+                        "--games-per-console", "10", "--console-minutes", "5",
+                        "--consoles-on-main-menu", "1", "--main-menu-minutes", "2.5",
+                        "--tour-max-minutes", "60", "--no-video-seconds", "0", "--skip", "Atari 2600"]]
+        # What it runs writes what the form shows; Load reads it back.
+        assert _run(*ran[0]).exit_code == 0
+        app._load_idle_tour_settings()
+        assert not app._idle_tour_enabled_var.get()
+        assert app._idle_tour_vars["main_menu_minutes"].get() == "2.5"
+        assert app._idle_tour_vars["no_video_seconds"].get() == "0"
+        assert it.read_settings(path).no_video_seconds == 0
+        assert [lb.get(i) for i in lb.curselection()] == ["Atari 2600"]
+        assert list(lb.get(0, "end")) == ["MAME", "Toolkit", "Atari 2600"]
+
+        # Numbers the CLI would refuse are caught before anything runs.
+        prompts = []
+        monkeypatch.setattr(app, "_flash_validation", prompts.append)
+        for field, raw, label in (("console_minutes", "-2", "Minutes in a console"),
+                                  ("games_per_console", "2.5", "Games in a console"),
+                                  ("tour_max_minutes", "nan", "Tour limit"),
+                                  ("main_menu_minutes", "5000", "Minutes on the main menu"),
+                                  ("no_video_seconds", "-1", "Seconds on an item with no video"),
+                                  ("no_video_seconds", "4000", "Seconds on an item with no video")):
+            app._load_idle_tour_settings()
+            app._idle_tour_vars[field].set(raw)
+            app._save_idle_tour_settings()
+            assert len(ran) == 1 and label in prompts[-1], (field, prompts)
+        # Not installed: the form says so and Save runs nothing.
+        path.unlink()
+        app._load_idle_tour_settings()
+        assert "Not installed yet" in app._idle_tour_file_label.cget("text")
+        assert app._idle_tour_vars["games_per_console"].get() == "5"      # the defaults
+        app._save_idle_tour_settings()
+        assert len(ran) == 1 and "Install Idle Tour first" in prompts[-1]
     finally:
         app.root.destroy()
