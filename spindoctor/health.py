@@ -2424,6 +2424,163 @@ def check_emulator_rom_paths(config: Config) -> Check:
     return parent
 
 
+def _daphne_emulator_folders(config: Config) -> dict[Path, list[str]]:
+    """Folder -> RocketLauncher emulator names, for each Daphne or Singe build.
+
+    An emulator counts when its ``Emu_Path`` names ``daphne.exe`` or a
+    ``dapinput.ini`` sits beside the exe (a renamed build).  Emulators come
+    from ``Global Emulators.ini`` and from each system's own
+    ``Settings\\<System>\\Emulators.ini``; when neither has one, from the
+    folders one level under ``emulators_dir`` holding either file (no names).
+    """
+    from pathlib import PureWindowsPath
+
+    from .daphne_keys import KEY_FILE
+
+    found: dict[Path, list[str]] = {}
+    if config.rocketlauncher_dir:
+        rl_dir = Path(config.rocketlauncher_dir)
+        settings = rl_dir / "Settings"
+        inis = [settings / "Global Emulators.ini"]
+        inis += [d / "Emulators.ini" for d in _subfolders(settings)]
+        for ini in inis:
+            try:
+                entries = _read_ini_entries(ini) if ini.is_file() else []
+            except OSError:
+                continue
+            sections: dict[str, tuple[str, dict[str, str]]] = {}
+            for section, key, value in entries:
+                if section.lower() != "roms":
+                    sections.setdefault(section.lower(), (section, {}))[1].setdefault(
+                        key.lower(), value)
+            for section, keys in sections.values():
+                emu_path = next((keys[k] for k in _EMU_PATH_KEYS if keys.get(k)), "").strip('"')
+                exe = PureWindowsPath(emu_path).name.lower()
+                for candidate in (_resolve_emu_path(emu_path, rl_dir) if emu_path else []):
+                    folder = candidate.parent
+                    if ((exe == "daphne.exe" and candidate.is_file())
+                            or (folder / KEY_FILE).is_file()):
+                        names = found.setdefault(folder, [])
+                        if section not in names:
+                            names.append(section)
+                        break
+    if not found and config.emulators_dir:
+        for folder in _subfolders(Path(config.emulators_dir)):
+            if (folder / KEY_FILE).is_file() or (folder / "daphne.exe").is_file():
+                found[folder] = []
+    return found
+
+
+def _some(items: list[str], shown: int = 3) -> str:
+    """The first *shown* items, then how many more."""
+    more = f" and {len(items) - shown} more" if len(items) > shown else ""
+    return ", ".join(items[:shown]) + more
+
+
+def check_daphne_keys(config: Config) -> Check:
+    """Daphne / Singe key files that leave an action on key 0.
+
+    Daphne 1.0.x and its Singe builds (SDL 1.2) read a ``dapinput.ini`` line
+    such as ``KEY_QUIT = 27 0 0`` as two keyboard keys and a joystick button.
+    SDL 1.2 reports keys it has no name for (volume and media keys) as 0, and
+    Daphne checks every action's two key slots, so a 0 slot isn't "no key":
+    one Volume Up press can quit, pause or tilt the game.  Actions the file
+    leaves out keep Daphne's built-in keys, most of which have a 0 slot too
+    (see :mod:`spindoctor.daphne_keys`).
+
+    Each emulator folder's ``dapinput.ini`` is read, plus the
+    ``controls\\*.ini`` files RocketLauncher's Daphne module copies over it
+    before every launch.  A file that leaves actions on key 0 is a WARN
+    naming them (quit, pause, service and test first), with the lines to
+    write: 296 (F15, a key nothing sends) in each 0 slot.  Diagnosis only.
+    """
+    from .daphne_keys import FILLER, KEY_FILE, label, read_key_file
+
+    name = "Daphne keys"
+    folders = _daphne_emulator_folders(config)
+    if not folders:
+        return Check(name=name, status=Status.INFO, detail="no Daphne or Singe emulator found")
+
+    parent = Check(name=name, status=Status.OK)
+    for folder, emulators in folders.items():
+        try:
+            with os.scandir(folder / "controls") as it:
+                controls = [Path(e.path) for e in it
+                            if e.is_file() and e.name.lower().endswith(".ini")]
+        except OSError:
+            controls = []
+        controls.sort(key=lambda p: (p.name.lower() != KEY_FILE, p.name.lower()))
+        title = ", ".join(emulators) or folder.name
+        for path in [folder / KEY_FILE] + controls:
+            report = read_key_file(path)
+            node = Check(name=f"{title}: {path}", status=Status.OK)
+            parent.children.append(node)
+            if not report.exists and controls:
+                node.status = Status.INFO
+                node.detail = ("not there yet; RocketLauncher's Daphne module copies one "
+                               "from controls\\ before each launch")
+                continue
+
+            why = ""
+            if not report.exists:
+                why = f"no {KEY_FILE}, so Daphne uses its built-in keys"
+            elif not report.header and report.bom:
+                why = ("the file starts with a byte-order mark, so Daphne never finds "
+                       "its [KEYBOARD] line and uses its built-in keys")
+            elif not report.header:
+                why = "no [KEYBOARD] line, so Daphne uses its built-in keys"
+            elif report.stopped:
+                why = (f"Daphne stops reading at line {report.stopped_line} ({report.stopped}), "
+                       "so the actions after it keep its built-in keys")
+
+            zero = report.zero_slots()
+            if not zero:
+                node.status = Status.INFO if why else Status.OK
+                node.detail = why or "no action left on key 0"
+                continue
+            names = [label(s.action) for s in zero]
+            node.status = Status.WARN
+            node.detail = (f"{_some(names, 5)} left on key 0: any key SDL 1.2 doesn't know, "
+                           f"such as a volume or media key, presses {'it' if len(zero) == 1 else 'them'}")
+            built_in = [s.fixed() for s in zero if not s.line]
+            if why:
+                node.detail = f"{why}; {node.detail}"
+            elif built_in:
+                node.detail += (f" ({len(built_in)} of them aren't in the file, so Daphne's "
+                                "built-in keys apply)")
+            if path == folder / KEY_FILE and controls:
+                node.detail += ("; RocketLauncher's Daphne module copies controls\\<game>.ini "
+                                "or controls\\dapinput.ini over this file before each launch, "
+                                "so fix those too")
+            if report.exists and not report.header and report.bom:
+                node.fix = (f"With Daphne closed, save {path} as ANSI or UTF-8 without a "
+                            "byte-order mark, then run doctor again")
+                continue
+            in_file = [s.fixed() for s in zero if s.line]
+            fixes = []
+            if in_file:
+                fixes.append(f"set {_some(in_file)}")
+            if report.stopped:
+                # The lines after it may set the rest; doctor can tell once Daphne reads them.
+                fixes.append(f"fix or remove line {report.stopped_line}, then run doctor again")
+            elif built_in:
+                fixes.append(f"add {_some(built_in)} before END" if report.exists
+                             else f"create it with [KEYBOARD], {_some(built_in)}, then END")
+            node.fix = (f"With Daphne closed, put {FILLER} (F15, a key nothing sends) in every "
+                        f"0 key slot of {path}: " + "; ".join(fixes))
+
+    total = len(parent.children)
+    warned = sum(1 for c in parent.children if c.status == Status.WARN)
+    if warned:
+        parent.detail = (f"{warned} of {total} key file{'s' if total != 1 else ''} "
+                         f"{'leaves' if warned == 1 else 'leave'} actions on key 0, which a "
+                         "volume or media key presses")
+    else:
+        parent.detail = f"{total} key file{'s' if total != 1 else ''}: no action left on key 0"
+    parent.status = _worst(c.status for c in parent.children)
+    return parent
+
+
 def check_led_coverage(config: Config) -> Check:
     """Report how many wheel games have LEDBlinky control/color entries.
 
@@ -2691,6 +2848,7 @@ def run_health_checks(config: Config, fix: bool = False) -> HealthReport:
     _safe("RocketLauncher settings", lambda: check_rocketlauncher_settings(config))
     _safe("Lightguns", lambda: check_lightguns(config))
     _safe("Emulator ROM folders", lambda: check_emulator_rom_paths(config))
+    _safe("Daphne keys", lambda: check_daphne_keys(config))
     _safe("User Functions", lambda: check_user_functions(config))
     _safe("Coin/Start", lambda: check_coin_start(config))
     _safe("LEDBlinky", lambda: check_ledblinky(config))

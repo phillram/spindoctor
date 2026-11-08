@@ -655,6 +655,33 @@ when the game exits. **Fix (Supermodel):** add a `KEY_` to `InputCoin1` /
 line so `[ Global ]` applies. Back the files up first; a device that comes
 back later needs its old bindings.
 
+### A volume key quits or pauses a Daphne or Singe game (laserdisc, American Laser Games, Action Max)
+
+Pressing a volume or other media key during a laserdisc game quits it,
+pauses it, or presses a button, tilts or resets the game. On an I-PAC this
+is often its Volume Up / Down shift function (hold the shift button and push
+a joystick direction). Daphne's `daphne_log.txt` may show `Screenshot
+requested!` or a pause just before it shuts down.
+
+**Cause:** Daphne 1.0.x and its Singe builds use SDL 1.2, which reports every
+key it has no name for as key 0. Each `dapinput.ini` line, such as
+`KEY_QUIT = 27 0 0`, holds two keyboard keys and a joystick button, and Daphne
+checks each key press against both key slots of every action. So the 0 meant
+as "no second key" matches the volume key. Actions missing from the file keep
+Daphne's built-in keys, and most of those have a 0 slot too.
+
+**Find it:** run `spindoctor doctor`. Its **Daphne keys** check lists each key
+file and the actions it leaves on key 0.
+
+**Fix:** with Daphne closed, put a key nothing sends in every 0 key slot. 296
+(F15) works: `KEY_QUIT = 27 296 0`, `KEY_TILT = 296 296 0`. Add a line before
+`END` for each action the check says isn't in the file. Leave the third number,
+the joystick button, as it is; 0 there is fine. If you launch through
+RocketLauncher's Daphne module, fix the files in the emulator's `controls\`
+folder too: the module copies `controls\<game>.ini` (or `controls\dapinput.ini`)
+over `dapinput.ini` before each launch. See
+[Daphne's key file](cabinet-architecture-reference.md#key-file-dapinputini-a-0-key-slot-isnt-no-key).
+
 ### A wheel shows no games, but RocketLauncher's ROM checks pass
 
 The wheel opens empty in HyperSpin (or shows only a few of its games), though
