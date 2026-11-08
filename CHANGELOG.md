@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **Video lengths are read without ffprobe even when the MP4's movie header is at the end of the file.** With no `ffprobe` installed, `inspect` and `audit --detailed` read an `.mp4` / `.m4v` / `.mov` length from its movie header (`moov` → `mvhd`), but looked only in the first 1 MB. Many encoders write that header after the video data, so those clips showed no length (`—`, and an empty `duration_seconds` in `inspect --format csv`); on one cabinet that was 4,379 of 22,401 wheel videos. The fallback now uses `introvideo.video_duration_seconds`, the reader the intro-video swap already uses: it seeks from box to box, so the header is found wherever it sits, and only box headers are read, never the video data. A movie header whose duration is all ones ("unknown") now gives no length instead of one of 80 days or more. `_duration_mp4_native`, `_walk_boxes` and `_parse_mvhd` are gone. Covered by `tests/test_fileinfo.py`.
+
 ## [3.1.0] - 2026-11-06
 
 ### Added
