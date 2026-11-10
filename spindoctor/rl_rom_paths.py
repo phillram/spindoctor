@@ -13,7 +13,7 @@ from __future__ import annotations
 import os
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Optional
 
 from .database import find_database, load_database
@@ -48,8 +48,6 @@ def _resolve_rom_path(element: str, rl_dir: Path) -> Optional[Path]:
     Returns None when the element can't be checked on this OS (an absolute
     Windows drive path while running on POSIX), mirroring ``health._resolve_emu_path``.
     """
-    from pathlib import PureWindowsPath
-
     if Path(element).is_absolute():
         return Path(os.path.normpath(element))
     pw = PureWindowsPath(element)
@@ -76,6 +74,10 @@ class _RomSource:
     ext_where: str = ""  # where the extensions come from, e.g. "[MAME] in <file>"
     stops: str = ""
     stop_fix: str = ""
+    # The [<emulator>] section RL reads Emu_Path and Module from ("" = none found)
+    emu_where: str = ""
+    emu_path: str = ""
+    module: str = ""
 
     def missing_folders(self) -> list[str]:
         """Rom_Path elements whose folder doesn't exist, for display."""
@@ -161,6 +163,10 @@ class _RomLookup:
                 raw, where = sec["rom_extension"], f"[Settings] in {ini}"
             exts = _split_rom_extensions(raw)
             src = _RomSource(system, ini, folders, exts, emu, where)
+            if emu_sec is not None:
+                src.emu_where = where
+                src.emu_path = emu_sec.get("emu_path", "").strip().strip('"')
+                src.module = emu_sec.get("module", "").strip().strip('"')
             if not sec.get("default_emulator", "").strip():
                 # RL demands a Default_Emulator before it reads a game's
                 # Games.ini Emulator=, so a blank one stops every game.
@@ -310,6 +316,66 @@ class _RomLookup:
             game: (keys.get("emulator", ""), keys.get("system", ""))
             for game, keys in ini.items()
         }
+
+    def game_source(
+        self, system: str, name: str, overrides: Optional[dict[str, tuple[str, str]]] = None,
+    ) -> tuple[Optional[_RomSource], str]:
+        """``(source, borrowed system)`` RL uses for one of *system*'s games.
+
+        A ``Games.ini`` ``Emulator=`` picks another emulator's extensions; a
+        ``System=`` naming another system makes RL read that system's settings
+        instead, and the second item is then that system's name (else "").
+        The source is None when the settings it needs don't exist.
+        *overrides* is :meth:`game_overrides`, read once per wheel."""
+        if overrides is None:
+            overrides = self.game_overrides(system)
+        emu, other = overrides.get(name.lower(), ("", ""))
+        if other and other.lower() != system.lower():
+            return self.source(other, emu), other
+        return self.source(system, emu) or self.source(system), ""
+
+    def modules_dir(self) -> Path:
+        """RL's Modules folder: ``Modules_Path`` in ``Settings/RocketLauncher.ini``
+        (relative to the RocketLauncher folder), else ``Modules``."""
+        raw = self._rl_ini(self.settings_dir / "RocketLauncher.ini").get("settings", {}).get("modules_path", "")
+        folder = _resolve_rom_path(raw.strip().strip('"'), self.rl_dir) if raw.strip() else None
+        return folder if folder is not None else self.rl_dir / "Modules"
+
+    def emulator_problems(self, src: _RomSource, game: str) -> list[tuple[str, str]]:
+        """``(problem, fix)`` pairs for what RL needs besides the ROM to launch
+        *game* through *src*: the emulator program (``Emu_Path``) and its
+        module.  Empty when they are there, or when *src* has no emulator
+        section (``source`` already reports that as a stop).
+
+        RL skips the program check with ``Skipchecks=Rom and Emu``, and
+        PCLauncher needs no ``Emu_Path``.  The module is ``Module=`` (a
+        ``.\\x`` or ``C:\\x`` path is used as is, anything else is relative to
+        ``Modules\\<emulator>``), else ``<emulator>.ahk``; a game module in
+        ``Modules\\Game Modules\\<game>\\<game>.ahk`` replaces it."""
+        if not src.emu_where:
+            return []
+        out: list[tuple[str, str]] = []
+        skip = self.launch_settings(src.system)[0].lower()
+        pc = src.emulator.lower() == "pclauncher"
+        if skip != "rom and emu":
+            if src.emu_path:
+                program = _resolve_rom_path(src.emu_path, self.rl_dir)
+                if program is not None and src.system.lower() != "pclauncher" and not program.is_file():
+                    out.append((f"emulator not found: {program}", f"Fix Emu_Path in {src.emu_where}"))
+            elif not pc:
+                out.append((f"no Emu_Path for {src.emulator}", f"Set Emu_Path in {src.emu_where}"))
+        modules = self.modules_dir()
+        if (modules / "Game Modules" / game / f"{game}.ahk").is_file():
+            return out
+        module = src.module or f"{src.emulator}.ahk"
+        if module[1:2] in ("\\", ":"):
+            path = _resolve_rom_path(module, self.rl_dir)
+        else:
+            path = Path(os.path.normpath(modules / src.emulator / Path(*PureWindowsPath(module).parts)))
+        if path is not None and not path.is_file():
+            out.append((f"RocketLauncher module not found: {path}",
+                        f"Install the {src.emulator} module, or fix Module= in {src.emu_where}"))
+        return out
 
     def mame_rom_names(self) -> dict[str, str]:
         """Lower-cased alternate name → ``MameRomName`` from the RL MAME module INI."""

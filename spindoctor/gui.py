@@ -195,6 +195,7 @@ _SYSTEM_FOLLOWERS: tuple[tuple[str, str], ...] = (
     ("_ignore_system_var", "_refresh_ignore_games"),
     ("_repath_system_var", ""),
     ("_lg_system_var", ""),
+    ("_test_system_var", "_refresh_test_genres"),
 )
 # One-line description shown under each page's title.
 _PAGE_SUMMARIES = {
@@ -208,20 +209,29 @@ _PAGE_SUMMARIES = {
     "Intro Video": "Choose which intro videos HyperSpin plays at startup.",
     "LEDBlinky": "Set up LEDBlinky and manage button colors, brightness and animations.",
     "Lightgun": "Find your lightgun software and set up systems to use it.",
+    "Test games": "Launch games through RocketLauncher, one after another, and see which ones break.",
     "Backup & Restore": "Back up your setup, or restore it from an earlier backup.",
     "Migration": "Move your library to a new drive. Work through the steps in order.",
     "Console": "Run any SpinDoctor command by typing it.",
     "History": "Every command run this session, with its full output.",
 }
 
-# Sidebar pages follow notebook order, so Ctrl+1..9 and the saved
-# gui_last_active_tab index keep pointing at the same pages.
+# Sidebar pages follow notebook order, so Ctrl+1..9 keep pointing at the
+# same pages.  The last page is saved by name (gui_last_active_page).
 _SIDEBAR_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("Get started", ("Setup", "Diagnostics")),
     ("Library", ("Systems", "Games", "Metadata & Media", "Maintenance")),
-    ("Wheels & cabinet", ("Custom Wheels", "Intro Video", "LEDBlinky", "Lightgun")),
+    ("Wheels & cabinet", ("Custom Wheels", "Intro Video", "LEDBlinky", "Lightgun", "Test games")),
     ("Backup & move", ("Backup & Restore", "Migration")),
     ("Advanced", ("History", "Console")),
+)
+
+# Page order before "Test games" was added, for reading a gui_last_active_tab
+# index that an older version saved.
+_PAGES_BEFORE_TEST_GAMES = (
+    "Setup", "Diagnostics", "Systems", "Games", "Metadata & Media", "Maintenance",
+    "Custom Wheels", "Intro Video", "LEDBlinky", "Lightgun", "Backup & Restore",
+    "Migration", "History", "Console",
 )
 
 
@@ -778,6 +788,7 @@ _READ_ONLY_COMMANDS: frozenset[str] = frozenset({
     "ignore list", "match list",
     "fav list", "recent list",
     "mainmenu show", "mainmenu edit",
+    "test --list-runs",
     "ledblinky audit", "ledblinky check", "ledblinky inspect-rom",
     "ledblinky colors list",
     "lightgun audit", "lightgun detect",
@@ -1380,9 +1391,14 @@ class _SpinDoctorGUI:
         # un-maximizing later snaps back to the saved window size.
         if getattr(_bootstrap_cfg, "gui_window_maximized", False):
             self.root.after_idle(lambda: _set_maximized(self.root))
-        # Stash the persisted last-active tab for _build_layout to read
-        # after the notebook is built.
-        self._restore_tab_idx = int(getattr(_bootstrap_cfg, "gui_last_active_tab", -1))
+        # Stash the persisted last-active page for _build_layout to read
+        # after the notebook is built: by name, or an older version's index
+        # (which always counts pages in the order before "Test games").
+        self._restore_page = str(getattr(_bootstrap_cfg, "gui_last_active_page", "") or "")
+        if not self._restore_page:
+            idx = int(getattr(_bootstrap_cfg, "gui_last_active_tab", -1))
+            if 0 <= idx < len(_PAGES_BEFORE_TEST_GAMES):
+                self._restore_page = _PAGES_BEFORE_TEST_GAMES[idx]
 
         # Window icon — cosmetic, must never block startup.
         self._load_window_icon()
@@ -2697,6 +2713,7 @@ class _SpinDoctorGUI:
         self._add_scrollable_tab(nb, self._build_introvideo_tab,   "Intro Video")
         self._add_scrollable_tab(nb, self._build_ledblinky_tab,    "LEDBlinky")
         self._add_scrollable_tab(nb, self._build_lightgun_tab,     "Lightgun")
+        self._add_scrollable_tab(nb, self._build_test_games_tab,   "Test games")
         self._add_scrollable_tab(nb, self._build_backup_tab,       "Backup & Restore")
         self._add_scrollable_tab(nb, self._build_migrate_tab,      "Migration")
         # History tab is the only one that intentionally fills its own
@@ -2864,9 +2881,9 @@ class _SpinDoctorGUI:
         # (touching a not-yet-built tab is fine — the notebook can
         # select an unrealised pane — but the user-visible result is
         # cleaner when we restore after all pages exist).
-        if 0 <= self._restore_tab_idx < len(self._tab_base_names):
+        if self._restore_page in self._tab_base_names:
             try:
-                self._nb.select(self._restore_tab_idx)
+                self._nb.select(self._tab_base_names.index(self._restore_page))
             except Exception:  # noqa: BLE001 - guard against teardown races
                 pass
 
@@ -12309,6 +12326,305 @@ class _SpinDoctorGUI:
             args.append("--verbose")
         self._run_cli("spindoctor", args)
 
+    # ── Test games page (spindoctor test) ─────────────────────────────────────
+
+    def _build_test_games_tab(self, parent):
+        cfg = load_config()
+        frame = self.ttk.Frame(parent, padding=12)
+        self._help_text(
+            frame,
+            text=("Launches each picked game through RocketLauncher, the way HyperSpin does, lets it "
+                  "run, and judges it: it didn't start or closed by itself, an error pop-up, a Windows "
+                  "crash report, not responding, errors in RocketLauncher's log, or a black screen. "
+                  "With Apply changes off, Show games lists the picked games with their file check "
+                  "and doctor notes and launches nothing."),
+        ).pack(fill="x", pady=(0, 4))
+        self._test_warning = self.ttk.Label(
+            frame, style="Warn.TLabel", justify="left", wraplength=self._px(860),
+            text=("Games open full screen: leave the cabinet alone while a test runs. "
+                  "RocketLauncher's play statistics are put back after every game, so test "
+                  "launches stay out of Recently Played and Most Played. Stop after this game "
+                  "ends a run cleanly; Stop ends it within a minute either way."),
+        )
+        self._test_warning.pack(anchor="w", pady=(0, 8))
+
+        # A run the Stop button or a crash ended before it could tidy up.
+        self._test_banner = self.ttk.Frame(frame)
+        self._test_banner_label = self.ttk.Label(
+            self._test_banner, style="Warn.TLabel", justify="left", wraplength=self._px(700),
+            text=("A test run was interrupted. Its game may still be open, and RocketLauncher's "
+                  "play statistics may still hold test launches."),
+        )
+        self._test_banner_label.pack(side="left")
+        self.ttk.Button(self._test_banner, text="Recover now",
+                        command=self._test_recover).pack(side="left", padx=8)
+
+        pick = self.ttk.LabelFrame(frame, text="Games to test")
+        pick.pack(fill="x", pady=(0, 8))
+        sys_row = self.ttk.Frame(pick)
+        sys_row.pack(fill="x", padx=6, pady=(4, 4))
+        self._test_system_var = self.tk.StringVar()
+        self._test_all_var = self.tk.BooleanVar(value=False)
+        self._sidebar_system_row(sys_row, self._test_system_var,
+                                 all_var=self._test_all_var).pack(side="left")
+        self.ttk.Checkbutton(sys_row, text="All systems", variable=self._test_all_var).pack(
+            side="left", padx=6)
+
+        grid = self.ttk.Frame(pick)
+        grid.pack(fill="x", padx=6, pady=(0, 4))
+        self.ttk.Label(grid, text="Genre").grid(row=0, column=0, sticky="w", pady=2)
+        self._test_genre_var = self.tk.StringVar()
+        self._test_genre_combo = self.ttk.Combobox(grid, textvariable=self._test_genre_var, width=32)
+        self._test_genre_combo.grid(row=0, column=1, sticky="w", padx=6, pady=2)
+        self.ttk.Label(grid, text="Game names").grid(row=1, column=0, sticky="w", pady=2)
+        self._test_games_var = self.tk.StringVar()
+        self.ttk.Entry(grid, textvariable=self._test_games_var, width=48).grid(
+            row=1, column=1, sticky="w", padx=6, pady=2)
+        self._help_text(
+            grid, text="Genre and names take * and ? wildcards; separate several names with |.",
+        ).grid(row=2, column=1, sticky="ew", padx=6)
+
+        count_row = self.ttk.Frame(pick)
+        count_row.pack(fill="x", padx=6, pady=(0, 4))
+        self._test_pick_var = self.tk.StringVar(value="per")
+        self._test_n_var = self.tk.StringVar(value=str(cfg.test_per_system))
+        for value, label in (("per", "Random, per system:"), ("count", "Random, in total:"),
+                             ("all", "Every game")):
+            self.ttk.Radiobutton(count_row, text=label, value=value,
+                                 variable=self._test_pick_var).pack(side="left", padx=(0, 6))
+        self.ttk.Spinbox(count_row, from_=1, to=100000, width=6,
+                         textvariable=self._test_n_var).pack(side="left", padx=(0, 12))
+        self.ttk.Label(count_row, text="Seconds per game").pack(side="left")
+        self._test_seconds_var = self.tk.StringVar(value=str(cfg.test_game_seconds))
+        self.ttk.Spinbox(count_row, from_=1, to=3600, width=5,
+                         textvariable=self._test_seconds_var).pack(side="left", padx=6)
+
+        opt_row = self.ttk.Frame(pick)
+        opt_row.pack(fill="x", padx=6, pady=(0, 6))
+        self._test_hs_var = self.tk.BooleanVar(value=False)
+        self._test_skipped_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(opt_row, text="Open HyperSpin first",
+                             variable=self._test_hs_var).pack(side="left")
+        self.ttk.Checkbutton(opt_row, text="Include skipped wheels and PCLauncher games",
+                             variable=self._test_skipped_var).pack(side="left", padx=12)
+        self.ttk.Label(opt_row, text="Files the games create").pack(side="left")
+        self._test_cleanup_var = self.tk.StringVar(value=cfg.test_cleanup or "report")
+        self.ttk.Combobox(opt_row, textvariable=self._test_cleanup_var, state="readonly", width=8,
+                          values=("report", "remove", "off")).pack(side="left", padx=6)
+
+        btn_row = self.ttk.Frame(frame)
+        btn_row.pack(fill="x", pady=(0, 8))
+        self._test_run_btn = self.ttk.Button(btn_row, width=16, command=self._test_run)
+        self._test_run_btn.pack(side="left")
+        self.ttk.Button(btn_row, text="Resume last run",
+                        command=lambda: self._test_launch(["test", "--resume"])).pack(side="left", padx=6)
+        self.ttk.Button(btn_row, text="Re-test failed",
+                        command=lambda: self._test_launch(["test", "--only-failed"])).pack(side="left")
+        self.ttk.Button(btn_row, text="Stop after this game",
+                        command=self._test_stop_after_game).pack(side="left", padx=6)
+        self._global_apply_var.trace_add("write", lambda *_a: self._label_test_run_btn())
+        self._label_test_run_btn()
+
+        last = self.ttk.LabelFrame(frame, text="Last run")
+        last.pack(fill="both", expand=True)
+        head = self.ttk.Frame(last)
+        head.pack(fill="x", padx=6, pady=(4, 4))
+        self._test_run_label = self.ttk.Label(head, text="", foreground=_FG_DIM)
+        self._test_run_label.pack(side="left")
+        self.ttk.Button(head, text="Open report", command=self._test_open_report).pack(side="right")
+        self.ttk.Button(head, text="Open run folder",
+                        command=self._test_open_folder).pack(side="right", padx=6)
+        tree_frame = self.ttk.Frame(last)
+        tree_frame.pack(fill="both", expand=True, padx=6, pady=(0, 6))
+        tree_frame.columnconfigure(0, weight=1)
+        self._test_tree = self.ttk.Treeview(
+            tree_frame, columns=("status", "system", "game", "reason", "seconds"),
+            show="headings", selectmode="browse", height=10)
+        for col, text, width, stretch in (("status", "Result", 70, False), ("system", "System", 170, False),
+                                          ("game", "Game", 240, False), ("reason", "Why", 380, True),
+                                          ("seconds", "s", 40, False)):
+            self._test_tree.heading(col, text=text, anchor="w")
+            self._test_tree.column(col, width=self._px(width), stretch=stretch, anchor="w")
+        self._test_tree.tag_configure("FAIL", foreground="#d04040")
+        self._test_tree.tag_configure("WARN", foreground="#c07000")
+        self._test_tree.tag_configure("SKIPPED", foreground=_FG_DIMMER)
+        vsb = self._vertical_scrollbar(tree_frame, self._test_tree)
+        self._test_tree.grid(row=0, column=0, sticky="nsew")
+        vsb.grid(row=0, column=1, sticky="ns")
+        self._test_tree.bind("<Double-Button-1>", self._test_open_screenshot)
+        self._test_tree.bind("<Return>", self._test_open_screenshot)
+        self._test_rows: dict[str, dict] = {}
+        self._test_last_run: Optional[Path] = None
+
+        self._refresh_test_genres()
+        self._refresh_test_results()
+        return frame
+
+    def _label_test_run_btn(self) -> None:
+        apply = bool(self._global_apply_var.get())
+        self._test_run_btn.configure(text="Launch games" if apply else "Show games")
+
+    def _refresh_test_genres(self) -> None:
+        """Fill the genre list from the sidebar system's database."""
+        genres: set[str] = set()
+        system = self._test_system_var.get().strip()
+        if system:
+            try:
+                db = load_database(system, load_config().databases_dir)
+                genres = {g.genre.strip() for g in db.games().values() if (g.genre or "").strip()}
+            except Exception:  # noqa: BLE001 - a missing database just means no suggestions
+                genres = set()
+        self._test_genre_combo.configure(values=[""] + sorted(genres, key=str.lower))
+
+    def _test_args(self) -> Optional[list[str]]:
+        """``spindoctor test`` arguments for the page's choices (without --apply)."""
+        args = ["test"]
+        system = self._test_system_var.get().strip()
+        genre = self._test_genre_var.get().strip()
+        names = [n.strip() for n in self._test_games_var.get().split("|") if n.strip()]
+        if self._test_all_var.get():
+            args.append("--all-systems")
+        elif system:
+            args += ["--system", system]
+        elif not (genre or names):
+            self._flash_validation("Pick a system in the sidebar or check All systems.")
+            return None
+        if genre:
+            args += ["--genre", genre]
+        for name in names:
+            args += ["--game", name]
+        pick = self._test_pick_var.get()
+        if pick == "all":
+            args.append("--all")
+        else:
+            n = self._test_n_var.get().strip()
+            if not n.isdigit() or int(n) < 1:
+                self._flash_validation("The number of games must be a whole number, 1 or more.")
+                return None
+            args += ["--count" if pick == "count" else "--per-system", n]
+        seconds = self._test_seconds_var.get().strip()
+        if not seconds.isdigit() or not 1 <= int(seconds) <= 3600:
+            self._flash_validation("Seconds per game must be a whole number from 1 to 3600.")
+            return None
+        args += ["--seconds", seconds]
+        if self._test_hs_var.get():
+            args.append("--with-hyperspin")
+        if self._test_skipped_var.get():
+            args.append("--include-skipped")
+        args += ["--cleanup", self._test_cleanup_var.get() or "report"]
+        return args
+
+    def _test_run(self) -> None:
+        args = self._test_args()
+        if args is not None:
+            self._test_launch(args)
+
+    def _test_launch(self, args: list[str]) -> None:
+        args = list(args)
+        apply = bool(self._global_apply_var.get())
+        if apply:
+            args.append("--apply")
+        if self._global_verbose_var is not None and self._global_verbose_var.get():
+            args.append("--verbose")
+        self._test_run_active = apply
+        if not self._run_cli("spindoctor", args, on_complete=self._test_done):
+            self._test_run_active = False
+
+    def _test_done(self, _rc: int) -> None:
+        self._test_run_active = False
+        self._refresh_test_results()
+
+    def _test_recover(self) -> None:
+        self._run_cli("spindoctor", ["test", "--recover"], on_complete=self._test_done)
+
+    def _test_request_stop(self) -> bool:
+        """Ask the running test to stop after closing its game; False when
+        there's no run to ask."""
+        from ._testrun import active_run
+
+        run = active_run()
+        if not run or not run.get("run_dir"):
+            return False
+        try:
+            (Path(run["run_dir"]) / "stop-request").write_text("", encoding="utf-8")
+        except OSError:
+            return False
+        return True
+
+    def _test_stop_after_game(self) -> None:
+        if getattr(self, "_test_run_active", False) and self._test_request_stop():
+            self._set_status("Stopping after this game")
+        else:
+            self._flash_validation("No test run is launching games.")
+
+    def _stop_test_worker(self, proc) -> None:
+        """Give a stopping test run time to close its game, then end it."""
+        try:
+            grace = load_config().test_close_timeout + 30
+        except Exception:  # noqa: BLE001
+            grace = 60
+        try:
+            proc.wait(timeout=grace)
+        except subprocess.TimeoutExpired:
+            stop_worker(proc)
+
+    def _refresh_test_results(self) -> None:
+        """Show the newest run's results, and the banner when a run is unfinished."""
+        from . import _testrun, gametest
+
+        cfg = load_config()
+        running = bool(getattr(self, "_test_run_active", False))
+        if _testrun.active_run() is not None and not running:
+            self._test_banner.pack(fill="x", pady=(0, 8), after=self._test_warning)
+        else:
+            self._test_banner.pack_forget()
+        self._test_tree.delete(*self._test_tree.get_children())
+        self._test_rows = {}
+        runs = gametest.list_runs(_testrun.tests_dir(cfg))
+        if not runs:
+            self._test_last_run = None
+            self._test_run_label.configure(text="No test runs yet.")
+            return
+        run_dir, info = runs[0]
+        self._test_last_run = run_dir
+        rows = gametest.read_csv(run_dir / "results.csv")
+        order = {"FAIL": 0, "WARN": 1, "PASS": 2, "SKIPPED": 3}
+        rows.sort(key=lambda r: (order.get(r.get("Status", ""), 4), r.get("System", ""), r.get("Game", "")))
+        for i, r in enumerate(rows):
+            iid = str(i)
+            self._test_rows[iid] = r
+            self._test_tree.insert("", "end", iid=iid, tags=(r.get("Status", ""),), values=(
+                r.get("Status", ""), r.get("System", ""), r.get("Game", ""), r.get("Reason", ""),
+                r.get("Seconds", "")))
+        tally: dict[str, int] = {}
+        for r in rows:
+            tally[r.get("Status", "")] = tally.get(r.get("Status", ""), 0) + 1
+        state = "finished" if info.get("finished") else "not finished"
+        counts = ", ".join(f"{n} {s.lower()}" for s, n in sorted(tally.items()))
+        self._test_run_label.configure(text=f"{run_dir.name} ({state}): {counts or 'no games'}")
+
+    def _test_open_screenshot(self, _event=None) -> None:
+        sel = self._test_tree.selection()
+        row = self._test_rows.get(sel[0]) if sel else None
+        if row is None or self._test_last_run is None:
+            return
+        if row.get("Screenshot"):
+            self._open_path(self._test_last_run / row["Screenshot"], missing_label="The screenshot")
+        else:
+            self._flash_validation(f"No screenshot for {row.get('Game', 'this game')}.")
+
+    def _test_open_report(self) -> None:
+        if self._test_last_run is None:
+            self._flash_validation("No test runs yet.")
+            return
+        self._open_path(self._test_last_run / "report.html", missing_label="The report")
+
+    def _test_open_folder(self) -> None:
+        if self._test_last_run is None:
+            self._flash_validation("No test runs yet.")
+            return
+        self._open_path(self._test_last_run, missing_label="The run folder")
+
     # ── Tools tab (Custom wheels + Install wheel helpers) ─────────────────────
 
     def _build_tools_tab(self, parent):
@@ -13645,10 +13961,12 @@ class _SpinDoctorGUI:
         # --undo restores files immediately in every CLI command that has
         # it (curate, media-scan, theme-apply, migrate, batch-edit,
         # rename, organize); none of them wait for --apply.
+        # `test --recover` puts a stopped test run's files back right away too.
         if (
             "--apply" in args
             or "--undo" in args
             or (args and args[0] == "self-doctor" and "--fix" in args)
+            or (args and args[0] == "test" and "--recover" in args)
         ):
             is_dry_run: Optional[bool] = False
         elif _is_read_only_invocation(tuple(args)):
@@ -13929,6 +14247,13 @@ class _SpinDoctorGUI:
         # still in flight is dropped.
         proc = getattr(self, "_proc", None)
         if proc is not None and proc.poll() is None:
+            # A game test gets a few seconds to close its game and put the
+            # play statistics back; `spindoctor test --recover` does the rest.
+            if getattr(self, "_test_run_active", False) and self._test_request_stop():
+                try:
+                    proc.wait(timeout=10)
+                except (subprocess.TimeoutExpired, OSError, AttributeError):
+                    pass
             try:
                 stop_worker(proc, timeout=3.0)
             except (OSError, AttributeError):
@@ -13958,21 +14283,26 @@ class _SpinDoctorGUI:
         else:
             geom = getattr(load_config(), "gui_window_geometry", "") or ""
         try:
-            tab_idx = int(self._nb.index("current"))
+            page = self._tab_base_names[int(self._nb.index("current"))]
         except Exception:  # noqa: BLE001
-            tab_idx = -1
+            page = ""
+        # The index keeps counting pages as older versions do, so going back
+        # to one still opens the right page (or the default for a new one).
+        tab_idx = _PAGES_BEFORE_TEST_GAMES.index(page) if page in _PAGES_BEFORE_TEST_GAMES else -1
         cfg = load_config()
         dpi = round(getattr(self, "_dpi_scale", 1.0), 3)
         if (
             getattr(cfg, "gui_window_geometry", "") == geom
             and getattr(cfg, "gui_window_maximized", False) == maximized
             and getattr(cfg, "gui_last_active_tab", -1) == tab_idx
+            and getattr(cfg, "gui_last_active_page", "") == page
             and getattr(cfg, "gui_window_dpi_scale", 1.0) == dpi
         ):
             return
         cfg.gui_window_geometry = geom
         cfg.gui_window_maximized = maximized
         cfg.gui_last_active_tab = tab_idx
+        cfg.gui_last_active_page = page
         cfg.gui_window_dpi_scale = dpi
         save_config(cfg)
 
@@ -14132,8 +14462,13 @@ class _SpinDoctorGUI:
         if self._proc is None or self._proc.poll() is not None:
             return
         # Off the Tk thread: stop_worker waits briefly for a one-file
-        # launcher to clean up after its worker is ended.
-        threading.Thread(target=stop_worker, args=(self._proc,), daemon=True).start()
+        # launcher to clean up after its worker is ended.  A game test asks
+        # the run to stop first (it closes the game and puts RocketLauncher's
+        # statistics back), and is only ended if it doesn't in time.
+        if getattr(self, "_test_run_active", False) and self._test_request_stop():
+            threading.Thread(target=self._stop_test_worker, args=(self._proc,), daemon=True).start()
+        else:
+            threading.Thread(target=stop_worker, args=(self._proc,), daemon=True).start()
         # Chained workflows (Preflight, Full metadata refresh, wheel
         # refreshes) start their next step from the done callback; this
         # makes that start end the chain instead.

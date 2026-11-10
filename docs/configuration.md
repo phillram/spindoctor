@@ -62,13 +62,29 @@ Settings that hold a mapping (`system_overrides`, `game_overrides`, `ignore_list
 | `gui_window_geometry` | Last `WIDTHxHEIGHT+X+Y` the GUI window was at when it closed (string, default unset). Restored on the next launch so cabinet owners don't re-resize / re-position every session. Managed automatically — delete it to reset window state. Hand-corrupted values are revalidated against a regex and silently discarded. |
 | `gui_window_dpi_scale` | Display scale the saved `gui_window_geometry` was recorded at (float, default `1.0`; `1.5` on a 150 % display). If the display scale changes, the saved size is converted so the window keeps the same physical size. Managed automatically. |
 | `gui_window_maximized` | Whether the GUI window was maximized when it closed (bool, default `false`). Restored on the next launch. Managed automatically — delete it to default to a normal window. |
-| `gui_last_active_tab` | Index of the tab that was open the last time the GUI closed (int, default unset). Restored on the next launch so users who live in a specific tab don't re-navigate from Setup every time. Managed automatically — delete it to default back to the Setup tab. On a true fresh install (no `config.json` yet), the GUI auto-focuses the Setup tab regardless. |
+| `gui_last_active_tab` | Index of the tab that was open the last time the GUI closed (int, default unset). Restored on the next launch so users who live in a specific tab don't re-navigate from Setup every time. Managed automatically — delete it to default back to the Setup tab. On a true fresh install (no `config.json` yet), the GUI auto-focuses the Setup tab regardless. It counts pages in the order before the **Test games** page was added, so older versions keep reading it correctly; current versions use `gui_last_active_page`. |
+| `gui_last_active_page` | Name of the page that was open the last time the GUI closed (string, default unset). Managed automatically; when it's unset, `gui_last_active_tab` is used. |
 | `gui_last_systems` | Last-selected system per GUI tab, keyed by tab label (mapping, default `{}`). Reserved: the current GUI does not read or write it, so each tab starts with its default system. |
 | `gui_meta_subset` | Last-picked subset of systems for the Metadata & Media tab's "Pick subset" picker (list[str], default `[]`). Restored on the next launch so the "refresh the same five systems" workflow doesn't require re-ticking each time. |
 | `gui_curate_regions` | User-chosen ScreenScraper region checkboxes on the Maintenance tab (list[str], default `[]`). Empty list falls back to the top-level `region_preferences`. |
 | `gui_meta_auto_best` | Persisted state of the "Auto-pick best match for ambiguous results" checkbox on the Metadata & Media tab (bool, default `true`). Off makes the GUI pass `--skip-ambiguous` so ambiguous matches are logged for the next audit pass instead of auto-picking. |
 | `gui_meta_all_games` | Persisted state of the "Refresh complete entries too" checkbox (bool, default `false`). |
 | `gui_meta_no_cache` | Persisted state of the "Skip cache, hit the API every game" checkbox (bool, default `false`). |
+| `test_skip_systems` | Wheels `spindoctor test` never launches unless you name them with `--system` (list, default `[]`). Typical entries: tool wheels whose entries change system settings, light-gun wheels you test by hand. See [Command reference → test](commands.md#test). |
+| `test_skip_pclauncher` | Skip games that use PCLauncher (bool, default `true`); PC games often need a manual exit. |
+| `test_skip_custom_wheels` | Skip SpinDoctor's own Favorites / Recently Played / Most Played wheels (bool, default `true`); their games are copies from other wheels. |
+| `test_helper_processes` | Programs RocketLauncher starts that aren't the game, added to the built-in list (AutoHotkey, 7-Zip, DAEMON Tools, Xpadder, JoyToKey, DemulShooter, LEDBlinky, Steam…). `!name.exe` removes a built-in one (list, default `[]`). |
+| `test_ignore_log_errors` | Harmless RocketLauncher log `ERROR` lines, as case-insensitive substrings (list, default `["No CRC defined"]`). |
+| `test_error_window_words` | Regular expression for pop-up titles that mean something went wrong (string; blank = the built-in list: error, fail, missing, not found, exception, crash, BIOS, …). |
+| `test_game_seconds` / `test_launch_timeout` / `test_close_timeout` / `test_cooldown` | How long a game runs before it is judged (20), how long to wait for its window (90), how long to wait after the exit key (25), and the pause between games (3), in seconds. |
+| `test_per_system` | How many random games per wheel when no `--all`, `--count` or `--game` is given (default `3`). |
+| `test_screenshot_width` | Width of the screenshot saved per game, in pixels (default `480`). |
+| `test_results_dir` | Where test run folders go (blank = `%USERPROFILE%\.spindoctor\tests`). |
+| `test_hyperspin_timeout` | With `spindoctor test --with-hyperspin`: seconds to wait for HyperSpin to log `wheel loaded successfully` (default `180`). |
+| `test_ignore_hyperspin_log` | Harmless HyperSpin `log.txt` lines, as case-insensitive substrings (list, default `[]`). |
+| `test_skip_intro_video` | Skip HyperSpin's intro video with a key press when the test opens it (bool, default `true`; `--play-intro` plays it for one run). |
+| `test_cleanup` | What `spindoctor test` does with files the games create: `report` (default: list them in `cleanup.csv`), `remove` (back each up to `<backup_dir>\test-cleanup\<run>\`, then delete it) or `off`. Files that existed before the run are never touched. |
+| `test_cleanup_skip` | Folders the cleanup leaves alone, relative to `hyperspin_dir` or absolute (list, default `["cache", "RocketLauncher\\Data\\Statistics"]`). RocketLauncher's statistics and 7-Zip extract folder are always left alone. |
 
 Apply / dry-run toggles for destructive operations (backup restore, migrate, curate apply, etc.) are deliberately NOT persisted across launches — those re-arm to OFF on every GUI startup so cabinet owners always make an explicit per-run opt-in.
 

@@ -1255,6 +1255,142 @@ If the GameCube controller stops responding after launching through HyperSpin:
    then open DS4Windows from the tray icon and confirm the controller is listed.
 3. Confirm Dolphin's GCPad Port 1 device is set to `XInput/0/Gamepad`.
 
+### Arcade panel and gamepad on one controller
+
+An arcade panel's keyboard encoder sends keys and a gamepad sends pad buttons. Dolphin can
+take both on the same emulated GameCube controller or Wii Remote, so a player can use either
+one without switching anything. It's all in Dolphin's input INI files, in its user folder
+(**File → Open User Folder**):
+
+- `Config\GCPadNew.ini`: GameCube ports, `[GCPad1]`–`[GCPad4]`
+- `Config\WiimoteNew.ini`: Wii Remotes, `[Wiimote1]`–`[Wiimote4]`
+- `Config\Profiles\GCPad\` and `Config\Profiles\Wiimote\`: profiles
+- `GameSettings\<GAMEID>.ini`: per-game settings
+
+Back them up, and edit them while Dolphin is closed.
+
+#### Keys next to the pad's binds
+
+Keep the pad as the controller's `Device` (`XInput/0/Gamepad` here; `SDL/…` pads work the
+same way). Add each key after the pad's bind with `|`, naming the keyboard in full:
+
+```ini
+[GCPad1]
+Device = XInput/0/Gamepad
+Buttons/A = `Button A` | `DInput/0/Keyboard Mouse:A`
+Buttons/B = `Button B` | `DInput/0/Keyboard Mouse:S`
+Main Stick/Up = `Left Y+` | `DInput/0/Keyboard Mouse:UP`
+```
+
+- A name with no device, such as `` `Button A` ``, is a control on `Device`. A device-qualified
+  term, such as `` `DInput/0/Keyboard Mouse:A` ``, always reads the keyboard, whatever `Device` is.
+- Leave the pad's part exactly as it was (copy it rather than retyping it), and the pad keeps
+  working as before. `|` takes whichever side is pressed.
+- Don't set `Device` to the keyboard instead. Every pad name without a device would then be
+  looked for on the keyboard, and the pad would stop working.
+- Keys use DirectInput's names: letters as `A`, the arrows as `UP`, `DOWN`, `LEFT` and `RIGHT`.
+  Mouse and trackball buttons are `Click 0` (left) and `Click 1` (right).
+
+#### GameCube ports need `Always Connected`
+
+Dolphin treats a GameCube port as unplugged while its `Device` isn't connected, and then
+ignores every bind on that port, keyboard terms included. With the pad switched off, the
+panel does nothing in GameCube games, even though the same kind of binds work in Wii games.
+Set this in each `[GCPadN]` section the panel plays (Dolphin's GameCube controller window
+calls it **Options → Always Connected**):
+
+```ini
+Options/Always Connected = True
+```
+
+A port whose `Device` is the keyboard itself is always connected. Emulated Wii Remotes have
+no such check: they take keys while the pad is off.
+
+#### Wii pointer from a trackball or mouse
+
+A trackball or mouse moves the Windows cursor, and Dolphin can aim the Wii pointer with the
+cursor's position (`Cursor X-`, `Cursor X+`, `Cursor Y-`, `Cursor Y+`). Added with a plain `|`,
+it spoils the pad's stick aim. The cursor reports where it is, not how far it moved, so it
+keeps holding the pointer wherever it was left, and the stick can't bring it back. Use the
+cursor only while the stick is untouched:
+
+```ini
+IR/Up = `Right Y+` | if((`Right Y+` + `Right Y-` + `Right X+` + `Right X-`) * 4, 0, `DInput/0/Keyboard Mouse:Cursor Y-`)
+IR/Down = `Right Y-` | if((`Right Y+` + `Right Y-` + `Right X+` + `Right X-`) * 4, 0, `DInput/0/Keyboard Mouse:Cursor Y+`)
+IR/Left = `Right X-` | if((`Right Y+` + `Right Y-` + `Right X+` + `Right X-`) * 4, 0, `DInput/0/Keyboard Mouse:Cursor X-`)
+IR/Right = `Right X+` | if((`Right Y+` + `Right Y-` + `Right X+` + `Right X-`) * 4, 0, `DInput/0/Keyboard Mouse:Cursor X+`)
+```
+
+The `if` gives 0 while the stick is pushed in any direction (the `* 4` makes a small push
+count) and the cursor otherwise. So the stick aims while it's held, and the trackball aims
+once it's let go. Use the stick names your pad's IR binds already have (here the right stick).
+The trackball's buttons can go after `Buttons/A` and `Buttons/B` as `Click 0` and `Click 1`.
+
+#### Sideways-remote games on a joystick
+
+Games played with the Wii Remote held sideways read its D-pad a quarter-turn round. Bind the
+panel's joystick turned to match, and put the panel's main buttons on `Buttons/1` and
+`Buttons/2`:
+
+| Joystick | Wii Remote bind |
+|---|---|
+| Left | `D-Pad/Up` |
+| Right | `D-Pad/Down` |
+| Down | `D-Pad/Left` |
+| Up | `D-Pad/Right` |
+
+Load that layout only for those games:
+
+1. Make a Wii Remote profile, `Config\Profiles\Wiimote\<name>.ini`. Its one section is
+   `[Profile]`, with the same keys as a `[WiimoteN]` section. Start from a copy of your
+   `[Wiimote1]` lines, because the profile replaces that remote's whole layout for the game,
+   pad binds included. Set `Extension = None` in it, so the Nunchuk is unplugged for those games.
+2. For each game, add this to `GameSettings\<GAMEID>.ini` (make the file if there isn't one).
+   The ID is the six-character game ID in the game's **Properties → Info**, and each region
+   has its own.
+
+   ```ini
+   [Controls]
+   WiimoteProfile1 = <name>
+   ```
+
+   The number is the remote (1–4). `PadProfile1` works the same way for a GameCube port,
+   with profiles in `Config\Profiles\GCPad\`.
+
+Dolphin loads the profile only while that game runs, and doesn't save it over
+`WiimoteNew.ini` when the game closes, so every other game keeps the normal layout.
+
+#### Motion on keys
+
+Wii motion takes keys, or a spare joystick's directions, like any button:
+
+- `Shake/X`, `Shake/Y`, `Shake/Z`
+- `Tilt/Forward`, `Tilt/Backward`, `Tilt/Left`, `Tilt/Right`
+- `Swing/Up`, `Swing/Down`, `Swing/Left`, `Swing/Right`, `Swing/Forward`, `Swing/Backward`
+- the same names under `Nunchuk/` (`Nunchuk/Shake/X`, `Nunchuk/Tilt/Left`, …) for the Nunchuk
+
+For a shake button, bind one key to all three axes:
+
+```ini
+Shake/X = `DInput/0/Keyboard Mouse:Q`
+Shake/Y = `DInput/0/Keyboard Mouse:Q`
+Shake/Z = `DInput/0/Keyboard Mouse:Q`
+```
+
+#### RocketLauncher's Dolphin module
+
+Leave the module's `UseCustomWiimoteProfiles` and `UseCustomGCPadProfiles` settings off (the
+default). With one on, the module copies a whole-file profile over `WiimoteNew.ini` or
+`GCPadNew.ini` at every launch, whenever the two differ. That's the game's own profile from
+`Config\Profiles\Wiimote (RL)\` or `GCPad (RL)\`, or else `_Default_WiimoteNew.ini` /
+`_Default_GCPadNew.ini`, a copy it took the first time the setting was on. Binds added after
+that are lost at the next launch. The Wii Remote copy runs only for systems whose name
+contains "Wii"; the GameCube copy runs for every system. Use Dolphin's own per-game profiles
+(above) instead.
+
+If one was on, switch it off and check that `WiimoteNew.ini` and `GCPadNew.ini` still hold
+your binds. The last launch may have replaced them.
+
 ---
 
 ## Phoenix (Atari Jaguar) — Emulator Configuration and ROM Path Fix

@@ -1117,13 +1117,12 @@ def _wheel_rom_paths(system: str, look: _RomLookup, databases_dir: Path) -> Chec
     own_games: list[tuple[_RomSource, str]] = []
     borrowed: dict[str, list[tuple[_RomSource, str]]] = {}
     for name in games:
-        emu, other = overrides.get(name.lower(), ("", ""))
-        if other and other.lower() != system.lower():
-            src = look.source(other, emu)
+        src, other = look.game_source(system, name, overrides)
+        if other:
             if src is not None:  # else System= names a system with no settings
                 borrowed.setdefault(other.lower(), []).append((src, name))
         else:
-            own_games.append((look.source(system, emu) or own, name))
+            own_games.append((src or own, name))
     considered = len(own_games) + sum(len(v) for v in borrowed.values())
 
     def found(src: _RomSource, name: str) -> bool:
