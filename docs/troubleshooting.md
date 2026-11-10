@@ -746,6 +746,72 @@ Diagnostic steps, in the order that actually resolves this fastest:
    Click **Run** again, then check whether `swap-debug.log` was created at all. **No log file at all** (not even an empty one) means the `.bat` never started — that's the `.vbs` path-derivation bug (fixed on current versions; re-run `install-autorun --apply` to regenerate the launcher files). A log file **with** a `PermissionError` inside points at the lock scenario in step 4 instead.
 4. If the `.bat` does run (confirmed via step 3) but still doesn't change the video, it's the lock: HyperSpin holds `intro_video_target` open for the **entire duration** it's playing the *previous* intro video — not just an instant. Reproduce it directly: run `introvideo swap --apply` while an intro clip is actively playing and it fails immediately with `PermissionError: [WinError 32] The process cannot access the file because it is being used by another process`; run it again once the clip finishes and it succeeds instantly. `swap_video` retries every 2 seconds to ride this out, for the playing clip's length plus a minute (at least 3 minutes, at most 30). It reads the length from the MP4 / M4V / MOV header; when it can't, it uses the longest clip in the pool, or 3 minutes. Older versions retried for a fixed 3 minutes, so a longer clip that was playing made the swap fail, and the same clip then played again at the next boot. `spindoctor doctor`'s **Intro video** check shows the longest clip and how long the swap waits for it, and warns about clips too long to wait out. For a clip in another format, or one over 29 minutes, convert or remove it, or increase `--delay-minutes` on `install-autorun` (or the GUI's **Delay after login** field) for a bigger head start.
 
+## Launch tests
+
+### Recently Played or Most Played won't rebuild: "a game test run … is in progress or was interrupted"
+
+`spindoctor test` puts RocketLauncher's play statistics back after every game,
+so test launches never reach Recently Played or Most Played. While a test run is
+going on, or after one was stopped from the GUI, crashed or lost power before it
+could put them back, the statistics may still hold a test launch, so the wheel
+rebuilds refuse to run. If no test is running, run:
+
+```bat
+spindoctor test --recover
+```
+
+It closes the game the run left open (only the programs the run itself
+started), puts the statistics back from the run's `stats-backup\` folder and
+marks the run interrupted, so `spindoctor test --resume --apply` can finish it.
+The same recovery runs at the start of every `spindoctor test --apply`.
+
+### `spindoctor test` says a game didn't start, but it plays from HyperSpin
+
+- **"nothing opened within 90 seconds"** for CD or large games that RocketLauncher
+  unpacks first: raise `test_launch_timeout`
+  (`spindoctor config set test_launch_timeout 180`). The wait already grows while
+  7-Zip is running.
+- **The game is started by a launcher SpinDoctor doesn't know** (a loader that
+  starts the real game and exits): add the loader's program name to
+  `test_helper_processes`, so SpinDoctor waits for the game's own window.
+- **"Screen looked black"** is a warning, not a failure: some games are still on
+  a black loading screen after `test_game_seconds`, and some full-screen modes
+  can't be captured. Open the screenshot in the run folder, or test again with
+  `--seconds 45`.
+- **Light-gun and PC games** usually need a person: skip their wheels with
+  `test_skip_systems`, and PCLauncher games are skipped by default
+  (`test_skip_pclauncher`).
+
+### `spindoctor test --with-hyperspin` says HyperSpin didn't load, or didn't skip the intro
+
+- **"didn't finish loading the Main Menu within 180 seconds"**: SpinDoctor waits
+  for `wheel loaded successfully` in `<hyperspin_dir>\log.txt`. A long intro video
+  that isn't skipped can take most of that; raise `test_hyperspin_timeout`, or
+  check the log copy (`HyperSpin log.txt` in the run folder) for where it stopped.
+- **"HyperSpin ignored the key press meant to skip its intro video"**: HyperSpin
+  only stops the intro on a key press with `Stop_On_Keypress=true` under
+  `[IntroVideo]` in its `Settings\Settings.ini`.
+- **"the intro video wasn't skipped: HyperSpin's window couldn't be brought to the
+  front"**: another window kept the focus. Close it, or run with `--play-intro`.
+- **"its log has N error line(s)"** for a line that is harmless on your cabinet
+  (for example a joystick that isn't plugged in): add a piece of it to
+  `test_ignore_hyperspin_log`.
+
+### After a test run, new save files and configs are left in the emulator folders
+
+That's the default (`test_cleanup = report`): the run lists what the games
+created in `cleanup.csv` and the report, and leaves it. To have the next runs
+back each new file up and delete it:
+
+```bat
+spindoctor config set test_cleanup remove
+```
+
+or pass `--cleanup remove` for one run. Files that existed before the run are
+never touched. To remove what an earlier run listed, use its `cleanup.csv`. If a
+folder of yours fills with files the cleanup shouldn't look at, add it to
+`test_cleanup_skip`.
+
 ## Light guns
 
 ### Model 3: player 2's gun does nothing, or both guns move one crosshair

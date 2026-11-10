@@ -24,6 +24,7 @@ from typing import Iterable, Optional
 
 from . import __app_name__, __version__
 from .config import Config, get_systems, load_config
+from ._testrun import ActiveRunError, refuse_during_test_run
 from ._wheels import DEFAULT_SYNTHETIC_NAMES, synthetic_names, validate_target
 from .favorites import FavoriteEntry, _safe_load, _write_synthetic_wheel
 from .medialink import LinkMode
@@ -574,6 +575,8 @@ def rebuild(
     """
     if not config.hyperspin_dir:
         return RecentSummary(target_system=target_system)
+    if not dry_run:
+        refuse_during_test_run(f"rebuild the {target_system} wheel")
 
     # Restrict to real source systems only — exclude synthetic wheel directories
     # (Databases/Favorites/ etc. exist on disk and would otherwise pass the
@@ -707,15 +710,19 @@ def main(argv: Optional[list[str]] = None) -> int:
         mode = LinkMode.AUTO if skip_media else LinkMode(args.media_mode)
         if not args.apply:
             print("[DRY RUN] No files will be written. Re-run with --apply to commit.")
-        summary = rebuild(
-            config,
-            target_system=args.target_system,
-            limit=args.limit,
-            media_mode=mode,
-            skip_media=skip_media,
-            dry_run=not args.apply,
-            verbose=getattr(args, "verbose", False),
-        )
+        try:
+            summary = rebuild(
+                config,
+                target_system=args.target_system,
+                limit=args.limit,
+                media_mode=mode,
+                skip_media=skip_media,
+                dry_run=not args.apply,
+                verbose=getattr(args, "verbose", False),
+            )
+        except ActiveRunError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 1
         print(f"Recently Played system: {summary.target_system}")
         for note in summary.read_notes:
             print(f"  source:     {note}")

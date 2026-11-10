@@ -14,6 +14,7 @@ Most destructive commands write a manifest under `~/.spindoctor/<category>/` and
 - [Editing](#editing) — `batch-edit`, `rename`, `clone`, `game`
 - [Library generation](#library-generation) — `generate-config`, `mainmenu`, `organize`, `add-system`, `add-pc-system`, `pc-rename`, `pc-fix-exe`, `migrate`, `backup`
 - [Health & integrity](#health--integrity) — `find-dupes`, `find-misplaced`, `curate`, `find-orphan-media`, `check-discs`, `check-archive-ext`, `verify`, `stats`, `preview`
+- [Launch tests](#launch-tests) — `test`
 - [Custom wheels](#custom-wheels) — `fav`, `recent`, `install-tools`, `uninstall-tools`
 - [Intro Video Randomizer](#intro-video-randomizer) — `introvideo`
 - [Playtime stats](#playtime-stats) — `stats-report`
@@ -306,7 +307,7 @@ Three commands for editing game metadata and identity without ever opening Hyper
 
 ### `batch-edit`
 
-Set, clear, or append metadata across many games. Filter games out of one system's database, then mutate one or more fields in lockstep. Filters: `name=*Mario*`, `genre=Action`, `year=1980-1989`, `manufacturer=Capcom`, `missing=rating`. Mutations: `--set field=value`, `--clear field`, `--append field=value`, `--prepend field=value`.
+Set, clear, or append metadata across many games. Filter games out of one system's database, then mutate one or more fields in lockstep. Filters: `name=*Mario*`, `genre=Action` (the whole genre, ignoring case; `genre=Shoot*` for wildcards), `year=1980-1989`, `manufacturer=Capcom`, `missing=rating`. Mutations: `--set field=value`, `--clear field`, `--append field=value`, `--prepend field=value`.
 
 ```bat
 :: Tag every Capcom game from the 80s as Action
@@ -911,6 +912,73 @@ spindoctor preview --system NES --output-dir D:\Out --include-missing
 ```
 
 PNG mode is gated on `pip install -e .[preview]` (Pillow). When Pillow isn't installed, `--format png` falls back to HTML with a warning.
+
+---
+
+## Launch tests
+
+### `test`
+
+Launches games through RocketLauncher the way HyperSpin does (`RocketLauncher.exe "<System>" "<Game>"`), lets each one run, and judges it. In the GUI it's the [Test games](gui.md#test-games) page. Without `--apply` nothing is launched: the picked games are listed, each with its file check. `--apply` needs Windows. Games open full screen, so leave the cabinet alone while a run goes.
+
+```bat
+spindoctor test --system "Nintendo Entertainment System" --all          :: list only
+spindoctor test --system "Nintendo Entertainment System" --all --apply  :: launch every game
+spindoctor test --genre Shooter --count 8 --apply                       :: 8 random Shooter games, any wheel
+spindoctor test --system MAME --game galaga --game "pac*" --apply
+spindoctor test --all-systems --per-system 3 --apply                    :: 3 random games from every wheel
+spindoctor test --all-systems --per-system 3 --with-hyperspin --apply   :: the same, opening HyperSpin first
+spindoctor test --resume --apply                                        :: carry on the last unfinished run
+spindoctor test --only-failed --apply                                   :: launch the last run's failures again
+spindoctor test --recover                                               :: finish a run that was stopped or killed
+spindoctor test --list-runs
+```
+
+**Picking games.** `--system` (repeatable) or `--all-systems` picks the wheels from HyperSpin's Main Menu. `--genre` keeps games whose `<genre>` is the whole genre given, ignoring case, with `*` and `?` wildcards (`--genre "Shoot*"`, the same rule as `batch-edit --filter genre=`). `--game` takes names with wildcards. A genre or game pattern without `--system` searches every wheel. `--all` takes every match, `--count N` N random matches in total, `--per-system N` N per wheel; with none of these and no `--game`, it picks `test_per_system` (3) per wheel. Random picks only draw from games that can launch, and `--seed N` repeats them. Disabled games (`<enabled>No</enabled>`) are left out.
+
+**Skipped wheels.** Wheels HyperSpin starts itself (`[exe info] hyperlaunch=false` in `<hyperspin_dir>\Settings\<System>.ini`) and wheels with no RocketLauncher settings are never launched. SpinDoctor's own Favorites, Recently Played and Most Played wheels (`test_skip_custom_wheels`), wheels on `test_skip_systems`, and wheels or games that use PCLauncher (`test_skip_pclauncher`; PC games often need a manual exit) are skipped unless you name the wheel with `--system` or pass `--include-skipped`.
+
+**File check.** Each picked game is checked with RocketLauncher's own rules, the ones `doctor`'s ROM paths check uses: the system's settings, `Games.ini` `Emulator=` and `System=` overrides, the emulator's `Emu_Path` program and its module (`Module=`, or `Modules\Game Modules\<game>\<game>.ahk`), `Skipchecks`, and the game file in `Rom_Path`. A game that fails is listed as skipped with the reason and not launched. The whole-library version of this check is `spindoctor audit --all` plus `spindoctor doctor`.
+
+**Judging.** Each game runs for `--seconds` (`test_game_seconds`, 20) after its window appears:
+
+| Result | When |
+|---|---|
+| FAIL "Game didn't start" | Nothing opened within `test_launch_timeout` (90 s; longer while 7-Zip is still unpacking), or RocketLauncher quit first. RocketLauncher's first log error is added. |
+| FAIL "Game closed by itself" | RocketLauncher quit after the game window appeared |
+| FAIL "Pop-up window appeared" | A dialog (`#32770`), or a smaller window with an error word in its title (`test_error_window_words`), from the game, RocketLauncher or a Windows crash report. The game's own name is ignored ("Crash Bandicoot") |
+| FAIL "The emulator crashed" | A Windows crash report (WerFault) for one of the game's programs |
+| FAIL "… stopped responding" | Windows marks the game window "Not Responding" |
+| WARN "RocketLauncher logged an error" | An `ERROR` line in `RocketLauncher.log` not on `test_ignore_log_errors` |
+| WARN "Screen looked black" | The middle of the game window is black in the screenshot |
+| WARN "The game window was not in front", "… had to force-close …" | |
+| SKIPPED | The file check ruled it out |
+
+Programs RocketLauncher starts that aren't the game (AutoHotkey, 7-Zip, DAEMON Tools, keymappers, DemulShooter, LEDBlinky, Steam…) are ignored; add your own with `test_helper_processes`. A big new window from another program (a game Steam started) counts as the game.
+
+**`doctor` notes.** Each picked game also gets the findings `doctor` has for it, shown under the game in the list, in `results.csv` (`Doctor` column) and in the report: a Coin or Start binding of its own that no key can press (MAME, Supermodel), a problem in a User Functions file RocketLauncher runs for it (its own, its system's, its emulator's or `Global.ahk`), HyperSpin's ROMs-only filter hiding it, or a name with spaces at the start or end. A game can pass the launch test and still be unplayable or invisible in HyperSpin.
+
+**HyperSpin.** With `--with-hyperspin`, HyperSpin is opened first and its startup judged: it must log `wheel loaded successfully` in `<hyperspin_dir>\log.txt` within `test_hyperspin_timeout` (180 s), show no error dialog and not close. The intro video is skipped the way a player would, with a Space key press while HyperSpin's log says `Playing intro video` (it needs `[IntroVideo] Stop_On_Keypress=true` in HyperSpin's `Settings.ini`); `--play-intro` or `test_skip_intro_video false` lets it play. Lines in `log.txt` that look like errors make it a WARN, apart from `test_ignore_hyperspin_log`. Games are then launched as usual, with HyperSpin behind them. At the end SpinDoctor leaves HyperSpin through its exit menu (Esc, then Enter), or closes or ends it and tells LEDBlinky the frontend quit, unless `--leave-hyperspin-open`. A HyperSpin that was already open is left alone. A killed run's recovery closes the HyperSpin it opened.
+
+**Closing.** SpinDoctor presses the system's exit key from RocketLauncher's settings (`[Exit] Exit_Emulator_Key`, including `H500:` holds and `&` combinations), never into HyperSpin itself. If the game is still open after `test_close_timeout` (25 s), it ends the game's programs, then RocketLauncher.
+
+**Play statistics.** RocketLauncher records every launch in its statistics, which Recently Played and Most Played are built from. A run backs up every statistics file (all three layouts `scrub --stats` knows) before the first launch and puts them back after every game. While a run is going on, or after one was killed, `recent rebuild --apply` and `stats-report build-wheel` refuse to run until `spindoctor test --recover` has put the statistics back.
+
+**Files the games create.** Emulators write save files, configs and folders when a game runs (a MAME `cfg\<game>.cfg`, a RetroArch `.srm`, RocketLauncher's own `Settings\<System>\<game>\Bezel.ini`). `--cleanup` (default `test_cleanup`) decides what happens to them:
+
+| Mode | What it does |
+|---|---|
+| `report` (default) | Lists them in `cleanup.csv` and the report, and leaves them. |
+| `remove` | Copies each new file to `<backup_dir>\test-cleanup\<run>\` (or the run folder's `cleanup-backup\` when `backup_dir` isn't set), then deletes it; new folders go once they're empty. |
+| `off` | Doesn't look. |
+
+Nothing that existed when the run started is ever touched: before the first launch every path under `hyperspin_dir` (and `rocketlauncher_dir` and `emulators_dir` when they are elsewhere) is recorded in the run folder's `baseline.bin`, a folder that can't be read is protected whole, and a file also needs a creation time inside the run. Left alone too: `test_cleanup_skip` (by default `cache` and `RocketLauncher\Data\Statistics`, relative to `hyperspin_dir`), RocketLauncher's statistics and 7-Zip extract folder (`[7z] 7z_Extract_Path`), and the folders of programs that were already running from a watched folder (DS4Windows, LEDBlinky). Windows' folder notifications name what appeared after each game; if they overflow, and at the end of the run, every watched folder is listed again. A killed run's recovery does the same listing against the saved baseline.
+
+**Results.** Each run gets a folder under `~/.spindoctor/tests/` (or `test_results_dir`): `report.html` (open this: summary, HyperSpin's startup, a tile per game with its screenshot, filters, a table per system and the skipped games), `results.csv` and `results.json` (one row per game, skipped ones too), `plan.csv`, `run.json`, `HyperSpin log.txt` with `--with-hyperspin`, `logs\<System>\<Game>.log` (RocketLauncher's log for each launch), `screenshots\<System>\<Game>.jpg` (`.png` without Pillow), `stats-backup\`, and with the cleanup on `cleanup.csv` and `baseline.bin`. Screenshots show the whole monitor; check them before sharing (see [Privacy](privacy.md)).
+
+**Stopping.** Ctrl+C closes the current game, puts the statistics back and stops. A file named `stop-request` in the run folder does the same within a second. `--resume --apply` carries on, starting with the game that was cut off. If the run is killed instead (the GUI's Stop, a crash, a power cut), the next `spindoctor test --apply`, or `spindoctor test --recover` on its own, finishes it: it closes the game the run left open (only programs whose process ID, name and start time match the run's journal) and puts the statistics back.
+
+Exit code: 0 when nothing failed, 2 when a game failed, 1 for errors.
 
 ---
 
