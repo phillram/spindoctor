@@ -925,6 +925,7 @@ spindoctor test --system "Nintendo Entertainment System" --all --apply  :: launc
 spindoctor test --genre Shooter --count 8 --apply                       :: 8 random Shooter games, any wheel
 spindoctor test --system MAME --game galaga --game "pac*" --apply
 spindoctor test --all-systems --per-system 3 --apply                    :: 3 random games from every wheel
+spindoctor test --all-systems --per-system 3 --with-hyperspin --apply   :: the same, opening HyperSpin first
 spindoctor test --resume --apply                                        :: carry on the last unfinished run
 spindoctor test --only-failed --apply                                   :: launch the last run's failures again
 spindoctor test --recover                                               :: finish a run that was stopped or killed
@@ -953,11 +954,15 @@ spindoctor test --list-runs
 
 Programs RocketLauncher starts that aren't the game (AutoHotkey, 7-Zip, DAEMON Tools, keymappers, DemulShooter, LEDBlinky, Steam…) are ignored; add your own with `test_helper_processes`. A big new window from another program (a game Steam started) counts as the game.
 
+**`doctor` notes.** Each picked game also gets the findings `doctor` has for it, shown under the game in the list, in `results.csv` (`Doctor` column) and in the report: a Coin or Start binding of its own that no key can press (MAME, Supermodel), a problem in a User Functions file RocketLauncher runs for it (its own, its system's, its emulator's or `Global.ahk`), HyperSpin's ROMs-only filter hiding it, or a name with spaces at the start or end. A game can pass the launch test and still be unplayable or invisible in HyperSpin.
+
+**HyperSpin.** With `--with-hyperspin`, HyperSpin is opened first and its startup judged: it must log `wheel loaded successfully` in `<hyperspin_dir>\log.txt` within `test_hyperspin_timeout` (180 s), show no error dialog and not close. The intro video is skipped the way a player would, with a Space key press while HyperSpin's log says `Playing intro video` (it needs `[IntroVideo] Stop_On_Keypress=true` in HyperSpin's `Settings.ini`); `--play-intro` or `test_skip_intro_video false` lets it play. Lines in `log.txt` that look like errors make it a WARN, apart from `test_ignore_hyperspin_log`. Games are then launched as usual, with HyperSpin behind them. At the end SpinDoctor leaves HyperSpin through its exit menu (Esc, then Enter), or closes or ends it and tells LEDBlinky the frontend quit, unless `--leave-hyperspin-open`. A HyperSpin that was already open is left alone. A killed run's recovery closes the HyperSpin it opened.
+
 **Closing.** SpinDoctor presses the system's exit key from RocketLauncher's settings (`[Exit] Exit_Emulator_Key`, including `H500:` holds and `&` combinations), never into HyperSpin itself. If the game is still open after `test_close_timeout` (25 s), it ends the game's programs, then RocketLauncher.
 
 **Play statistics.** RocketLauncher records every launch in its statistics, which Recently Played and Most Played are built from. A run backs up every statistics file (all three layouts `scrub --stats` knows) before the first launch and puts them back after every game. While a run is going on, or after one was killed, `recent rebuild --apply` and `stats-report build-wheel` refuse to run until `spindoctor test --recover` has put the statistics back.
 
-**Results.** Each run gets a folder under `~/.spindoctor/tests/` (or `test_results_dir`): `results.csv` and `results.json` (one row per game, skipped ones too), `plan.csv`, `run.json`, `logs\<System>\<Game>.log` (RocketLauncher's log for each launch), `screenshots\<System>\<Game>.jpg` (`.png` without Pillow) and `stats-backup\`. Screenshots show the whole monitor; check them before sharing (see [Privacy](privacy.md)).
+**Results.** Each run gets a folder under `~/.spindoctor/tests/` (or `test_results_dir`): `report.html` (open this: summary, HyperSpin's startup, a tile per game with its screenshot, filters, a table per system and the skipped games), `results.csv` and `results.json` (one row per game, skipped ones too), `plan.csv`, `run.json`, `HyperSpin log.txt` with `--with-hyperspin`, `logs\<System>\<Game>.log` (RocketLauncher's log for each launch), `screenshots\<System>\<Game>.jpg` (`.png` without Pillow) and `stats-backup\`. Screenshots show the whole monitor; check them before sharing (see [Privacy](privacy.md)).
 
 **Stopping.** Ctrl+C closes the current game, puts the statistics back and stops. A file named `stop-request` in the run folder does the same within a second. `--resume --apply` carries on, starting with the game that was cut off. If the run is killed instead (the GUI's Stop, a crash, a power cut), the next `spindoctor test --apply`, or `spindoctor test --recover` on its own, finishes it: it closes the game the run left open (only programs whose process ID, name and start time match the run's journal) and puts the statistics back.
 

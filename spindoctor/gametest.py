@@ -93,6 +93,9 @@ class RunSettings:
     helpers: frozenset = BUILTIN_HELPERS
     ignore_log_errors: tuple = ("No CRC defined",)
     error_words: str = DEFAULT_ERROR_WORDS
+    hyperspin_timeout: int = 180
+    ignore_hyperspin_log: tuple = ()
+    skip_intro: bool = True
 
 
 def settings_from_config(config: Config, seconds: Optional[int] = None) -> RunSettings:
@@ -117,6 +120,9 @@ def settings_from_config(config: Config, seconds: Optional[int] = None) -> RunSe
         helpers=frozenset(helpers),
         ignore_log_errors=tuple(s for s in config.test_ignore_log_errors if s.strip()),
         error_words=config.test_error_window_words or DEFAULT_ERROR_WORDS,
+        hyperspin_timeout=config.test_hyperspin_timeout,
+        ignore_hyperspin_log=tuple(s for s in config.test_ignore_hyperspin_log if s.strip()),
+        skip_intro=config.test_skip_intro_video,
     )
 
 
@@ -131,6 +137,7 @@ class PlannedGame:
     emulator: str = ""
     reason: str = ""  # why it is not launched ("" = launch it)
     fix: str = ""
+    doctor: str = ""  # `doctor` findings for this game, "; "-separated (gametest_notes)
 
     @property
     def launch(self) -> bool:
@@ -320,6 +327,9 @@ def pick_games(
         picked = rng.sample(everything, min(count, len(everything)))
         order = {id(g): i for i, g in enumerate(everything)}
         plan.games.extend(sorted(picked, key=lambda g: order[id(g)]))
+    from .gametest_notes import add_notes
+
+    add_notes(config, plan.games, look)
     return plan
 
 
@@ -499,6 +509,12 @@ class WindowsPlatform:
 
     def press_keys(self, vks: list[int], hold_ms: int) -> None:
         self._w.press_keys(vks, hold_ms)
+
+    def type_keys(self, vks: list[int]) -> None:
+        self._w.type_keys(vks)
+
+    def close_window(self, hwnd: int) -> None:
+        self._w.close_window(hwnd)
 
     def terminate(self, pid: int) -> bool:
         return self._w.terminate(pid)
@@ -948,8 +964,8 @@ def restore_stats(rl_dir: Path, manifest: Path) -> tuple[int, int]:
 # ─── run folders, journal and results ─────────────────────────────────────────
 
 RESULT_FIELDS = ["System", "Game", "Status", "Reason", "Details", "Emulator", "Seconds",
-                 "Screenshot", "Log", "Fix", "Tested"]
-PLAN_FIELDS = ["System", "Game", "Description", "Genre", "Emulator", "Reason", "Fix"]
+                 "Screenshot", "Log", "Fix", "Doctor", "Tested"]
+PLAN_FIELDS = ["System", "Game", "Description", "Genre", "Emulator", "Reason", "Fix", "Doctor"]
 
 
 class Journal:
@@ -1000,8 +1016,12 @@ def _save_run(run_dir: Path, info: dict) -> None:
 
 
 def write_results_json(run_dir: Path) -> None:
+    """``results.json`` and ``report.html`` from ``run.json`` and ``results.csv``."""
+    from .gametest_report import write_report
+
     data = {"run": read_run(run_dir), "results": read_csv(run_dir / "results.csv")}
     atomic_write_bytes(run_dir / "results.json", json.dumps(data, indent=2).encode("utf-8"))
+    write_report(run_dir, data)
 
 
 def list_runs(root: Path) -> list[tuple[Path, dict]]:
@@ -1014,13 +1034,14 @@ def list_runs(root: Path) -> list[tuple[Path, dict]]:
 
 def plan_rows(plan: Plan) -> list[dict]:
     return [{"System": g.system, "Game": g.game, "Description": g.description, "Genre": g.genre,
-             "Emulator": g.emulator, "Reason": g.reason, "Fix": g.fix} for g in plan.games]
+             "Emulator": g.emulator, "Reason": g.reason, "Fix": g.fix, "Doctor": g.doctor}
+            for g in plan.games]
 
 
 def plan_from_rows(rows: list[dict]) -> Plan:
     return Plan(games=[PlannedGame(r.get("System", ""), r.get("Game", ""), r.get("Description", ""),
                                    r.get("Genre", ""), r.get("Emulator", ""), r.get("Reason", ""),
-                                   r.get("Fix", "")) for r in rows])
+                                   r.get("Fix", ""), r.get("Doctor", "")) for r in rows])
 
 
 def recheck(config: Config, items: list[tuple[str, str]]) -> Plan:
@@ -1036,6 +1057,9 @@ def recheck(config: Config, items: list[tuple[str, str]]) -> Plan:
         emu, problem, fix = check_game(look, system, game, _raw_game_names(system, config.databases_dir))
         plan.games.append(PlannedGame(system, game, e.description if e else "", e.genre if e else "",
                                       emu, problem, fix))
+    from .gametest_notes import add_notes
+
+    add_notes(config, plan.games, look)
     return plan
 
 
@@ -1071,13 +1095,22 @@ def run_plan(
     run_dir: Optional[Path] = None,
     selection: Optional[dict] = None,
     on_result: Optional[Callable[[int, int, PlannedGame, LaunchResult, float], None]] = None,
+    with_hyperspin: bool = False,
+    play_intro: bool = False,
+    leave_hyperspin_open: bool = False,
+    on_hyperspin: Optional[Callable[[dict], None]] = None,
 ) -> RunSummary:
     """Launch every game of *plan* that can launch; a new run folder unless
     *run_dir* (``--resume``) is given.  The caller runs :func:`recover` first.
 
     *on_result* gets ``(number, total, game, result, seconds left)`` after each
     game.  Ctrl+C ends the run cleanly; the run folder then says it isn't
-    finished, and ``--resume`` carries on."""
+    finished, and ``--resume`` carries on.
+
+    With *with_hyperspin*, HyperSpin is opened first and its startup judged
+    (:mod:`spindoctor.gametest_hyperspin`; *on_hyperspin* gets the result),
+    and closed again at the end unless *leave_hyperspin_open*."""
+    from . import gametest_hyperspin
     rl_dir = Path(config.rocketlauncher_dir)
     resumed = run_dir is not None
     if run_dir is None:
@@ -1089,7 +1122,7 @@ def run_plan(
         })
         _write_csv(run_dir / "plan.csv", PLAN_FIELDS, plan_rows(plan))
         skipped = [{"System": g.system, "Game": g.game, "Status": SKIPPED, "Reason": g.reason,
-                    "Emulator": g.emulator, "Fix": g.fix, "Seconds": 0,
+                    "Emulator": g.emulator, "Fix": g.fix, "Seconds": 0, "Doctor": g.doctor,
                     "Tested": datetime.now().isoformat(sep=" ", timespec="seconds")}
                    for g in plan.games if not g.launch]
         _write_csv(run_dir / "results.csv", RESULT_FIELDS, skipped)
@@ -1118,6 +1151,15 @@ def run_plan(
         except FileNotFoundError:
             pass
         runner = Runner(config, settings, platform, run_dir, journal, stop_requested=stop_file.exists)
+        if with_hyperspin:
+            hs = gametest_hyperspin.start_and_check(config, settings, platform, run_dir, journal,
+                                                   play_intro=play_intro)
+            info = read_run(run_dir)
+            info["hyperspin"] = hs
+            _save_run(run_dir, info)
+            write_results_json(run_dir)
+            if on_hyperspin is not None:
+                on_hyperspin(hs)
         t_start = platform.now()
         for item in remaining:
             if stop_file.exists():
@@ -1138,7 +1180,7 @@ def run_plan(
                 "System": item.system, "Game": item.game, "Status": result.status,
                 "Reason": result.reason, "Details": "\n".join(result.details),
                 "Emulator": item.emulator, "Seconds": result.seconds,
-                "Screenshot": result.screenshot, "Log": result.log, "Fix": "",
+                "Screenshot": result.screenshot, "Log": result.log, "Fix": "", "Doctor": item.doctor,
                 "Tested": datetime.now().isoformat(sep=" ", timespec="seconds"),
             }], append=True)
             if on_result is not None:
@@ -1161,6 +1203,12 @@ def run_plan(
                 journal.data["current"] = {}
             except OSError:
                 pass  # the pointer stays, so recover() tries again
+            journal.save()
+        hs_entry = journal.data.get("hyperspin") or {}
+        if hs_entry.get("started_by_us"):
+            if not leave_hyperspin_open:
+                gametest_hyperspin.close(config, platform, hs_entry)
+            journal.data["hyperspin"] = {}
             journal.save()
         summary.stats_restored = journal.data["stats"]["restored"]
         info = read_run(run_dir)
@@ -1238,9 +1286,9 @@ def recover(config: Config, platform) -> Optional[RecoveryReport]:
     when the run is in fact still going.
 
     Each step is safe to repeat: close what the run left running (only
-    programs whose PID, name *and* start time match the journal), put the
-    play statistics back, mark the run interrupted (``--resume`` carries
-    on), and clear the pointer to it."""
+    programs whose PID, name *and* start time match the journal, and
+    HyperSpin when the run opened it), put the play statistics back, mark
+    the run interrupted (``--resume`` carries on), and clear the pointer to it."""
     active = _testrun.active_run()
     if active is None:
         return None
@@ -1256,6 +1304,15 @@ def recover(config: Config, platform) -> Optional[RecoveryReport]:
     report = RecoveryReport(run_dir)
     journal = Journal.load(run_dir / "journal.json")
     report.closed = _close_leftovers(platform, journal.data.get("current") or {})
+    hs_entry = journal.data.get("hyperspin") or {}
+    if platform is not None and hs_entry.get("started_by_us"):
+        from . import gametest_hyperspin
+
+        alive = {p.pid: p for p in platform.list_processes()}
+        if hs_entry.get("pid") and _same_process(platform, alive, hs_entry):
+            gametest_hyperspin.close(config, platform, hs_entry)
+            report.closed.append("HyperSpin.exe")
+        journal.data["hyperspin"] = {}
     stats = journal.data.get("stats") or {}
     manifest = Path(stats.get("manifest") or run_dir / "stats-backup" / "manifest.json")
     if not stats.get("restored", False) and manifest.is_file():

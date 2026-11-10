@@ -65,11 +65,12 @@ spindoctor test --system "Nintendo Entertainment System" --all          :: list 
 spindoctor test --system "Nintendo Entertainment System" --all --apply  :: launch every game, one after another
 spindoctor test --genre Shooter --count 8 --apply                       :: 8 random Shooter games from any wheel
 spindoctor test --all-systems --per-system 3 --apply                    :: a quick check of every wheel
+spindoctor test --all-systems --per-system 3 --with-hyperspin --apply   :: the same, opening HyperSpin first
 spindoctor test --only-failed --apply                                   :: try the last run's failures again
 spindoctor test --recover                                               :: after a run was stopped from the GUI or crashed
 ```
 
-Results, screenshots and RocketLauncher logs go to `%USERPROFILE%\.spindoctor\tests\<run>\`. Play statistics are put back after every game. Reference: [Command reference → test](commands.md#test).
+`report.html`, results, screenshots and RocketLauncher logs go to `%USERPROFILE%\.spindoctor\tests\<run>\`. Play statistics are put back after every game. Reference: [Command reference → test](commands.md#test).
 
 ### `audit` — compare ROMs vs the HyperSpin DB
 

@@ -443,6 +443,54 @@ def press_keys(vks: list[int], hold_ms: int) -> None:
         u.keybd_event(vk, u.MapVirtualKeyW(vk, 0) & 0xFF, 2, 0)  # KEYEVENTF_KEYUP
 
 
+def type_keys(vks: list[int]) -> None:
+    """Tap each of *vks* in turn with one ``SendInput`` call: key down and key
+    up back to back, as .NET's ``SendKeys`` does.  HyperSpin reacts to keys
+    sent this way, not to the held raw events :func:`press_keys` sends games."""
+    _require()
+    import ctypes
+    from ctypes import wintypes as w
+
+    class KEYBDINPUT(ctypes.Structure):
+        _fields_ = [("wVk", w.WORD), ("wScan", w.WORD), ("dwFlags", w.DWORD),
+                    ("time", w.DWORD), ("dwExtraInfo", ctypes.c_size_t)]
+
+    class MOUSEINPUT(ctypes.Structure):  # the union's largest member, for its size
+        _fields_ = [("dx", w.LONG), ("dy", w.LONG), ("mouseData", w.DWORD), ("dwFlags", w.DWORD),
+                    ("time", w.DWORD), ("dwExtraInfo", ctypes.c_size_t)]
+
+    class _U(ctypes.Union):
+        _fields_ = [("ki", KEYBDINPUT), ("mi", MOUSEINPUT)]
+
+    class INPUT(ctypes.Structure):
+        _fields_ = [("type", w.DWORD), ("u", _U)]
+
+    u = _user32()
+    events = (INPUT * (2 * len(vks)))()
+    for i, vk in enumerate(vks):
+        for j, flags in enumerate((0, 2)):  # down, then KEYEVENTF_KEYUP
+            e = events[2 * i + j]
+            e.type = 1  # INPUT_KEYBOARD
+            e.u.ki.wVk = vk
+            e.u.ki.wScan = u.MapVirtualKeyW(vk, 0) & 0xFFFF
+            e.u.ki.dwFlags = flags
+    send = ctypes.WinDLL("user32", use_last_error=True).SendInput
+    send.argtypes = [w.UINT, ctypes.c_void_p, ctypes.c_int]
+    send.restype = w.UINT
+    send(len(events), ctypes.addressof(events), ctypes.sizeof(INPUT))
+
+
+def close_window(hwnd: int) -> None:
+    """Ask *hwnd* to close (``WM_CLOSE``), as its title bar's X does."""
+    _require()
+    from ctypes import wintypes as w
+
+    post = _user32().PostMessageW
+    post.argtypes = [w.HWND, w.UINT, w.WPARAM, w.LPARAM]
+    post.restype = w.BOOL
+    post(hwnd, 0x0010, 0, 0)
+
+
 # ─── screen capture ───────────────────────────────────────────────────────────
 
 def _bitmap_header(width: int, height: int):

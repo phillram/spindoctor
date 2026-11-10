@@ -126,9 +126,27 @@ class FakeProc:
         return self.returncode
 
 
+@dataclass
+class HyperSpinBehaviour:
+    """What a fake HyperSpin does, in seconds after it starts."""
+    intro: bool = True                     # logs "Playing intro video" first
+    intro_seconds: float = 110             # until the intro ends by itself
+    load_seconds: float = 3                # from the end of the intro to the Main Menu
+    reacts_to_keys: bool = True            # Space stops the intro, Esc + Enter quit
+    popup: Optional[tuple] = None          # (seconds, title) of a #32770 dialog
+    quits_after: Optional[float] = None
+    log_lines: tuple = ()                  # extra lines logged at start
+
+
 class FakeWindows:
-    def __init__(self, rl_dir: Path, behaviours: Optional[list[GameBehaviour]] = None):
+    def __init__(self, rl_dir: Path, behaviours: Optional[list[GameBehaviour]] = None,
+                 hyperspin: Optional[HyperSpinBehaviour] = None):
         self.rl_dir = rl_dir
+        self.hs_dir = rl_dir.parent / "hs"
+        self.hyperspin = hyperspin or HyperSpinBehaviour()
+        self.hs: Optional[dict] = None         # the running fake HyperSpin
+        self.typed: list[list[int]] = []
+        self.closed_windows: list[int] = []
         self.behaviours = list(behaviours or [])
         self.t = time.time()
         self.next_pid = 5000
@@ -162,6 +180,10 @@ class FakeWindows:
         self.hung.discard(pid)
         if self.current and pid == self.current["rl"].pid and self.current["rl"].returncode is None:
             self.current["rl"].returncode = 0
+        if self.hs and pid == self.hs["proc"].pid:
+            self.hs["proc"].returncode = 0
+            if self.fg == pid:
+                self.fg = 100
 
     def add_window(self, pid: int, title: str, cls: str, rect: tuple) -> int:
         hwnd = 100 + len(self.windows) * 3 + pid
@@ -191,6 +213,27 @@ class FakeWindows:
         cur = self.current
         if cur and cur["b"].exit_key_works:
             self._game_over(cur)
+
+    def type_keys(self, vks) -> None:
+        self.typed.append(list(vks))
+        hs = self.hs
+        if not hs or hs["proc"].returncode is not None or self.fg != hs["proc"].pid:
+            return
+        if not hs["b"].reacts_to_keys:
+            return
+        for vk in vks:
+            if vk == 0x20 and hs["stage"] == "intro":
+                hs["stage"], hs["stage_at"] = "loading", self.t
+            elif vk == 0x1B and hs["stage"] == "loaded":
+                hs["exit_menu"] = True
+            elif vk == 0x0D and hs.get("exit_menu"):
+                self.remove(hs["proc"].pid)
+
+    def close_window(self, hwnd: int) -> None:
+        self.closed_windows.append(hwnd)
+        for w in list(self.windows):
+            if w.hwnd == hwnd:
+                self.remove(w.pid)
 
     def terminate(self, pid: int) -> bool:
         if pid not in self.procs:
@@ -222,6 +265,13 @@ class FakeWindows:
 
     def start(self, args, cwd):
         self.launches.append(list(args))
+        exe = Path(args[0]).name.lower()
+        if exe == "hyperspin.exe":
+            return self._start_hyperspin()
+        if exe != "rocketlauncher.exe":  # e.g. LEDBlinky.exe 2: runs and ends at once
+            proc = FakeProc(self.next_pid)
+            proc.returncode = 0
+            return proc
         b = self.behaviours.pop(0) if self.behaviours else GameBehaviour()
         proc = FakeProc(self.add_proc("RocketLauncher.exe", WORKER_PID))
         self.current = {"rl": proc, "b": b, "t0": self.t, "emu": None, "game": args[2],
@@ -246,8 +296,45 @@ class FakeWindows:
     def sleep(self, seconds: float) -> None:
         self.t += seconds
         self._advance()
+        self._advance_hyperspin()
         if self.on_sleep is not None:
             self.on_sleep(self)
+
+    # -- what the fake HyperSpin does over time
+    def _start_hyperspin(self) -> FakeProc:
+        b = self.hyperspin
+        proc = FakeProc(self.add_proc("HyperSpin.exe", WORKER_PID))
+        hwnd = self.add_window(proc.pid, "HyperSpin", "ShockwaveFlash", (0, 0, 1920, 1080))
+        self.fg = proc.pid
+        self.hs = {"proc": proc, "b": b, "t0": self.t, "hwnd": hwnd, "popup": False,
+                   "stage": "intro" if b.intro else "loading", "stage_at": self.t}
+        self._hs_log("HyperSpin started", *b.log_lines, fresh=True)  # HyperSpin starts a new log.txt
+        if b.intro:
+            self._hs_log("Playing intro video")
+        return proc
+
+    def _hs_log(self, *lines: str, fresh: bool = False) -> None:
+        log = self.hs_dir / "log.txt"
+        with open(log, "w" if fresh else "a", encoding="utf-8") as fh:
+            for line in lines:
+                fh.write(f"12:00:00 PM |  {line}\n")
+        os.utime(log, (self.t, self.t))
+
+    def _advance_hyperspin(self) -> None:
+        hs = self.hs
+        if not hs or hs["proc"].returncode is not None:
+            return
+        b, e = hs["b"], self.t - hs["t0"]
+        if hs["stage"] == "intro" and e >= b.intro_seconds:
+            hs["stage"], hs["stage_at"] = "loading", self.t
+        if hs["stage"] == "loading" and self.t - hs["stage_at"] >= b.load_seconds:
+            hs["stage"] = "loaded"
+            self._hs_log("Main Menu wheel loaded successfully")
+        if b.popup and not hs["popup"] and e >= b.popup[0]:
+            hs["popup"] = True
+            self.add_window(hs["proc"].pid, b.popup[1], "#32770", (700, 400, 400, 200))
+        if b.quits_after is not None and e >= b.quits_after:
+            self.remove(hs["proc"].pid)
 
     # -- what the running game does over time
     def _advance(self) -> None:
