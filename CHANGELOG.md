@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [3.2.0] - 2026-11-10
+
 ### Added
 
 - **`doctor` flags Refresh `.bat` helpers that run a SpinDoctor EXE that's gone.** `install-tools` writes `Refresh Favorites.bat`, `Refresh Recently Played.bat`, `Refresh Most Played.bat` and `Refresh All.bat` with the full path of the EXE that ran it (v3: `"<exe>" --run-tool spindoctor-fav …`; v2: `"<install folder>\spindoctor-fav.exe" …`). Portable releases unzip into a folder of their own, so once the old folder is removed every helper fails, from HyperSpin's Tools menu, a Toolkit wheel or a scheduled task, and the custom wheels stop refreshing while every other check passes. A new **Refresh helpers** check looks where `install-tools` writes them: `<rocketlauncher_dir>\Modules\HyperLaunch\Tools\spindoctor`, and for each PCLauncher system the folders of the `.bat` files its `Modules\PCLauncher\<System>.ini` `[Refresh …]` sections run, the first `Rom_Path` entry of `Settings\<System>\Emulators.ini` (where `--add-to-system` without `--apply` leaves them too) and `Modules\PCLauncher\<System>\`. It reads the quoted `.exe` on each command line, skipping comments. A program that no longer exists is a WARN per folder, with the `install-tools` command that rewrites those files as the fix (the same `--output-dir`, `--add-to-system` and `--apply` they were written with). Helpers that call bare commands from PATH (a source install) are INFO. Diagnosis only. Covered by `tests/test_doctor_refresh_helpers.py`.
@@ -2432,7 +2434,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v3.1.0...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v3.2.0...HEAD
+[3.2.0]: https://github.com/phillram/spindoctor/compare/v3.1.0...v3.2.0
 [3.1.0]: https://github.com/phillram/spindoctor/compare/v3.0.0...v3.1.0
 [3.0.0]: https://github.com/phillram/spindoctor/compare/v2.15.0...v3.0.0
 [2.15.0]: https://github.com/phillram/spindoctor/compare/v2.14.0...v2.15.0
