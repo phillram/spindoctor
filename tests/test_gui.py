@@ -3700,9 +3700,13 @@ def test_short_pages_cannot_scroll_above_their_content(monkeypatch):
     app, _tk = _build_gui_for_test(monkeypatch)
     try:
         app.root.geometry("1200x900")
+        # Let the deferred startup scan run first: with no config.json it
+        # switches to Setup, which would leave Console unmapped (1px tall).
+        app.root.update()
         idx = app._tab_base_names.index("Console")
         app._nb.select(idx)
         app.root.update()
+        assert app._nb.index("current") == idx
         container = app._nb.nametowidget(app._nb.tabs()[idx])
         canvas = next(w for w in container.winfo_children() if w.winfo_class() == "Canvas")
         canvas.yview_scroll(-10, "units")
