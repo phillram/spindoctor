@@ -13,9 +13,12 @@ from .config import Config, get_rom_extensions, get_system_overrides
 from .mainmenu import _main_menu_path
 from ._utils import atomic_write_bytes
 from ._text import (
+    read_editable_text,
     read_windows_text as _read_windows_text,
     read_windows_text_with_encoding as _read_windows_text_with_encoding,
+    write_windows_text,
 )
+from .toolkit_helpers import LEGACY_NAMES as _TOOLKIT_LEGACY_NAMES
 
 
 # System names that generate-config must never overwrite.
@@ -1073,6 +1076,44 @@ def install_system_wheel_art(
         return None, "no_asset"
     dest = hyperspin_dir / "Media" / "Main Menu" / "Images" / "Wheel" / f"{system_name}.png"
     return _install_asset(src, dest, dry_run, overwrite=overwrite)
+
+
+def _toolkit_art(hyperspin_dir: Path, system_name: str, helper) -> "tuple[Optional[Path], Path]":
+    """The bundled logo for an `install-tools` helper (None if there's none) and
+    where it goes: ``<hyperspin_dir>/Media/<system>/Images/Wheel/<name>.png``."""
+    src = Path(__file__).parent / "assets" / f"toolkit_{helper.key}.png"
+    dest = hyperspin_dir / "Media" / system_name / "Images" / "Wheel" / f"{helper.name}.png"
+    return (src if src.is_file() else None), dest
+
+
+def install_toolkit_wheel_art(hyperspin_dir: Path, system_name: str, helper) -> "tuple[Optional[Path], str]":
+    """Copy a helper's bundled wheel logo to the wheel it was added to.
+
+    Art already there is kept (the wheel may have its own).  Returns
+    ``(dest, status)`` with *status* ``"installed"``, ``"skipped"`` or
+    ``"no_asset"``.
+    """
+    src, dest = _toolkit_art(hyperspin_dir, system_name, helper)
+    if src is None:
+        return None, "no_asset"
+    return _install_asset(src, dest, dry_run=False)
+
+
+def remove_toolkit_wheel_art(hyperspin_dir: Path, system_name: str, helper, *, apply: bool) -> Optional[Path]:
+    """The helper's wheel logo, removed when *apply*, if it's still SpinDoctor's.
+
+    Only a file byte for byte the same as the bundled logo goes; art someone
+    replaced it with stays.  Returns the path it removed (or would), else None.
+    """
+    src, dest = _toolkit_art(hyperspin_dir, system_name, helper)
+    try:
+        if src is None or not dest.is_file() or dest.read_bytes() != src.read_bytes():
+            return None
+        if apply:
+            dest.unlink()
+    except OSError:
+        return None
+    return dest
 
 
 def install_system_background(
@@ -2217,16 +2258,30 @@ def generate_pclauncher_inis(
 
 # ─── Toolkit module-INI helper ────────────────────────────────────────────────
 
-#: Stems of every tool entry that install-tools can write.  Kept here so
-#: write_toolkit_module_ini can strip stale SpinDoctor sections without
-#: importing from cli.py (which would create a circular dependency).
-_TOOLKIT_TOOL_NAMES: frozenset = frozenset({
-    "Refresh Favorites",
-    "Refresh Recently Played",
-    "Refresh Most Played",
-    "Refresh Both",
-    "Refresh All",
-})
+# The tool entries install-tools writes are listed in toolkit_helpers, which
+# needs nothing from cli.py.
+
+def strip_toolkit_sections(text: str, names) -> "tuple[str, list[str]]":
+    """*text* without its ``[<name>]`` sections for *names*, and the names found.
+
+    Section names match the way RocketLauncher reads them: ignoring case and
+    the spaces around them, running to the last ``]`` on the line.  Every
+    other line comes back exactly as it was, newlines included.
+    """
+    wanted = {n.lower() for n in names}
+    kept: list[str] = []
+    found: list[str] = []
+    dropping = False
+    for line in text.splitlines(keepends=True):
+        stripped = line.strip()
+        if stripped.startswith("[") and "]" in stripped:
+            section = stripped[1:stripped.rindex("]")].strip()
+            dropping = section.lower() in wanted
+            if dropping:
+                found.append(section)
+        if not dropping:
+            kept.append(line)
+    return "".join(kept), found
 
 
 def write_toolkit_module_ini(
@@ -2247,42 +2302,26 @@ def write_toolkit_module_ini(
     ``FadeTitle`` or ``AppWaitExe`` is needed; PCLauncher will track the
     ``cmd.exe`` PID of the running batch.
 
-    When the file already exists, existing non-SpinDoctor sections are
-    preserved.  SpinDoctor-managed sections (from :data:`_TOOLKIT_TOOL_NAMES`)
-    are replaced with the freshly generated ones.
+    Only the sections for *tool_entries* (and legacy SpinDoctor names) are
+    replaced; they go at the end.  Everything else, including helpers an
+    earlier run installed and this one didn't pick, stays byte for byte,
+    in the file's own encoding and newlines.
     """
     module_ini = rocketlauncher_dir / "Modules" / "PCLauncher" / f"{system_name}.ini"
-
-    # Build the replacement section text for each SpinDoctor tool.
-    new_section_lines: list[str] = []
-    for tool_name, bat_path in tool_entries:
-        new_section_lines.append(f"[{tool_name}]")
-        new_section_lines.append(f"Application={bat_path}")
-        new_section_lines.append(f"WorkingFolder={bat_path.parent}")
-        new_section_lines.append("")
-    new_sections = "\n".join(new_section_lines)
-
-    if module_ini.exists():
-        # Preserve non-SpinDoctor sections; replace SpinDoctor ones.
-        existing = module_ini.read_text(encoding="utf-8", errors="replace")
-        preserved_lines: list[str] = []
-        in_sd_section = False
-        for line in existing.splitlines(keepends=True):
-            stripped = line.strip()
-            if stripped.startswith("[") and stripped.endswith("]"):
-                section_name = stripped[1:-1]
-                in_sd_section = section_name in _TOOLKIT_TOOL_NAMES
-            if not in_sd_section:
-                preserved_lines.append(line)
-        base = "".join(preserved_lines)
-        if base and not base.endswith("\n"):
-            base += "\n"
-        content = base + new_sections
-    else:
-        module_ini.parent.mkdir(parents=True, exist_ok=True)
-        content = new_sections
-
-    module_ini.write_text(content, encoding="utf-8")
+    base = read_editable_text(module_ini) if module_ini.exists() else ""
+    newline = "\n" if base and "\r\n" not in base else "\r\n"
+    replaced = [name for name, _bat in tool_entries] + list(_TOOLKIT_LEGACY_NAMES)
+    base, _found = strip_toolkit_sections(base, replaced)
+    if base and not base.endswith("\n"):
+        base += newline
+    sections = "".join(
+        f"[{tool_name}]{newline}"
+        f"Application={bat_path}{newline}"
+        f"WorkingFolder={bat_path.parent}{newline}"
+        f"{newline}"
+        for tool_name, bat_path in tool_entries
+    )
+    write_windows_text(module_ini, base + sections)
     return module_ini
 
 

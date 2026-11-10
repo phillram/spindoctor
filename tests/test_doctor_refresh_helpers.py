@@ -1,4 +1,4 @@
-"""Tests for the `doctor` **Refresh helpers** check.
+"""Tests for the `doctor` **SpinDoctor helpers** check.
 
 `install-tools` writes ``Refresh Favorites.bat`` and friends with the full path
 of the SpinDoctor EXE that ran it: v3 ``"<exe>" --run-tool spindoctor-fav …``,
@@ -25,6 +25,8 @@ INFO = health.Status.INFO
 STEMS = ("Refresh Favorites", "Refresh Recently Played", "Refresh Most Played", "Refresh All")
 TOOLS = {"Refresh Favorites": "spindoctor-fav", "Refresh Recently Played": "spindoctor-recent",
          "Refresh Most Played": "spindoctor-stats"}
+# The fix re-runs install-tools with the helpers found in that folder.
+PICK = "--tool refresh-favorites,refresh-recently-played,refresh-most-played,refresh-all"
 
 
 def _write(path, text=""):
@@ -82,7 +84,7 @@ def test_v3_helpers_whose_exe_is_gone_warn_with_install_tools_as_the_fix(tmp_pat
     assert row.status == WARN
     assert "4 of 4 helper(s)" in row.detail
     assert str(old) in row.detail and "no longer exists" in row.detail
-    assert row.fix == "spindoctor install-tools"
+    assert row.fix == f"spindoctor install-tools {PICK}"
 
 
 def test_v3_helpers_whose_exe_exists_are_ok(tmp_path):
@@ -207,7 +209,7 @@ def test_wired_toolkit_helpers_with_a_missing_exe_warn_with_the_add_to_system_fi
     row = _row(health.check_refresh_helpers(_cfg(rl)), "Toolkit")
     assert row.status == WARN
     assert str(folder) in row.detail
-    assert row.fix == 'spindoctor install-tools --add-to-system "Toolkit" --apply'
+    assert row.fix == f'spindoctor install-tools {PICK} --add-to-system "Toolkit" --apply'
 
 
 def test_helpers_left_by_a_run_without_apply_are_found_through_rom_path(tmp_path):
@@ -219,7 +221,7 @@ def test_helpers_left_by_a_run_without_apply_are_found_through_rom_path(tmp_path
     row = _row(health.check_refresh_helpers(_cfg(rl)), "Toolkit")
     assert row.status == WARN
     # Re-run it the same way: no --apply, so the wheel isn't changed.
-    assert row.fix == 'spindoctor install-tools --add-to-system "Toolkit"'
+    assert row.fix == f'spindoctor install-tools {PICK} --add-to-system "Toolkit"'
 
 
 def test_helpers_written_with_output_dir_get_it_in_the_fix(tmp_path):
@@ -228,7 +230,7 @@ def test_helpers_written_with_output_dir_get_it_in_the_fix(tmp_path):
     _helpers(folder, lambda t: _v3_bat(tmp_path / "old" / "spindoctor-gui.exe", t))
     row = _row(health.check_refresh_helpers(_cfg(rl)), "Toolkit")
     assert row.status == WARN
-    assert row.fix == f'spindoctor install-tools --output-dir "{elsewhere}" --add-to-system "Toolkit" --apply'
+    assert row.fix == f'spindoctor install-tools {PICK} --output-dir "{elsewhere}" --add-to-system "Toolkit" --apply'
 
 
 def test_helpers_in_the_pclauncher_folder_of_a_new_wheel(tmp_path):
@@ -292,14 +294,15 @@ def test_parses_what_install_tools_writes_on_a_frozen_build(tmp_path, monkeypatc
     rl = tmp_path / "RocketLauncher"
     folder = _tools_menu(rl)
     folder.mkdir(parents=True)
-    for name, body in cli._make_install_tools_bats().items():
+    bats = cli._make_install_tools_bats()  # every helper install-tools can write
+    for name, body in bats.items():
         (folder / name).write_text(body, encoding="utf-8")
     monkeypatch.undo()
     row = _row(health.check_refresh_helpers(_cfg(rl)), "Tools menu")
     assert row.status == OK and str(exe) in row.detail
     exe.unlink()  # the release folder is removed after an upgrade
     row = _row(health.check_refresh_helpers(_cfg(rl)), "Tools menu")
-    assert row.status == WARN and "4 of 4 helper(s)" in row.detail
+    assert row.status == WARN and f"{len(bats)} of {len(bats)} helper(s)" in row.detail
 
 
 def test_doctor_runs_the_check(tmp_path):
@@ -308,5 +311,5 @@ def test_doctor_runs_the_check(tmp_path):
     cfg = Config(roms_dir=str(tmp_path / "Games"), hyperspin_dir=str(tmp_path / "HyperSpin"),
                  rocketlauncher_dir=str(rl))
     report = health.run_health_checks(cfg)
-    chk = next(c for c in report.checks if c.name == "Refresh helpers")
+    chk = next(c for c in report.checks if c.name == "SpinDoctor helpers")
     assert chk.status == WARN and "check crashed" not in chk.detail

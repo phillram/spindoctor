@@ -483,15 +483,18 @@ Reference: [Standalone tools](standalone-tools.md), [fav](commands.md#fav), [rec
 ### `install-tools` / `uninstall-tools` — wire wheels into HyperSpin
 
 ```bat
-:: Install .bat helpers into HyperSpin's Tools menu
-spindoctor install-tools                               :: write to default HyperLaunch Tools dir
-spindoctor install-tools --output-dir D:\Tools
-spindoctor install-tools --add-to-system Toolkit       :: add as games in a Toolkit wheel
+:: Install .bat helpers into HyperSpin's Tools menu, picked one by one
+spindoctor install-tools                               :: list the helpers (writes nothing)
+spindoctor install-tools --tool refresh-all            :: write to default HyperLaunch Tools dir
+spindoctor install-tools --tool refresh-favorites,refresh-all --output-dir D:\Tools
+spindoctor install-tools --tool refresh-all --add-to-system Toolkit --apply   :: add as games in a Toolkit wheel
 :: ↑ also writes Modules\PCLauncher\Toolkit.ini (required for PCLauncher to launch)
+spindoctor install-tools --tool idle-tour --apply      :: idle tour, started with HyperSpin (docs/idle-tour.md)
 
 :: Remove them again
 spindoctor uninstall-tools                             :: dry-run preview
 spindoctor uninstall-tools --apply
+spindoctor uninstall-tools --tool refresh-all --apply  :: just that one
 spindoctor uninstall-tools --add-to-system Toolkit     :: dry-run for Toolkit variant
 spindoctor uninstall-tools --add-to-system Toolkit --apply
 ```

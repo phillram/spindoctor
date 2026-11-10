@@ -782,6 +782,7 @@ _READ_ONLY_COMMANDS: frozenset[str] = frozenset({
     "ledblinky colors list",
     "lightgun audit", "lightgun detect",
     "doctor",
+    "toolkit",  # cabinet actions (shutdown, …): no --apply, a countdown instead
     "config show", "config init", "config set", "config system",
     "config verify-credentials",
     "backup list", "backup info", "backup sidecar list",
@@ -1171,8 +1172,10 @@ _CUSTOM_COMMAND_PRESETS: tuple[str, ...] = (
     # ── Tools ─────────────────────────────────────────────────────────────────
     "─── Tools ───",
     "install-tools",
-    "install-tools --add-to-system <SYSTEM>",
+    "install-tools --tool <NAME>",
+    "install-tools --tool <NAME> --add-to-system <SYSTEM>",
     "uninstall-tools --apply",
+    "uninstall-tools --tool <NAME> --apply",
     # ── Config ────────────────────────────────────────────────────────────────
     "─── Config ───",
     "config init",
@@ -12436,9 +12439,20 @@ class _SpinDoctorGUI:
 
         self._help_text(
             helpers_lf,
-            text="Create Refresh Favorites, Refresh Recently Played, Refresh Most Played and Refresh All batch shortcuts. Use them from HyperHQ Tools or an existing maintenance wheel.",
+            text="Tick the helpers you want, then install them for HyperHQ Tools or into an existing maintenance wheel. Helpers you leave unticked are not touched; Uninstall from wheel removes only the ticked ones.",
         ).pack(fill="x", padx=6, pady=(4, 6))
 
+        from .toolkit_helpers import HELPERS as _TOOL_HELPERS
+
+        pick_frame = self.ttk.Frame(helpers_lf)
+        pick_frame.pack(fill="x", padx=6, pady=(0, 6))
+        self._tools_pick_vars = {}
+        for i, helper in enumerate(_TOOL_HELPERS):
+            var = self.tk.BooleanVar(value=False)
+            self._tools_pick_vars[helper.key] = var
+            box = self.ttk.Checkbutton(pick_frame, text=helper.name, variable=var)
+            box.grid(row=i // 2, column=i % 2, sticky="w", padx=(0, 24), pady=1)
+            _attach_tooltip(box, helper.summary[:1].upper() + helper.summary[1:] + ".", self.tk)
 
         # HyperHQ → Tools install (default)
         hhq_frame = self.ttk.LabelFrame(
@@ -12447,7 +12461,7 @@ class _SpinDoctorGUI:
         hhq_frame.pack(fill="x", padx=6, pady=(2, 8))
         self._help_text(
             hhq_frame,
-            text="Blank output directory uses <rocketlauncher_dir>/Modules/HyperLaunch/Tools/spindoctor. To use HyperSpin's Tools menu, register the generated shortcuts in HyperHQ > Tools.",
+            text="Blank output directory uses <rocketlauncher_dir>/Modules/HyperLaunch/Tools/spindoctor. To use HyperSpin's Tools menu, register the generated shortcuts in HyperHQ > Tools. Idle Tour starts with HyperSpin instead: with Apply ticked it is added to HyperSpin's Startup Script.",
         ).pack(fill="x", padx=6, pady=(2, 4))
 
         out_row = self.ttk.Frame(hhq_frame)
@@ -12467,6 +12481,9 @@ class _SpinDoctorGUI:
             command=self._run_install_tools,
         ).pack(anchor="w", padx=6, pady=(4, 6))
 
+        # The Idle Tour's own settings file, as a form.
+        self._build_idle_tour_settings(helpers_lf)
+
         # Wheel-integration mode (e.g. user's 'Toolkit' wheel)
         wheel_frame = self.ttk.LabelFrame(
             helpers_lf, text="Install into an existing wheel system",
@@ -12474,7 +12491,7 @@ class _SpinDoctorGUI:
         wheel_frame.pack(fill="x", padx=6, pady=(2, 8))
         self._help_text(
             wheel_frame,
-            text="Add refresh entries and PCLauncher INIs to an existing maintenance wheel, such as Toolkit. The target system must already exist and use PCLauncher.",
+            text="Add the ticked helpers as entries, with PCLauncher INIs, to an existing maintenance wheel, such as Toolkit. The target system must already exist and use PCLauncher.",
         ).pack(fill="x", padx=6, pady=(2, 4))
 
         sys_row = self.ttk.Frame(wheel_frame)
@@ -12673,11 +12690,192 @@ class _SpinDoctorGUI:
         self._refresh_autorefresh_status()
         return frame
 
+    # ── Idle Tour settings ────────────────────────────────────────────────────
+
+    #: (Settings field, CLI option, what the status bar calls it, the CLI's
+    #: top value, whole numbers only) per number box.
+    _IDLE_TOUR_NUMBERS = (
+        ("games_per_console", "--games-per-console", "Games in a console", 9999, True),
+        ("console_minutes", "--console-minutes", "Minutes in a console", 1440, False),
+        ("consoles_on_main_menu", "--consoles-on-main-menu", "Consoles on the main menu", 9999, True),
+        ("main_menu_minutes", "--main-menu-minutes", "Minutes on the main menu", 1440, False),
+        ("tour_max_minutes", "--tour-max-minutes", "Tour limit", 1440, False),
+        ("no_video_seconds", "--no-video-seconds", "Seconds on an item with no video", 3600, False),
+    )
+
+    def _build_idle_tour_settings(self, parent) -> None:
+        """Idle Tour's settings file as a form. Load reads it here; Save runs
+        `toolkit idle-tour-settings`, which changes only those keys."""
+        lf = self.ttk.LabelFrame(parent, text="Idle Tour settings")
+        lf.pack(fill="x", padx=6, pady=(2, 8))
+        self._help_text(
+            lf,
+            text="While HyperSpin's own idle mode runs, Idle Tour changes wheels as a video ends: back to the main menu after the games or minutes in a console, and into the console just shown after the consoles or minutes on the main menu, whichever comes first (0 switches one off). On a game or console with no video, where HyperSpin would wait its whole idle time, it presses Down after the seconds set (0 = wait). Ticked consoles are never opened. It keeps touring for as long as HyperSpin runs; its key presses count as input to Windows, so to let Windows turn the screen off, set Stop touring after to a number of minutes. Save writes these values to Idle Tour settings.ini at once and leaves the rest of the file as it is; the tour reads them when HyperSpin starts.",
+        ).pack(fill="x", padx=6, pady=(2, 4))
+        self._idle_tour_file_label = self.ttk.Label(lf, text="", foreground=_FG_DIM)
+        self._idle_tour_file_label.pack(anchor="w", padx=6, pady=(0, 2))
+
+        form = self.ttk.Frame(lf)
+        form.pack(fill="x", padx=6, pady=2)
+        self._idle_tour_enabled_var = self.tk.BooleanVar(value=True)
+        self.ttk.Checkbutton(
+            form, text="Enabled", variable=self._idle_tour_enabled_var,
+        ).grid(row=0, column=0, columnspan=5, sticky="w", pady=2)
+        self._idle_tour_vars = {n[0]: self.tk.StringVar() for n in self._IDLE_TOUR_NUMBERS}
+        layout = (
+            ("In a console", (("games_per_console", "games"), ("console_minutes", "minutes"))),
+            ("On the main menu", (("consoles_on_main_menu", "consoles"), ("main_menu_minutes", "minutes"))),
+            ("Stop touring after", (("tour_max_minutes", "minutes (0 = never)"),)),
+            ("No video: Down after", (("no_video_seconds", "seconds (0 = wait for HyperSpin)"),)),
+        )
+        tops = {n[0]: n[3] for n in self._IDLE_TOUR_NUMBERS}
+        for row, (label, boxes) in enumerate(layout, start=1):
+            self.ttk.Label(form, text=label).grid(row=row, column=0, sticky="w", padx=(0, 8), pady=2)
+            for col, (field, unit) in enumerate(boxes):
+                self.ttk.Spinbox(
+                    form, from_=0, to=tops[field], textvariable=self._idle_tour_vars[field], width=6,
+                ).grid(row=row, column=1 + 2 * col, sticky="w", pady=2)
+                self.ttk.Label(form, text=unit).grid(
+                    row=row, column=2 + 2 * col, sticky="w", padx=(4, 16), pady=2,
+                )
+
+        self.ttk.Label(lf, text="Never open these consoles:").pack(anchor="w", padx=6, pady=(4, 0))
+        skip_frame = self.ttk.Frame(lf)
+        skip_frame.pack(fill="x", padx=6, pady=(2, 2))
+        skip_frame.columnconfigure(0, weight=1)
+        self._idle_tour_skip_lb = self.tk.Listbox(
+            skip_frame, selectmode=self.tk.MULTIPLE, height=6, exportselection=False,
+        )
+        skip_vsb = self._vertical_scrollbar(skip_frame, self._idle_tour_skip_lb)
+        self._idle_tour_skip_lb.grid(row=0, column=0, sticky="ew")
+        skip_vsb.grid(row=0, column=1, sticky="ns")
+        self._help_text(
+            lf,
+            text="The list is HyperSpin's main menu; names on the skip list that aren't on it stay at the end. Wheels with no database are never opened either.",
+        ).pack(fill="x", padx=6, pady=(0, 2))
+
+        btns = self.ttk.Frame(lf)
+        btns.pack(anchor="w", padx=6, pady=(4, 6))
+        self.ttk.Button(
+            btns, text="Load current settings",
+            command=self._load_idle_tour_settings,
+        ).pack(side="left")
+        self.ttk.Button(
+            btns, text="Save settings",
+            command=self._save_idle_tour_settings,
+        ).pack(side="left", padx=6)
+        self._load_idle_tour_settings(announce=False)
+
+    def _idle_tour_settings_path(self) -> Optional[Path]:
+        from .idle_tour import settings_location
+
+        try:
+            return settings_location(load_config())
+        except Exception:  # noqa: BLE001 — an unreadable Startup Script reads as "not installed"
+            return None
+
+    def _load_idle_tour_settings(self, announce: bool = True) -> None:
+        """Fill the form from the settings file (the defaults while there is
+        none yet) and the skip list from Main Menu.xml."""
+        from . import idle_tour as it
+
+        path = self._idle_tour_settings_path()
+        exists = path is not None and path.is_file()
+        settings = it.read_settings(path if exists else None)
+        kinds = {e.field: e.kind for e in it.EDITABLE}
+        self._idle_tour_enabled_var.set(settings.enabled)
+        for field, var in self._idle_tour_vars.items():
+            var.set(it.setting_text(kinds[field], getattr(settings, field)))
+
+        cfg = load_config()
+        on_menu: list = []
+        if (cfg.hyperspin_dir or "").strip():
+            try:
+                from . import mainmenu as _mm_mod
+                on_menu = [e.system for e in _mm_mod.load_main_menu(cfg).entries]
+            except Exception:  # noqa: BLE001 — no Main Menu.xml: only the skip list
+                on_menu = []
+        names: list = []
+        known: set = set()
+        for name in on_menu + list(settings.skip):   # each once, ignoring case
+            if name.casefold() not in known:
+                known.add(name.casefold())
+                names.append(name)
+        lb = self._idle_tour_skip_lb
+        lb.delete(0, "end")
+        for i, name in enumerate(names):
+            lb.insert("end", name)
+            if settings.skips(name):
+                lb.selection_set(i)
+
+        if exists:
+            text = f"File: {path}"
+        elif path is not None:
+            text = (f"Not installed yet ({path}): install Idle Tour above first; "
+                    "until then these are the defaults.")
+        else:
+            text = "Set the HyperSpin and RocketLauncher folders on the Setup tab first."
+        self._idle_tour_file_label.configure(text=text)
+        if announce:
+            self._set_status("Idle Tour settings loaded." if exists else text)
+
+    def _save_idle_tour_settings(self) -> None:
+        path = self._idle_tour_settings_path()
+        if path is None or not path.is_file():
+            self._flash_validation(
+                "Install Idle Tour first (tick it, then Install Tools-menu helpers): "
+                "that writes its settings file."
+            )
+            return
+        args = ["toolkit", "idle-tour-settings", "--settings", str(path),
+                "--enabled" if self._idle_tour_enabled_var.get() else "--disabled"]
+        for field, option, label, top, whole in self._IDLE_TOUR_NUMBERS:
+            raw = self._idle_tour_vars[field].get().strip()
+            try:
+                value = int(raw) if whole else float(raw)
+            except ValueError:
+                value = -1
+            if not 0 <= value <= top:          # also refuses nan
+                self._flash_validation(
+                    f"{label} must be {'a whole number' if whole else 'a number'} "
+                    f"from 0 to {top} (0 switches it off); got {raw!r}."
+                )
+                return
+            args += [option, raw]
+        lb = self._idle_tour_skip_lb
+        args += ["--skip", "|".join(lb.get(i) for i in lb.curselection())]
+        self._run_cli(
+            "spindoctor", args,
+            on_complete=lambda _rc: self._load_idle_tour_settings(announce=False),
+        )
+
+    def _ticked_tool_helpers(self, button: str):
+        """The helpers ticked in the checklist, or None (after a status-bar
+        prompt) when none are."""
+        from .toolkit_helpers import HELPERS
+
+        picked = [h for h in HELPERS if self._tools_pick_vars[h.key].get()]
+        if not picked:
+            self._flash_validation(f"Tick at least one helper before clicking {button}.")
+            return None
+        return picked
+
+    @staticmethod
+    def _tool_args(picked) -> "list[str]":
+        return ["--tool", ",".join(h.key for h in picked)]
+
     def _run_install_tools(self) -> None:
-        args = ["install-tools"]
+        picked = self._ticked_tool_helpers("Install Tools-menu helpers")
+        if picked is None:
+            return
+        args = ["install-tools"] + self._tool_args(picked)
         outdir = self._tools_outdir_var.get().strip()
         if outdir:
             args += ["--output-dir", outdir]
+        # Only the Idle Tour's Startup Script entry waits for --apply here.
+        apply_var = self._global_apply_var
+        if any(h.startup for h in picked) and apply_var is not None and apply_var.get():
+            args.append("--apply")
         self._run_cli("spindoctor", args)
 
     def _run_install_tools_into_wheel(self) -> None:
@@ -12688,8 +12886,20 @@ class _SpinDoctorGUI:
                 "(e.g. 'Toolkit') before clicking Install into wheel."
             )
             return
+        picked = self._ticked_tool_helpers("Install into wheel")
+        if picked is None:
+            return
+        # Idle Tour starts with HyperSpin and is never a wheel entry.
+        picked = [h for h in picked if not h.startup]
+        if not picked:
+            self._flash_validation(
+                "Idle Tour starts with HyperSpin, not from a wheel: use "
+                "Install Tools-menu helpers for it."
+            )
+            return
         self._run_cli(
-            "spindoctor", ["install-tools", "--add-to-system", wheel],
+            "spindoctor",
+            ["install-tools"] + self._tool_args(picked) + ["--add-to-system", wheel],
         )
 
     def _run_uninstall_tools_from_wheel(self) -> None:
@@ -12700,17 +12910,20 @@ class _SpinDoctorGUI:
                 "(e.g. 'Toolkit') before clicking Uninstall from wheel."
             )
             return
+        picked = self._ticked_tool_helpers("Uninstall from wheel")
+        if picked is None:
+            return
         if not self.messagebox.askyesno(
             "Confirm uninstall",
-            f"Remove all SpinDoctor helper files and database entries "
-            f"from the '{wheel}' wheel?\n\n"
-            "This deletes the .bat and .ini files from the PCLauncher "
-            "folder and removes the matching <game> entries from "
+            f"Remove these SpinDoctor helpers from the '{wheel}' wheel?\n\n"
+            + "\n".join(f"  • {h.name}" for h in picked) + "\n\n"
+            "This deletes their .bat and .ini files from the PCLauncher "
+            "folder and removes their <game> entries from "
             f"{wheel}.xml. This cannot be undone (except by re-running "
             "'Install into wheel').",
         ):
             return
-        args = ["uninstall-tools", "--add-to-system", wheel]
+        args = ["uninstall-tools"] + self._tool_args(picked) + ["--add-to-system", wheel]
         if self._global_apply_var.get():
             args.append("--apply")
         self._run_cli("spindoctor", args)
