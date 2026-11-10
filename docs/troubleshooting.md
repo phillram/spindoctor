@@ -346,6 +346,12 @@ Since v2.7.3 `audit.check_media()` uses `stat().st_size > 0` — a zero-byte fil
 
 If you believe you have zero-byte stubs from an older version, run `audit` and look for slots that are shown as missing even though the file appears to be on disk.
 
+### `inspect` or `audit --detailed` shows no length (`—`) for some videos that play fine
+
+**Cause (before this fix):** with no `ffprobe` installed, SpinDoctor reads an `.mp4` / `.m4v` / `.mov` length from the file's movie header (the `moov` box), but it used to look only in the first 1 MB. Many encoders write that header at the end of the file, after the video data, so those clips had no length, and `inspect --format csv` left `duration_seconds` empty. Clips with the header at the start (often saved with "fast start" / `-movflags +faststart`) were fine.
+
+**Fix:** update SpinDoctor; the header is now found wherever it sits. A clip that still shows `—` has no readable movie header (a cut-short download, for example) or is in another format: `.flv` and `.avi` lengths need `ffprobe` (see [Video plays but has no sound](#video-plays-but-has-no-sound) for getting it).
+
 ---
 
 ## Wheels

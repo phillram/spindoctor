@@ -58,6 +58,8 @@ When `rocketlauncher_dir` is set, ROMs are found where RocketLauncher looks for 
 
 Per-file deep-dive for a single game or every game with issues in a system. Shows the ROM file, every media slot, image dimensions, video length, and modification times.
 
+Video lengths (here and in `audit --detailed`) come from `ffprobe` when it's installed. Without it, SpinDoctor reads the movie header of `.mp4` / `.m4v` / `.mov` files itself, wherever it sits in the file, reading only box headers. Other formats (`.flv`, `.avi`, …) show `—` unless `ffprobe` is installed.
+
 > **GUI alternative:** the **Diagnostics** and **Metadata & Media** tabs both expose an Inspect form. Select a system to auto-populate the ROM dropdown from that system's database; leave blank (first item) to run `--all`. Click **↻** to refresh the game list. See [GUI walkthrough](gui.md).
 
 ```bat
