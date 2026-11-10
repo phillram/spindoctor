@@ -17,6 +17,9 @@ import spindoctor.config as config_mod
 from spindoctor.cli import cli
 from spindoctor.database import HyperspinDatabase
 
+# install-tools needs a pick; these tests install the four Refresh helpers.
+REFRESH = "refresh-favorites,refresh-recently-played,refresh-most-played,refresh-all"
+
 
 @pytest.fixture
 def cabinet(tmp_path, monkeypatch):
@@ -47,7 +50,7 @@ def cabinet(tmp_path, monkeypatch):
 
 def test_install_tools_default_writes_bats_under_hyperlaunch_tools(cabinet):
     runner = CliRunner()
-    result = runner.invoke(cli, ["install-tools"], catch_exceptions=False)
+    result = runner.invoke(cli, ["install-tools", "--tool", REFRESH], catch_exceptions=False)
     assert result.exit_code == 0, result.output
     assert "Custom Wheels" in result.output
     assert "Refresh All.bat" in result.output
@@ -78,7 +81,7 @@ def test_install_tools_add_to_system_creates_db_entries_and_inis(cabinet):
 
     runner = CliRunner()
     result = runner.invoke(
-        cli, ["install-tools", "--add-to-system", "Toolkit", "--apply"],
+        cli, ["install-tools", "--tool", REFRESH, "--add-to-system", "Toolkit", "--apply"],
         catch_exceptions=False,
     )
     assert result.exit_code == 0, result.output
@@ -144,7 +147,7 @@ def test_install_tools_add_to_system_errors_when_db_missing(cabinet):
     # in the help text and avoids creating phantom systems on typos).
     runner = CliRunner()
     result = runner.invoke(
-        cli, ["install-tools", "--add-to-system", "Toolkit"],
+        cli, ["install-tools", "--tool", REFRESH, "--add-to-system", "Toolkit"],
         catch_exceptions=False,
     )
     assert result.exit_code != 0
@@ -181,7 +184,7 @@ def test_install_tools_add_to_system_respects_existing_emulators_ini_rom_path(ca
 
     runner = CliRunner()
     result = runner.invoke(
-        cli, ["install-tools", "--add-to-system", "Toolkit", "--apply"],
+        cli, ["install-tools", "--tool", REFRESH, "--add-to-system", "Toolkit", "--apply"],
         catch_exceptions=False,
     )
     assert result.exit_code == 0, result.output
@@ -218,7 +221,7 @@ def test_install_tools_add_to_system_overwrites_existing_entries(cabinet):
     runner = CliRunner()
     for _ in range(2):
         result = runner.invoke(
-            cli, ["install-tools", "--add-to-system", "Toolkit", "--apply"],
+            cli, ["install-tools", "--tool", REFRESH, "--add-to-system", "Toolkit", "--apply"],
             catch_exceptions=False,
         )
         assert result.exit_code == 0, result.output
@@ -250,7 +253,7 @@ def test_install_tools_removes_stale_refresh_both_bat(cabinet):
     (out_dir / "Refresh Both.ini").write_text("[Settings]\r\n", encoding="utf-8")
 
     runner = CliRunner()
-    result = runner.invoke(cli, ["install-tools"], catch_exceptions=False)
+    result = runner.invoke(cli, ["install-tools", "--tool", REFRESH], catch_exceptions=False)
     assert result.exit_code == 0, result.output
 
     assert not (out_dir / "Refresh Both.bat").exists(), (
@@ -282,7 +285,7 @@ def test_install_tools_add_to_system_removes_stale_refresh_both_db_entry(cabinet
 
     runner = CliRunner()
     result = runner.invoke(
-        cli, ["install-tools", "--add-to-system", "Toolkit", "--apply"],
+        cli, ["install-tools", "--tool", REFRESH, "--add-to-system", "Toolkit", "--apply"],
         catch_exceptions=False,
     )
     assert result.exit_code == 0, result.output
@@ -303,7 +306,7 @@ def test_uninstall_tools_default_removes_bats_from_hyperlaunch_tools(cabinet):
     runner = CliRunner()
 
     # Install first so there are files to remove.
-    result = runner.invoke(cli, ["install-tools"], catch_exceptions=False)
+    result = runner.invoke(cli, ["install-tools", "--tool", REFRESH], catch_exceptions=False)
     assert result.exit_code == 0, result.output
 
     out_dir = (cabinet["rl"] / "Modules" / "HyperLaunch" / "Tools"
@@ -343,7 +346,7 @@ def test_uninstall_tools_add_to_system_removes_bats_inis_and_db_entries(cabinet)
 
     # Install first.
     result = runner.invoke(
-        cli, ["install-tools", "--add-to-system", "Toolkit", "--apply"],
+        cli, ["install-tools", "--tool", REFRESH, "--add-to-system", "Toolkit", "--apply"],
         catch_exceptions=False,
     )
     assert result.exit_code == 0, result.output
@@ -458,7 +461,7 @@ def test_uninstall_tools_removes_files_from_existing_rom_path(cabinet):
     runner = CliRunner()
     # Install — files land in utilities_dir.
     result = runner.invoke(
-        cli, ["install-tools", "--add-to-system", "Toolkit", "--apply"],
+        cli, ["install-tools", "--tool", REFRESH, "--add-to-system", "Toolkit", "--apply"],
         catch_exceptions=False,
     )
     assert result.exit_code == 0, result.output
@@ -549,7 +552,7 @@ def test_uninstall_tools_add_to_system_is_idempotent(cabinet):
 
     runner = CliRunner()
     result = runner.invoke(
-        cli, ["install-tools", "--add-to-system", "Toolkit", "--apply"],
+        cli, ["install-tools", "--tool", REFRESH, "--add-to-system", "Toolkit", "--apply"],
         catch_exceptions=False,
     )
     assert result.exit_code == 0, result.output
@@ -574,7 +577,7 @@ def test_uninstall_tools_dry_run_does_not_delete_files(cabinet):
     runner = CliRunner()
 
     # Install first.
-    result = runner.invoke(cli, ["install-tools"], catch_exceptions=False)
+    result = runner.invoke(cli, ["install-tools", "--tool", REFRESH], catch_exceptions=False)
     assert result.exit_code == 0, result.output
 
     out_dir = (cabinet["rl"] / "Modules" / "HyperLaunch" / "Tools"
@@ -607,7 +610,7 @@ def test_uninstall_tools_add_to_system_dry_run_does_not_delete(cabinet):
 
     runner = CliRunner()
     result = runner.invoke(
-        cli, ["install-tools", "--add-to-system", "Toolkit", "--apply"],
+        cli, ["install-tools", "--tool", REFRESH, "--add-to-system", "Toolkit", "--apply"],
         catch_exceptions=False,
     )
     assert result.exit_code == 0, result.output
@@ -657,7 +660,7 @@ def test_install_tools_add_to_system_requires_apply_to_mutate_xml(cabinet):
 
     runner = CliRunner()
     result = runner.invoke(
-        cli, ["install-tools", "--add-to-system", "Toolkit"],
+        cli, ["install-tools", "--tool", REFRESH, "--add-to-system", "Toolkit"],
         catch_exceptions=False,
     )
     assert result.exit_code == 0, result.output

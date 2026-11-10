@@ -2849,6 +2849,11 @@ The INI has two relevant sections:
   plus its own optional `Program_To_Run_Target_1` (typically an exit `.bat`),
   run when HyperSpin closes.
 
+Each list is read from 1 up to the first missing number, so an entry after a
+gap never runs. SpinDoctor's [idle tour](idle-tour.md) is one `[Startup]`
+entry (`install-tools --tool idle-tour --apply` adds it at the next free
+number).
+
 This is what "starts my tools and kills them when I quit" on a cabinet — it's
 HyperSpin launching one orchestrator script at boot/exit, not per-game
 RocketLauncher behavior. On many cabinets this script is (or was) also what
