@@ -71,6 +71,16 @@ python build/smoke_standalone.py dist
 
 The smoke test copies each EXE alone into an empty folder with a stripped `PATH`, then checks version reporting, every worker, exit codes, media installation, `.bat` waiting/exit propagation, and GUI window launch.
 
+### Toolkit wheel art
+
+`spindoctor/assets/toolkit_<key>.png` is the wheel logo for each `install-tools` helper (`spindoctor/toolkit_helpers.py`): 400x156, pink upper-case italic Impact over a blue glow. They're committed, so the builds and SpinDoctor itself need neither Pillow nor the font. After adding a helper, draw its logo on Windows with Pillow installed (add its line break to `LINES` in the script if two balanced lines don't read well):
+
+```bat
+python build/make_toolkit_art.py --only <key>
+```
+
+`tests/test_toolkit_wheel_art.py` fails until every helper has one. `_MEDIA_PATTERNS` keeps them out of the standalone wheel-builder EXEs.
+
 ## Release workflow
 
 `.github/workflows/release.yml` runs on tag push (`v*`) with **two parallel jobs**:

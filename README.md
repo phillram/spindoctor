@@ -119,6 +119,7 @@ Start at [docs/index.md](docs/index.md) for a guided table of contents, or skim 
 | [Command reference](docs/commands.md) | Every command, grouped by purpose — including which commands are read-only, dry-run behavior, and `--undo` |
 | [Workflows](docs/workflows.md) | First-system add, daily refresh, weekly maintenance, backup, migration, recovery from mistakes |
 | [Standalone tools](docs/standalone-tools.md) | Favorites / Recent / Most Played wheels — Tools menu and boot wiring; tools-audit for cataloguing other arcade utilities |
+| [Idle tour](docs/idle-tour.md) | HyperSpin's idle mode visits random consoles: setup, settings, how it reads HyperSpin's log, hazards |
 | [Light guns](docs/lightgun.md) | Sinden + DemulShooter wiring per system |
 | [Where SpinDoctor stores its files](docs/spindoctor-files.md) | Every file and directory it creates — config, caches, logs, undo manifests |
 | [Troubleshooting](docs/troubleshooting.md) | FAQ + common errors |
