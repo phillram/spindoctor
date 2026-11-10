@@ -3,7 +3,8 @@
 Covers the pieces the audit flagged as untested:
 - human_size formatting (edge cases)
 - _png_dimensions / _jpeg_dimensions (incl. the chunked SOF-walk fix)
-- _walk_boxes / _parse_mvhd (incl. the 64-bit extended-size atom path)
+- video length without ffprobe: the MP4 movie header wherever it sits
+  (incl. the 64-bit extended-size atom path)
 - scan_file / find_rom_file / find_media_file
 - scan_game / scan_system
 - _has_ffprobe + reset_ffprobe_cache (process-wide flag handling)
@@ -118,7 +119,11 @@ def test_jpeg_dimensions_rejects_non_jpeg(tmp_path):
         fileinfo._jpeg_dimensions(p)
 
 
-# ─── MP4 native duration ─────────────────────────────────────────────────────
+# ─── video length without ffprobe ────────────────────────────────────────────
+#
+# With no ffprobe, the length comes from the movie header (``moov`` → ``mvhd``).
+# Many encoders write ``moov`` after the media data (``mdat``), so it can sit
+# anywhere in the file, megabytes in.
 
 
 def _atom(name: bytes, payload: bytes) -> bytes:
@@ -154,46 +159,127 @@ def _mvhd_v1(timescale: int, duration: int) -> bytes:
     )
 
 
-def test_parse_mvhd_v0():
-    box = _atom(b"mvhd", _mvhd_v0(timescale=1000, duration=5000))
-    assert fileinfo._parse_mvhd(box) == pytest.approx(5.0)
+_FTYP = _atom(b"ftyp", b"isom" + b"\x00" * 12)
+_PAST_FIRST_MB = 3 * 1024 * 1024
 
 
-def test_parse_mvhd_v1_uses_64bit_duration():
-    box = _atom(b"mvhd", _mvhd_v1(timescale=600, duration=18_000))
-    assert fileinfo._parse_mvhd(box) == pytest.approx(30.0)
+def _moov(seconds: float = 184.0, timescale: int = 600) -> bytes:
+    mvhd = _atom(b"mvhd", _mvhd_v0(timescale=timescale, duration=int(seconds * timescale)))
+    return _atom(b"moov", mvhd + _atom(b"trak", b"\x00" * 32))
 
 
-def test_parse_mvhd_handles_zero_timescale():
-    box = _atom(b"mvhd", _mvhd_v0(timescale=0, duration=42))
-    assert fileinfo._parse_mvhd(box) is None
+def _clip(path, moov: bytes, *, mdat_bytes: int = 4096, moov_first: bool = False,
+          mdat64: bool = False):
+    """ftyp, then mdat and moov in either order."""
+    mdat = (_atom64 if mdat64 else _atom)(b"mdat", b"\x00" * mdat_bytes)
+    path.write_bytes(_FTYP + (moov + mdat if moov_first else mdat + moov))
+    return path
 
 
-def test_walk_boxes_finds_mvhd_inside_moov():
-    mvhd = _atom(b"mvhd", _mvhd_v0(timescale=100, duration=300))
-    moov = _atom(b"moov", mvhd)
-    ftyp = _atom(b"ftyp", b"isom" + b"\x00" * 12)
-    data = ftyp + moov
-    assert fileinfo._walk_boxes(data) == pytest.approx(3.0)
+@pytest.fixture
+def no_ffprobe(monkeypatch):
+    """As on a PC with no ffprobe (the flag is cached per process)."""
+    monkeypatch.setattr(fileinfo, "_ffprobe_ok", False)
 
 
-def test_walk_boxes_handles_64bit_atom_size():
+@pytest.mark.parametrize("version,timescale,duration,seconds", [
+    (0, 1000, 5000, 5.0),
+    (1, 600, 18_000, 30.0),     # version 1 carries a 64-bit duration
+    (0, 0, 42, None),           # no timescale: no length
+])
+def test_video_length_from_movie_header(tmp_path, no_ffprobe, version, timescale, duration, seconds):
+    mvhd = (_mvhd_v1 if version else _mvhd_v0)(timescale=timescale, duration=duration)
+    clip = _clip(tmp_path / "clip.mp4", _atom(b"moov", _atom(b"mvhd", mvhd)))
+    assert fileinfo._video_duration(clip) == seconds
+
+
+def test_video_length_handles_64bit_box_size(tmp_path, no_ffprobe):
     """The size=1 sentinel uses a trailing 8-byte length field."""
     mvhd = _atom(b"mvhd", _mvhd_v0(timescale=100, duration=900))
-    moov = _atom64(b"moov", mvhd)
-    assert fileinfo._walk_boxes(moov) == pytest.approx(9.0)
+    clip = tmp_path / "clip.mp4"
+    clip.write_bytes(_FTYP + _atom64(b"moov", mvhd))
+    assert fileinfo._video_duration(clip) == 9.0
 
 
-def test_walk_boxes_returns_none_on_garbage():
-    assert fileinfo._walk_boxes(b"not an mp4 at all") is None
+def test_video_length_none_for_garbage(tmp_path, no_ffprobe):
+    clip = tmp_path / "clip.mp4"
+    clip.write_bytes(b"not an mp4 at all")
+    assert fileinfo._video_duration(clip) is None
 
 
-def test_duration_mp4_native_reads_file(tmp_path):
-    mp4 = tmp_path / "v.mp4"
-    mvhd = _atom(b"mvhd", _mvhd_v0(timescale=1000, duration=2500))
-    moov = _atom(b"moov", mvhd)
-    mp4.write_bytes(_atom(b"ftyp", b"isom" + b"\x00" * 12) + moov)
-    assert fileinfo._duration_mp4_native(mp4) == pytest.approx(2.5)
+@pytest.mark.parametrize("mdat64", [False, True])
+def test_video_length_found_after_large_media_data(tmp_path, no_ffprobe, mdat64):
+    clip = _clip(tmp_path / "clip.mp4", _moov(184.0), mdat_bytes=_PAST_FIRST_MB, mdat64=mdat64)
+    assert fileinfo._video_duration(clip) == 184.0
+
+
+def test_scan_file_shows_length_when_movie_header_is_at_the_end(tmp_path, no_ffprobe):
+    """What ``inspect`` and ``audit --detailed`` show for such a clip."""
+    clip = _clip(tmp_path / "Game.mp4", _moov(184.0), mdat_bytes=_PAST_FIRST_MB)
+    detail = fileinfo.scan_file(clip, "video")
+    assert detail.duration_seconds == 184.0
+    assert detail.duration_human == "3:04"
+
+
+@pytest.mark.parametrize("name", ["clip.mp4", "clip.M4V", "clip.mov"])
+@pytest.mark.parametrize("moov_first", [True, False])
+def test_video_length_for_each_iso_container(tmp_path, no_ffprobe, name, moov_first):
+    clip = _clip(tmp_path / name, _moov(35.0), moov_first=moov_first)
+    assert fileinfo._video_duration(clip) == 35.0
+
+
+@pytest.mark.parametrize("version", [0, 1])
+def test_video_length_unknown_duration_is_none(tmp_path, no_ffprobe, version):
+    """All ones means "length unknown", not a clip of 80 days or more."""
+    if version == 0:
+        mvhd = _mvhd_v0(timescale=600, duration=0xFFFFFFFF)
+    else:
+        mvhd = _mvhd_v1(timescale=600, duration=0xFFFFFFFFFFFFFFFF)
+    clip = _clip(tmp_path / "clip.mp4", _atom(b"moov", _atom(b"mvhd", mvhd)))
+    assert fileinfo._video_duration(clip) is None
+
+
+def test_video_length_none_when_download_was_cut_short(tmp_path, no_ffprobe):
+    """The media data claims more bytes than the file holds; no moov follows."""
+    clip = tmp_path / "clip.mp4"
+    clip.write_bytes(_FTYP + struct.pack(">I", 50_000_000) + b"mdat" + b"\x00" * 1000)
+    assert fileinfo._video_duration(clip) is None
+
+
+def test_video_length_reads_headers_not_media_data(tmp_path, no_ffprobe, monkeypatch):
+    """Box headers and the movie header only: ``audit --detailed`` reads
+    thousands of clips, so the media data is skipped with a seek."""
+    import builtins
+
+    clip = _clip(tmp_path / "clip.mp4", _moov(184.0), mdat_bytes=_PAST_FIRST_MB)
+    real_open = builtins.open
+    sizes = []
+
+    class _Counted:
+        def __init__(self, fh):
+            self._fh = fh
+
+        def read(self, n=-1):
+            data = self._fh.read(n)
+            sizes.append(len(data))
+            return data
+
+        def __getattr__(self, name):
+            return getattr(self._fh, name)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            self._fh.close()
+
+    def counting_open(file, *args, **kwargs):
+        fh = real_open(file, *args, **kwargs)
+        return _Counted(fh) if str(file) == str(clip) else fh
+
+    monkeypatch.setattr(builtins, "open", counting_open)
+    assert fileinfo._video_duration(clip) == 184.0
+    assert 0 < sum(sizes) < 4096
 
 
 # ─── ffprobe cache lifecycle ─────────────────────────────────────────────────

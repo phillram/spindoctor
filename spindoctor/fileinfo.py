@@ -2,7 +2,7 @@
 
 All reads are done with stdlib only — no Pillow, no moviepy.
 ffprobe is used for video duration when available; falls back to
-reading the MP4/AVI header directly.
+reading the MP4 / M4V / MOV movie header directly.
 """
 from __future__ import annotations
 
@@ -27,6 +27,7 @@ from .database import GameEntry
 # ``preview`` can call this hundreds of times in a row. 0 elsewhere
 # so the flag is a no-op on macOS / Linux.
 _CREATE_NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
+from .introvideo import video_duration_seconds
 from .media import MEDIA_DIR_MAP
 from ._utils import dir_size as _dir_size, win_safe_stem
 
@@ -426,74 +427,12 @@ def _duration_ffprobe(path: Path) -> Optional[float]:
         return None
 
 
-def _duration_mp4_native(path: Path) -> Optional[float]:
-    """Parse MP4 mvhd atom for duration — no external tools required."""
-    try:
-        with open(path, "rb") as f:
-            data = f.read(1024 * 1024)  # First 1 MB covers most moov boxes
-    except OSError:
-        return None
-    return _walk_boxes(data)
-
-
-def _walk_boxes(data: bytes) -> Optional[float]:
-    i = 0
-    while i + 8 <= len(data):
-        try:
-            size = struct.unpack(">I", data[i:i + 4])[0]
-        except struct.error:
-            break
-        name = data[i + 4:i + 8]
-
-        # An atom's body begins after the header. The header is 8 bytes
-        # for the common case (size+type) and 16 bytes when size==1
-        # (the 64-bit "extended-size" variant carries an extra
-        # 8-byte length immediately after the type).
-        header_len = 8
-        if size == 0:
-            break
-        if size == 1:
-            if i + 16 <= len(data):
-                size = struct.unpack(">Q", data[i + 8:i + 16])[0]
-                header_len = 16
-            else:
-                break
-
-        if name == b"moov":
-            return _walk_boxes(data[i + header_len: i + size])
-
-        if name == b"mvhd":
-            # mvhd in the wild is never 64-bit (it's <100 bytes), but
-            # slicing from the body start keeps both shapes consistent.
-            return _parse_mvhd(data[i: i + size])
-
-        if size < header_len:
-            break
-        i += size
-    return None
-
-
-def _parse_mvhd(box: bytes) -> Optional[float]:
-    if len(box) < 28:
-        return None
-    version = box[8]
-    if version == 0:
-        timescale = struct.unpack(">I", box[20:24])[0]
-        duration = struct.unpack(">I", box[24:28])[0]
-    else:
-        # version 1: 8-byte ctime, mtime, 4-byte timescale, 8-byte duration
-        if len(box) < 40:
-            return None
-        timescale = struct.unpack(">I", box[28:32])[0]
-        duration = struct.unpack(">Q", box[32:40])[0]
-    return (duration / timescale) if timescale else None
-
-
 def _video_duration(path: Path) -> Optional[float]:
     if _has_ffprobe():
         result = _duration_ffprobe(path)
         if result is not None:
             return result
-    if path.suffix.lower() in (".mp4", ".m4v", ".mov"):
-        return _duration_mp4_native(path)
-    return None
+    # MP4 / M4V / MOV: the movie header, found by seeking box to box, so a
+    # ``moov`` written after the media data (megabytes in) is read too. Other
+    # containers have no length without ffprobe.
+    return video_duration_seconds(path)
