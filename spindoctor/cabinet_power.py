@@ -20,7 +20,11 @@ the one sequence in :func:`run`:
    Restart ``shutdown.exe /r /f /t 0`` (``/f`` so an "app is preventing
    shutdown" screen can't stall it; Windows ends LEDBlinky and HyperSpin's
    exit programs with everything else).  If Windows refuses, HyperSpin is
-   started again so the cabinet isn't left on the desktop.
+   started again so the cabinet isn't left on the desktop.  Exit To Windows:
+   the screen goes, Explorer is restarted so the taskbar HyperSpin hid comes
+   back, and only then, with no window, are HyperSpin's startup script and
+   LEDBlinky's quit waited for (:func:`settle`), and every PAC-LED64 light is
+   set to 0 (:func:`lights_off`), since LEDBlinky's quit can leave a board lit.
 
 Every step is logged to ``~/.spindoctor/toolkit.log``.  The Windows calls sit
 behind :class:`WindowsOps`, so tests drive the sequence with fakes.
@@ -39,9 +43,14 @@ from . import config as config_mod
 HYPERSPIN = "HyperSpin.exe"
 ROCKETLAUNCHER = "RocketLauncher.exe"
 LEDBLINKY = "LEDBlinky.exe"
+#: HyperSpin's own helper, which runs the exit programs set in HyperHQ.
+STARTUP_SCRIPT = "HyperSpin Startup Script.exe"
 CLOSE_WAIT = 3.0     # HyperSpin closes in under a second; one that hasn't by then won't
 FORCE_WAIT = 5.0     # … and to go after it is terminated
 HOLD_AFTER = 30.0    # the black screen stays up while Windows closes everything
+EXPLORER_WAIT = 1.5  # Windows usually starts a new Explorer by itself within this
+HELPER_WAIT = 5.0    # HyperSpin's startup script, once on the desktop
+LEDBLINKY_WAIT = 30.0  # LEDBlinky's random quit animation (8-25 s seen on a real cabinet)
 LOG_NAME = "toolkit.log"
 LOG_LIMIT = 256 * 1024
 
@@ -94,10 +103,42 @@ def _windows_power(flag: str) -> Callable[[_Context], int]:
     return finish
 
 
+def _to_desktop(ctx: _Context) -> int:
+    """Finish on the Windows desktop, with the taskbar back.
+
+    HyperSpin hides the taskbar and shows it again only on its own exit, not
+    after an outside ``WM_CLOSE``; a fresh Explorer draws it again.  Only the
+    countdown should take time, so the screen goes first, and LEDBlinky's quit
+    animation is waited for afterwards, with no window.
+    """
+    ctx.screen.close()
+    ctx.log(f"{ctx.mode}: restarting Explorer")
+    old = set(ctx.ops.pids("explorer.exe"))
+    ctx.ops.run([_system32("taskkill.exe"), "/F", "/IM", "explorer.exe"])
+    end = time.monotonic() + EXPLORER_WAIT
+    while not [pid for pid in ctx.ops.pids("explorer.exe") if pid not in old]:
+        if time.monotonic() >= end:
+            explorer = os.path.join(os.environ.get("SystemRoot") or r"C:\Windows", "explorer.exe")
+            try:
+                ctx.ops.start(explorer)
+                ctx.log(f"  started {explorer}")
+            except OSError as exc:
+                ctx.log(f"  could not start {explorer}: {exc}")
+                return 1
+            break
+        time.sleep(0.1)
+    else:
+        ctx.log("  Windows started Explorer again by itself")
+    ctx.log(f"{ctx.mode}: on the desktop")
+    settle(ctx)
+    return 0
+
+
 #: The helpers that leave HyperSpin, by ``spindoctor toolkit`` command.
 ACTIONS: dict = {
     "shutdown": Action("Shutting down", _windows_power("/s")),
     "restart": Action("Restarting", _windows_power("/r")),
+    "exit-to-windows": Action("Exiting to Windows", _to_desktop),
 }
 
 
@@ -199,6 +240,54 @@ def quit_ledblinky(ops, config, hyperspin: Optional[str], log: Callable[[str], N
         log("  sent LEDBlinky its quit (LEDBlinky.exe 2)")
     except OSError as exc:
         log(f"  could not run {exe} 2: {exc}")
+
+
+def settle(ctx: _Context) -> None:
+    """Wait for HyperSpin's startup script and LEDBlinky to finish quitting.
+
+    Exit To Windows runs this once the desktop is back, with no window.
+    LEDBlinky still running after :data:`LEDBLINKY_WAIT` (its quit animation)
+    is ended.  Then every PAC-LED64 light is turned off.
+    """
+    script = ctx.ops.pids(STARTUP_SCRIPT)
+    if script and not ctx.ops.wait_exit(script, HELPER_WAIT):
+        ctx.log(f"  {STARTUP_SCRIPT} still running after {HELPER_WAIT:g} s")
+    ledblinky = ctx.ops.pids(LEDBLINKY)
+    if ledblinky:
+        started = time.monotonic()
+        if ctx.ops.wait_exit(ledblinky, LEDBLINKY_WAIT):
+            ctx.log(f"  LEDBlinky quit (waited {time.monotonic() - started:.1f} s)")
+        else:
+            for pid in ledblinky:
+                ctx.ops.terminate(pid)
+            ctx.ops.wait_exit(ledblinky, FORCE_WAIT)
+            ctx.log(f"  LEDBlinky still running after {LEDBLINKY_WAIT:g} s, ended it")
+    lights_off(ctx)
+
+
+def lights_off(ctx: _Context) -> None:
+    """Every PAC-LED64 light to 0, through the ``PacDrive32.dll`` in ``ledblinky_dir``.
+
+    LEDBlinky's quit can leave a board lit (on a real cabinet, the second board
+    stayed purple).  Skipped while LEDBlinky runs, so the two never fight, and
+    when there's no DLL to use.
+    """
+    if ctx.ops.pids(LEDBLINKY):
+        ctx.log("  LEDBlinky is running: lights left to it")
+        return
+    from . import button_lights
+
+    dll = button_lights.find_dll(ctx.config)
+    if dll is None:
+        if getattr(ctx.config, "ledblinky_dir", ""):
+            ctx.log(f"  no {button_lights.DLL_NAME} in ledblinky_dir: lights left as they are")
+        return
+    result = button_lights.lights_off(dll)
+    if result.error:
+        ctx.log(f"  lights off failed: {result.error}")
+    elif result.boards:
+        ctx.log("  lights off: " + ", ".join(f"board {b.number} off: {b.all_ok}" for b in result.boards)
+                + f" ({result.devices} Ultimarc device(s))")
 
 
 def restart_hyperspin(ctx: _Context) -> None:

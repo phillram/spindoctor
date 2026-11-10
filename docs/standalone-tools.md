@@ -122,6 +122,8 @@ Tick the helpers you want in the GUI's **Custom Wheels** tab, or name them with 
 
 3. **Manual** — copy the generated `.bat` files (or the `scripts/` convenience files for pip installs) wherever you want and register them yourself.
 
+The **Idle Tour** helper is neither: it runs beside HyperSpin for as long as it's open, so `install-tools --tool idle-tour --apply` adds it to HyperSpin's Startup Script instead. See [Idle tour](idle-tour.md).
+
 ## Wiring into Windows startup
 
 The GUI's **Custom Wheels** tab has a Windows-only "Auto-refresh on cabinet startup" section: click *Enable auto-run* to register a Task Scheduler `ONLOGON` task with a configurable post-log-on delay (default 2 min — gives HyperSpin / RocketLauncher time to settle before the rebuild kicks in). Companion *Disable auto-run* and *Check task status* buttons round out the lifecycle. Internally it shells out to `schtasks.exe`, so no `pywin32` or admin rights required. (These are the same button names as the Intro Video tab's Auto-run section — both wrap the identical Task Scheduler mechanism, just for a different scheduled task.)

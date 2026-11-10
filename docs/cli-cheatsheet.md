@@ -489,6 +489,7 @@ spindoctor install-tools --tool refresh-all            :: write to default Hyper
 spindoctor install-tools --tool refresh-favorites,refresh-all --output-dir D:\Tools
 spindoctor install-tools --tool refresh-all --add-to-system Toolkit --apply   :: add as games in a Toolkit wheel
 :: ↑ also writes Modules\PCLauncher\Toolkit.ini (required for PCLauncher to launch)
+spindoctor install-tools --tool idle-tour --apply      :: idle tour, started with HyperSpin (docs/idle-tour.md)
 
 :: Remove them again
 spindoctor uninstall-tools                             :: dry-run preview

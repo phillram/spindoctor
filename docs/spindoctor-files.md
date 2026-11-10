@@ -131,7 +131,7 @@ Log prefixes by call site:
 
 ### `toolkit.log`
 
-**One line per step of the [`toolkit`](commands.md#toolkit) cabinet actions** (Shut Down Cabinet and the other helpers that leave HyperSpin), which run without a console: when the countdown started or was cancelled, whether HyperSpin closed by itself or was forced, whether LEDBlinky was told to quit and how long it took, the `shutdown.exe` command and its exit code. Created on first use. When it passes 256 KB it is renamed `toolkit.log.1` (replacing the previous one) and a new file starts. It holds program paths, so check it before sharing.
+**One line per step of the [`toolkit`](commands.md#toolkit) cabinet actions** (Shut Down Cabinet and the other helpers that leave HyperSpin), which run without a console: when the countdown started or was cancelled, whether HyperSpin closed by itself or was forced, whether LEDBlinky was told to quit and how long it took, the `shutdown.exe` command and its exit code. The [idle tour](idle-tour.md) (`toolkit idle-tour`) logs here too, in `idle-tour:` lines: when it starts, when HyperSpin's idle mode is running in a wheel, each wheel it changes and why it paused. Created on first use. When it passes 256 KB it is renamed `toolkit.log.1` (replacing the previous one) and a new file starts. It holds program paths, so check it before sharing.
 
 ```
 2026-11-06 21:10:02  shutdown: countdown started (5 s)
