@@ -77,6 +77,8 @@ with the arrow skips; map them to R2 / Touchpad if very-fast jumps are wanted.
 
 Emulators stay configured for the DS4Windows virtual pad — e.g. Dolphin's GCPad
 Port 1 = `XInput/0/Gamepad` (see the [architecture reference](cabinet-architecture-reference.md#controller-input--ds4windows-and-xinput)).
+To play Dolphin from an arcade panel's keys as well, without changing these pad binds, see
+[Arcade panel and gamepad on one controller](cabinet-architecture-reference.md#arcade-panel-and-gamepad-on-one-controller).
 
 ---
 

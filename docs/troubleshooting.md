@@ -1289,6 +1289,47 @@ for the full architecture reference.
 
 ---
 
+### An arcade panel's keys do nothing in GameCube games unless the gamepad is on
+
+**Symptom:** Keys from an arcade panel (a keyboard encoder), bound in `GCPadNew.ini` next to
+a gamepad's binds, work only while the pad is switched on. The same kind of binds work in Wii
+games with the pad off.
+
+**Cause:** Dolphin treats a GameCube port as unplugged while its `Device` (the pad) isn't
+connected, and then ignores every bind on that port, keyboard terms included.
+
+**Fix:** Set `Options/Always Connected = True` in each `[GCPadN]` section the panel plays. See
+[GameCube ports need `Always Connected`](cabinet-architecture-reference.md#gamecube-ports-need-always-connected).
+
+---
+
+### Dolphin's controls go back to an older layout at every launch
+
+**Symptom:** Binds added to `WiimoteNew.ini` or `GCPadNew.ini` are gone after a game is
+launched through RocketLauncher, and the file holds an older layout again.
+
+**Cause:** RocketLauncher's Dolphin module has `UseCustomWiimoteProfiles` or
+`UseCustomGCPadProfiles` on. It then copies its own whole-file profile over those files at
+every launch.
+
+**Fix:** Switch both off in the module's settings, then check that the files still hold your
+binds. For a layout that only some games use, use Dolphin's own per-game profiles. See
+[RocketLauncher's Dolphin module](cabinet-architecture-reference.md#rocketlaunchers-dolphin-module).
+
+---
+
+### The panel's joystick is turned a quarter-turn in a sideways Wii Remote game
+
+**Symptom:** In a game played with the Wii Remote held sideways, pushing the panel's joystick
+up moves left, and the other directions are turned the same way.
+
+**Fix:** Give those games a Wii Remote profile with the directions turned (Left → `D-Pad/Up`,
+Right → `D-Pad/Down`, Down → `D-Pad/Left`, Up → `D-Pad/Right`), and load it per game from
+`GameSettings\<GAMEID>.ini`. See
+[Sideways-remote games on a joystick](cabinet-architecture-reference.md#sideways-remote-games-on-a-joystick).
+
+---
+
 ### Xpadder still launches and throws errors after I disabled it in Windows and HyperSpin
 
 **Symptom:** You removed Xpadder from Windows startup and from the HyperSpin Startup

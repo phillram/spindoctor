@@ -17,6 +17,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - **Video lengths are read without ffprobe even when the MP4's movie header is at the end of the file.** With no `ffprobe` installed, `inspect` and `audit --detailed` read an `.mp4` / `.m4v` / `.mov` length from its movie header (`moov` → `mvhd`), but looked only in the first 1 MB. Many encoders write that header after the video data, so those clips showed no length (`—`, and an empty `duration_seconds` in `inspect --format csv`); on one cabinet that was 4,379 of 22,401 wheel videos. The fallback now uses `introvideo.video_duration_seconds`, the reader the intro-video swap already uses: it seeks from box to box, so the header is found wherever it sits, and only box headers are read, never the video data. A movie header whose duration is all ones ("unknown") now gives no length instead of one of 80 days or more. `_duration_mp4_native`, `_walk_boxes` and `_parse_mvhd` are gone. Covered by `tests/test_fileinfo.py`.
 
+### Docs
+
+- **Dolphin with an arcade panel and a gamepad on the same controller is documented.** `docs/cabinet-architecture-reference.md` has a new section in its Dolphin part. Each panel key goes after the pad's bind as a device-qualified term (`` Buttons/A = `Button A` | `DInput/0/Keyboard Mouse:A` ``), so the pad's binds stay exactly as they were. GameCube ports need `Options/Always Connected = True`: Dolphin treats a port as unplugged while its pad is off, and then ignores the panel's keys too. It also covers a Wii pointer from a trackball or mouse that gives way to the pad's stick, sideways-remote games on a joystick through a per-game Wii Remote profile (`GameSettings\<GAMEID>.ini`, `[Controls]` `WiimoteProfile1`), Wii motion on keys, and why RocketLauncher's `UseCustomWiimoteProfiles` / `UseCustomGCPadProfiles` should stay off (they copy a stored profile over `WiimoteNew.ini` / `GCPadNew.ini` at every launch). `docs/troubleshooting.md` has an entry for each symptom, and `docs/controller-input.md` links to the new section.
+
 ## [3.1.0] - 2026-11-06
 
 ### Added
