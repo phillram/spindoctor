@@ -2799,6 +2799,118 @@ def check_refresh_helpers(config: Config) -> Check:
     return parent
 
 
+def check_idle_tour(config: Config) -> Check:
+    """Will the idle tour start with HyperSpin, and see what it needs?
+
+    `install-tools --tool idle-tour --apply` adds ``Idle Tour.bat`` to the
+    ``[Startup]`` list of HyperSpin's Startup Script, which stops at the first
+    missing number.  The tour changes wheels only while HyperSpin's own idle
+    mode runs (``Settings\\Settings.ini`` ``[AttractMode] Active=true``) and
+    reads where HyperSpin is from its LEDBlinky calls in ``log.txt``
+    (``[LEDBlinky] Active=true``).  Diagnosis only.
+    """
+    from . import startup_script as ss
+    from . import toolkit_helpers as th
+    from ._text import read_editable_text
+    from .idle_tour import SETTINGS_FILE, hyperspin_setting, other_tours, read_settings, single_mode
+
+    name = "Idle tour"
+    bat_name = f"{th.find('idle-tour').name}.bat"
+    install = "spindoctor install-tools --tool idle-tour --apply"
+    script = ss.find(config.hyperspin_dir)
+    items = ss.entries(read_editable_text(script.path)) if script.path else []
+    entry = next((e for e in items if e.target.strip().strip('"').lower() == bat_name.lower()), None)
+    menu_bat = (Path(config.rocketlauncher_dir) / "Modules" / "HyperLaunch" / "Tools" / "spindoctor"
+                / bat_name) if config.rocketlauncher_dir else None
+    if entry is None and not (menu_bat is not None and menu_bat.is_file()):
+        return Check(name=name, status=Status.INFO, detail="not installed (optional)")
+
+    parent = Check(name=name, status=Status.OK)
+    row = "Startup Script"
+    if entry is None:
+        if script.path is None:
+            parent.children.append(Check(
+                name=row, status=Status.WARN,
+                detail=f"{menu_bat} is there, but nothing starts it: {script.problem}",
+                fix=f"have HyperSpin's startup program run {bat_name} (hidden) each time HyperSpin starts"))
+        else:
+            parent.children.append(Check(
+                name=row, status=Status.WARN,
+                detail=f"{script.path.name} doesn't start {bat_name}", fix=install))
+    else:
+        last = ss.runs_to(items)
+        # The Startup Script runs each entry from its folder, its own when relative.
+        folder = Path(entry.working_dir.strip().strip('"') or ".")
+        if not folder.is_absolute():
+            folder = script.path.parent / folder
+        target = Path(entry.target.strip().strip('"'))
+        bat = target if target.is_absolute() else folder / target
+        gone = [exe for exe in (_bat_programs(bat) if bat.is_file() else [])
+                if "%" not in exe and _pc_app_exists(exe) is False]
+        if entry.number > last:
+            parent.children.append(Check(
+                name=row, status=Status.WARN,
+                detail=(f"[Startup] entry {entry.number} comes after a gap at {last + 1}: the Startup "
+                        "Script stops at the first missing number, so the tour never starts"),
+                fix=f"number the [Startup] entries in {script.path} 1, 2, 3 … without gaps"))
+        elif _pc_app_exists(str(bat)) is False:
+            parent.children.append(Check(
+                name=row, status=Status.WARN,
+                detail=f"[Startup] entry {entry.number} runs {bat}, which doesn't exist", fix=install))
+        elif gone:
+            # SpinDoctor moved or upgraded into a new folder: rewrite the .bat where it is.
+            fix = "spindoctor install-tools --tool idle-tour"
+            if menu_bat is None or (os.path.normcase(str(bat.resolve()))
+                                    != os.path.normcase(str(menu_bat.resolve()))):
+                fix += f' --output-dir "{bat.parent}"'
+            parent.children.append(Check(
+                name=row, status=Status.WARN,
+                detail=f"{bat.name} runs {gone[0]}, which no longer exists", fix=fix))
+        else:
+            parent.children.append(Check(
+                name=row, status=Status.OK,
+                detail=f"starts it with HyperSpin ([Startup] entry {entry.number} in {script.path.name})"))
+            settings_file = bat.parent / SETTINGS_FILE
+            if not read_settings(settings_file).enabled:
+                parent.children.append(Check(
+                    name="Settings", status=Status.INFO,
+                    detail=f"switched off (Enabled=0 in {settings_file})"))
+    attract = hyperspin_setting(config.hyperspin_dir, "AttractMode", "Active")
+    if attract.strip().lower() != "true":
+        parent.children.append(Check(
+            name="HyperSpin idle mode", status=Status.WARN,
+            detail=(f"off ([AttractMode] Active={attract or '(not set)'}): the tour only changes "
+                    "wheels while it runs"),
+            fix="Settings\\Settings.ini [AttractMode] Active=true (edit it with HyperSpin closed)"))
+    else:
+        wait = hyperspin_setting(config.hyperspin_dir, "AttractMode", "Time")
+        parent.children.append(Check(
+            name="HyperSpin idle mode", status=Status.OK,
+            detail=f"on, after {wait} s with no input" if wait else "on"))
+    led = hyperspin_setting(config.hyperspin_dir, "LEDBlinky", "Active")
+    if led.strip().lower() != "true":
+        parent.children.append(Check(
+            name="LEDBlinky calls", status=Status.WARN,
+            detail=(f"off ([LEDBlinky] Active={led or '(not set)'}): HyperSpin's log.txt then shows "
+                    "no selections or idle spins, so the tour does nothing"),
+            fix="Settings\\Settings.ini [LEDBlinky] Active=true (edit it with HyperSpin closed)"))
+    single = single_mode(config.hyperspin_dir)
+    if single:
+        parent.children.append(Check(
+            name="HyperSpin menu mode", status=Status.WARN,
+            detail=f"{single}, so the tour presses nothing",
+            fix="Settings\\Settings.ini [Main] Menu_Mode=multi, or uninstall-tools --tool idle-tour --apply"))
+    others = other_tours(items, bat_name)
+    if others:
+        parent.children.append(Check(
+            name="Another idle tour", status=Status.WARN,
+            detail=(f"{script.path.name} also starts {others[0]}: two tours press keys over "
+                    "each other"),
+            fix=f"take one of them out of [Startup] in {script.path}"))
+    parent.status = _worst(c.status for c in parent.children)
+    return parent
+
+
 def check_orphan_media(config: Config) -> Check:
     """Report leftover media files with no matching game (disk bloat).
 
@@ -2877,6 +2989,7 @@ def run_health_checks(config: Config, fix: bool = False) -> HealthReport:
     _safe("LED coverage", lambda: check_led_coverage(config))
     _safe("Intro video", lambda: check_intro_video(config))
     _safe("SpinDoctor helpers", lambda: check_refresh_helpers(config))
+    _safe("Idle tour", lambda: check_idle_tour(config))
     _safe("Orphan media", lambda: check_orphan_media(config))
     _safe("Metadata APIs", lambda: check_api_creds(config))
     _safe("Media folders", lambda: check_media_skeletons(config, fix, report.fixes_applied))

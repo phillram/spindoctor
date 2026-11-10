@@ -1,7 +1,7 @@
 """Draw the wheel art for the helpers `install-tools` can add to a wheel.
 
 Writes ``spindoctor/assets/toolkit_<key>.png`` for every helper in
-``spindoctor.toolkit_helpers.HELPERS``: a transparent 400x156 PNG (a
+``spindoctor.toolkit_helpers.WHEEL_HELPERS``: a transparent 400x156 PNG (a
 HyperSpin wheel logo) with the name in upper-case italic Impact, pink
 (#D9196B), over a soft blue (#0A6AEA) glow down and to the right.  One or two
 lines, fitted to 372x132; every name gets the same letter size, the size at
@@ -143,10 +143,10 @@ def main(argv=None) -> int:
     if not font.is_file():
         parser.error(f"font not found: {font} (pass --font)")
     sys.path.insert(0, str(ROOT))
-    from spindoctor.toolkit_helpers import HELPERS
+    from spindoctor.toolkit_helpers import WHEEL_HELPERS
 
     args.out.mkdir(parents=True, exist_ok=True)
-    for helper in HELPERS:
+    for helper in WHEEL_HELPERS:
         if args.only and helper.key not in args.only:
             continue
         lines = LINES.get(helper.key) or split_lines(helper.name)
