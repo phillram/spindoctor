@@ -221,6 +221,10 @@ Both are also covered by `spindoctor cleanup run` (categories `media-pick-cache`
 
 **The GUI's single-instance lock.** Taken on `spindoctor-gui` startup so two windows can't write the same HyperSpin XML simultaneously; released automatically when the process exits, including after a crash. See [Troubleshooting → Install / startup](troubleshooting.md#install--startup).
 
+### `tests\`
+
+**Game launch test runs** from `spindoctor test --apply`, one folder per run named by its start time (`test_results_dir` moves them elsewhere). Each holds `report.html` (open this), `results.csv` / `results.json`, `plan.csv`, `run.json`, `HyperSpin log.txt` with `--with-hyperspin`, RocketLauncher's log per launch under `logs\`, a screenshot per game under `screenshots\`, `stats-backup\` (RocketLauncher's play statistics from before the run, with a `scrub`-style `manifest.json`), `cleanup.csv` and `baseline.bin` (what the games created, and hashes of every path that existed before the run; `cleanup-backup\` holds removed files when `backup_dir` isn't set) and `journal.json` (what the run was doing, for `spindoctor test --recover`). `tests\active.json` exists only while a run is unfinished; don't delete it by hand, run `spindoctor test --recover`. Old run folders are safe to delete. Screenshots show the whole monitor and logs contain paths, so check them before sharing. See [Command reference → test](commands.md#test).
+
 ### Undo manifest directories
 
 Commands with manifest-based undo record their changes here or in the ROM tree. This is not universal: deletion modes such as `curate --action delete` have no undo. Most manifests live in per-category folders here:

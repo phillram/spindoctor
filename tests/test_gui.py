@@ -990,8 +990,8 @@ def test_gui_constructs_against_real_tk():
         app.root.update_idletasks()
         # Sanity: every tab builder ran without exception, including the
         # Maintenance tab (foreground TclError) and the Systems tab
-        # (_output AttributeError). 14 = the documented tab count.
-        assert len(app._tab_base_names) == 14
+        # (_output AttributeError). 15 = the documented tab count.
+        assert len(app._tab_base_names) == 15
         # Pin the workflow-oriented order so a drive-by reorder doesn't
         # regress UX without anyone noticing. See `_build_layout` for
         # the rationale behind the sequencing.
@@ -1006,6 +1006,7 @@ def test_gui_constructs_against_real_tk():
             "Intro Video",
             "LEDBlinky",
             "Lightgun",
+            "Test games",
             "Backup & Restore",
             "Migration",
             "History",
@@ -1287,7 +1288,7 @@ def test_gui_survives_missing_keysym_in_bind_all():
         app = gui._SpinDoctorGUI(tk, ttk, filedialog, messagebox, scrolledtext)
         try:
             app.root.update_idletasks()
-            assert len(app._tab_base_names) == 14
+            assert len(app._tab_base_names) == 15
             # Pin the workflow-oriented order so a future drive-by
             # reorder doesn't regress UX without anyone noticing.
             # See `_build_layout` for the rationale.
@@ -1302,6 +1303,7 @@ def test_gui_survives_missing_keysym_in_bind_all():
                 "Intro Video",
                 "LEDBlinky",
                 "Lightgun",
+                "Test games",
                 "Backup & Restore",
                 "Migration",
                 "History",
@@ -3700,9 +3702,13 @@ def test_short_pages_cannot_scroll_above_their_content(monkeypatch):
     app, _tk = _build_gui_for_test(monkeypatch)
     try:
         app.root.geometry("1200x900")
+        # Let the deferred startup scan run first: with no config.json it
+        # switches to Setup, which would leave Console unmapped (1px tall).
+        app.root.update()
         idx = app._tab_base_names.index("Console")
         app._nb.select(idx)
         app.root.update()
+        assert app._nb.index("current") == idx
         container = app._nb.nametowidget(app._nb.tabs()[idx])
         canvas = next(w for w in container.winfo_children() if w.winfo_class() == "Canvas")
         canvas.yview_scroll(-10, "units")
@@ -4092,3 +4098,180 @@ def test_migration_list_ignores_the_system_filter(monkeypatch):
     finally:
         app._system_filter_var.set("")
         app.root.destroy()
+
+
+# ─── Test games page (spindoctor test) ────────────────────────────────────────
+
+def _test_page_app(monkeypatch, tmp_path, **cfg_values):
+    """The GUI with SpinDoctor's folder and test runs inside *tmp_path*."""
+    import spindoctor.config as config_mod
+    from spindoctor.config import Config
+
+    monkeypatch.setattr(config_mod, "CONFIG_DIR", tmp_path / "home")
+    cfg = Config(test_results_dir=str(tmp_path / "runs"), **cfg_values)
+    monkeypatch.setattr(gui, "load_config", lambda: cfg)
+    app, tk = _build_gui_for_test(monkeypatch)
+    return app, cfg
+
+
+def test_test_games_page_sits_after_lightgun_and_keeps_ctrl_numbers(monkeypatch, tmp_path):
+    app, _cfg = _test_page_app(monkeypatch, tmp_path)
+    try:
+        names = app._tab_base_names
+        assert names.index("Test games") == names.index("Lightgun") + 1
+        assert names[:9] == list(gui._PAGES_BEFORE_TEST_GAMES[:9])  # Ctrl+1..9 unchanged
+        assert ("Wheels & cabinet", ("Custom Wheels", "Intro Video", "LEDBlinky", "Lightgun",
+                                     "Test games")) in gui._SIDEBAR_GROUPS
+        assert "Nothing on this page changes files" not in gui._PAGE_SUMMARIES["Test games"]
+    finally:
+        app.root.destroy()
+
+
+def test_test_games_run_button_follows_the_apply_switch(monkeypatch, tmp_path):
+    app, _cfg = _test_page_app(monkeypatch, tmp_path)
+    try:
+        assert app._test_run_btn.cget("text") == "Show games"
+        app._global_apply_var.set(True)
+        assert app._test_run_btn.cget("text") == "Launch games"
+    finally:
+        app.root.destroy()
+
+
+def test_test_games_args_from_the_page(monkeypatch, tmp_path):
+    app, _cfg = _test_page_app(monkeypatch, tmp_path)
+    try:
+        app._current_system_var.set("Nintendo 64")
+        app._push_current_system()
+        assert app._test_system_var.get() == "Nintendo 64"
+        assert app._test_args() == ["test", "--system", "Nintendo 64", "--per-system", "3",
+                                    "--seconds", "20", "--cleanup", "report"]
+        app._test_all_var.set(True)
+        app._test_genre_var.set("Shoot*")
+        app._test_games_var.set("Galaga | Pac*")
+        app._test_pick_var.set("count")
+        app._test_n_var.set("8")
+        app._test_hs_var.set(True)
+        app._test_skipped_var.set(True)
+        app._test_cleanup_var.set("remove")
+        assert app._test_args() == [
+            "test", "--all-systems", "--genre", "Shoot*", "--game", "Galaga", "--game", "Pac*",
+            "--count", "8", "--seconds", "20", "--with-hyperspin", "--include-skipped",
+            "--cleanup", "remove"]
+        app._test_pick_var.set("all")
+        assert "--all" in app._test_args()
+        app._test_seconds_var.set("0")
+        assert app._test_args() is None
+    finally:
+        app.root.destroy()
+
+
+def test_test_games_needs_a_system_or_a_pattern(monkeypatch, tmp_path):
+    app, _cfg = _test_page_app(monkeypatch, tmp_path)
+    try:
+        app._test_system_var.set("")
+        assert app._test_args() is None
+        app._test_genre_var.set("Shooter")
+        assert app._test_args()[:3] == ["test", "--genre", "Shooter"]
+    finally:
+        app.root.destroy()
+
+
+def test_test_games_launch_adds_apply_and_marks_the_run(monkeypatch, tmp_path):
+    app, _cfg = _test_page_app(monkeypatch, tmp_path)
+    calls = []
+    monkeypatch.setattr(app, "_run_cli", lambda binary, args, on_complete=None: calls.append(list(args)) or True)
+    try:
+        app._test_launch(["test", "--resume"])
+        assert calls[-1] == ["test", "--resume"] and not app._test_run_active
+        app._global_apply_var.set(True)
+        app._test_launch(["test", "--resume"])
+        assert calls[-1] == ["test", "--resume", "--apply"] and app._test_run_active
+        app._test_done(0)
+        assert not app._test_run_active
+    finally:
+        app.root.destroy()
+
+
+def test_stop_asks_a_test_run_to_stop_before_ending_it(monkeypatch, tmp_path):
+    from spindoctor import _testrun
+
+    app, _cfg = _test_page_app(monkeypatch, tmp_path)
+    run_dir = tmp_path / "runs" / "r1"
+    run_dir.mkdir(parents=True)
+    _testrun.set_active(run_dir, {"pid": 1})
+    killed, waited = [], []
+
+    class Proc:
+        def poll(self):
+            return None
+
+        def wait(self, timeout=None):
+            waited.append(timeout)
+            return 0
+
+    monkeypatch.setattr(gui, "stop_worker", lambda proc, timeout=5.0: killed.append(proc))
+    try:
+        app._proc = Proc()
+        app._test_run_active = True
+        app._stop_running()
+        for _ in range(200):  # the wait runs on a background thread
+            if waited:
+                break
+            gui.time.sleep(0.01)
+        assert (run_dir / "stop-request").exists()
+        assert waited and waited[0] >= 30 and killed == []
+    finally:
+        app._proc = None
+        app.root.destroy()
+
+
+def test_test_games_shows_the_last_run_and_the_recover_banner(monkeypatch, tmp_path):
+    from spindoctor import _testrun, gametest
+
+    run_dir = tmp_path / "runs" / "2026-11-06_120000"
+    run_dir.mkdir(parents=True)
+    gametest._save_run(run_dir, {"started": "x", "finished": False})
+    gametest._write_csv(run_dir / "results.csv", gametest.RESULT_FIELDS, [
+        {"System": "NES", "Game": "Alpha", "Status": "PASS", "Reason": "Opened and ran normally"},
+        {"System": "NES", "Game": "Bravo", "Status": "FAIL", "Reason": "Pop-up window appeared: 'Error'",
+         "Screenshot": "screenshots/NES/Bravo.png"},
+    ])
+    app, _cfg = _test_page_app(monkeypatch, tmp_path)
+    opened = []
+    monkeypatch.setattr(app, "_open_path", lambda path, missing_label: opened.append(path))
+    try:
+        rows = [app._test_tree.item(i, "values") for i in app._test_tree.get_children()]
+        assert [r[:3] for r in rows] == [("FAIL", "NES", "Bravo"), ("PASS", "NES", "Alpha")]
+        assert "not finished" in app._test_run_label.cget("text")
+        app._test_tree.selection_set(app._test_tree.get_children()[0])
+        app._test_open_screenshot()
+        app._test_open_report()
+        assert opened == [run_dir / "screenshots/NES/Bravo.png", run_dir / "report.html"]
+        assert app._test_banner.winfo_manager() == ""
+        _testrun.set_active(run_dir, {"pid": 1})
+        app._refresh_test_results()
+        assert app._test_banner.winfo_manager() == "pack"
+    finally:
+        app.root.destroy()
+
+
+def test_last_page_is_saved_by_name_and_old_indexes_still_work(monkeypatch, tmp_path):
+    saved = []
+    app, cfg = _test_page_app(monkeypatch, tmp_path, gui_last_active_tab=10)  # 3.1.0: Backup & Restore
+    monkeypatch.setattr(gui, "save_config", saved.append)
+    try:
+        assert app._tab_base_names[app._nb.index("current")] == "Backup & Restore"
+        app._select_page("Test games")
+        app._save_gui_state()
+        assert saved and cfg.gui_last_active_page == "Test games" and cfg.gui_last_active_tab == -1
+        app._select_page("Migration")
+        app._save_gui_state()
+        assert cfg.gui_last_active_page == "Migration" and cfg.gui_last_active_tab == 11
+    finally:
+        app.root.destroy()
+
+
+def test_test_command_read_only_forms():
+    assert gui._is_read_only_invocation(("test", "--list-runs"))
+    assert not gui._is_read_only_invocation(("test", "--system", "NES"))
+    assert not gui._is_read_only_invocation(("test", "--recover"))

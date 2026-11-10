@@ -256,6 +256,9 @@ class Config:
     gui_window_dpi_scale: float = 1.0
     gui_window_maximized: bool = False
     gui_last_active_tab: int = -1
+    # The last page by name ("" = use gui_last_active_tab, which counts pages
+    # in the order before the Test games page, as older versions read it).
+    gui_last_active_page: str = ""
     # Last-selected system per tab, keyed by tab label. Saved when the
     # user changes a combobox; restored on the next launch so cabinet
     # owners who live in a few systems don't re-pick every session.
@@ -341,6 +344,41 @@ class Config:
     #     "Teknoparrot": "Teknoparrot"
     #   }
     emulator_window_titles: dict[str, str] = field(default_factory=dict)
+
+    # `spindoctor test` (launch-testing games through RocketLauncher).
+    # Wheels never launched unless named with --system or --include-skipped.
+    test_skip_systems: list[str] = field(default_factory=list)
+    # PCLauncher games often need a manual exit, so they are skipped too.
+    test_skip_pclauncher: bool = True
+    # SpinDoctor's Favorites / Recently Played / Most Played copy other wheels' games.
+    test_skip_custom_wheels: bool = True
+    # Programs RocketLauncher starts that aren't the game, added to the
+    # built-in list (AutoHotkey, 7z, DTLite, keymappers…); "!name" removes one.
+    test_helper_processes: list[str] = field(default_factory=list)
+    # Substrings of harmless RocketLauncher log ERROR lines.
+    test_ignore_log_errors: list[str] = field(default_factory=lambda: ["No CRC defined"])
+    # Regex for pop-up titles that mean trouble; blank = the built-in list.
+    test_error_window_words: str = ""
+    test_game_seconds: int = 20      # how long a game runs before it is judged
+    test_launch_timeout: int = 90    # how long to wait for a game window
+    test_close_timeout: int = 25     # how long to wait after the exit key
+    test_cooldown: int = 3           # pause between games
+    test_per_system: int = 3         # games per wheel when no count is given
+    test_screenshot_width: int = 480
+    # Where run folders go; blank = ~/.spindoctor/tests.
+    test_results_dir: str = ""
+    # --with-hyperspin: seconds to wait for HyperSpin's Main Menu, harmless
+    # log.txt lines (substrings), and whether to skip the intro video.
+    test_hyperspin_timeout: int = 180
+    test_ignore_hyperspin_log: list[str] = field(default_factory=list)
+    test_skip_intro_video: bool = True
+    # Files the games create during a test run: "report" (list them),
+    # "remove" (back up, then delete) or "off".
+    test_cleanup: str = "report"
+    # Folders the cleanup leaves alone, relative to hyperspin_dir (or absolute):
+    # RocketLauncher's 7-Zip cache and the statistics the run restores itself.
+    test_cleanup_skip: list[str] = field(
+        default_factory=lambda: ["cache", "RocketLauncher\\Data\\Statistics"])
 
     # ── derived paths ──────────────────────────────────────────────────────────
 

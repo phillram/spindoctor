@@ -78,40 +78,12 @@ def _windows_stream(handle_id: int, mode: str):
 
 def _child_pids(pid: int, exe_name: str) -> list[int]:
     """Direct children of *pid* whose executable file name is *exe_name*."""
-    import ctypes
-    from ctypes import wintypes
+    from . import _win32
 
-    class PROCESSENTRY32W(ctypes.Structure):
-        _fields_ = [
-            ("dwSize", wintypes.DWORD), ("cntUsage", wintypes.DWORD),
-            ("th32ProcessID", wintypes.DWORD), ("th32DefaultHeapID", ctypes.c_size_t),
-            ("th32ModuleID", wintypes.DWORD), ("cntThreads", wintypes.DWORD),
-            ("th32ParentProcessID", wintypes.DWORD), ("pcPriClassBase", ctypes.c_long),
-            ("dwFlags", wintypes.DWORD), ("szExeFile", ctypes.c_wchar * 260),
-        ]
-
-    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
-    kernel.CreateToolhelp32Snapshot.argtypes = [wintypes.DWORD, wintypes.DWORD]
-    kernel.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
-    kernel.Process32FirstW.argtypes = [wintypes.HANDLE, ctypes.POINTER(PROCESSENTRY32W)]
-    kernel.Process32NextW.argtypes = [wintypes.HANDLE, ctypes.POINTER(PROCESSENTRY32W)]
-    kernel.CloseHandle.argtypes = [wintypes.HANDLE]
-    snapshot = kernel.CreateToolhelp32Snapshot(2, 0)  # TH32CS_SNAPPROCESS
-    if snapshot in (None, ctypes.c_void_p(-1).value):
-        return []
-    try:
-        entry = PROCESSENTRY32W()
-        entry.dwSize = ctypes.sizeof(entry)
-        found = []
-        ok = kernel.Process32FirstW(snapshot, ctypes.byref(entry))
-        while ok:
-            if (entry.th32ParentProcessID == pid and entry.th32ProcessID != pid
-                    and entry.szExeFile.lower() == exe_name.lower()):
-                found.append(entry.th32ProcessID)
-            ok = kernel.Process32NextW(snapshot, ctypes.byref(entry))
-        return found
-    finally:
-        kernel.CloseHandle(snapshot)
+    return [
+        p.pid for p in _win32.list_processes()
+        if p.parent == pid and p.pid != pid and p.name.lower() == exe_name.lower()
+    ]
 
 
 def _terminate_pid(pid: int) -> None:
