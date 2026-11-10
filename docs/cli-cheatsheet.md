@@ -67,6 +67,7 @@ spindoctor test --genre Shooter --count 8 --apply                       :: 8 ran
 spindoctor test --all-systems --per-system 3 --apply                    :: a quick check of every wheel
 spindoctor test --all-systems --per-system 3 --with-hyperspin --apply   :: the same, opening HyperSpin first
 spindoctor test --only-failed --apply                                   :: try the last run's failures again
+spindoctor test --system MAME --all --cleanup remove --apply            :: back up and delete the files the games create
 spindoctor test --recover                                               :: after a run was stopped from the GUI or crashed
 ```
 

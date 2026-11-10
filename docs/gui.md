@@ -72,7 +72,7 @@ The **System** dropdown in the sidebar selects a system in every section at once
 
 ## Tab tour
 
-Tabs appear in new-user journey order: configure paths first (Setup), then confirm the cabinet is healthy (Diagnostics — read-only, so it's safe to explore before touching anything), then build out systems (Systems), then manage games within those systems (Games), enrich metadata (Metadata & Media), curate the library (Maintenance), manage cross-system wheels (Custom Wheels), manage the boot-video randomizer pool (Intro Video), configure hardware (LEDBlinky / Lightgun), then infrastructure (Backup & Restore → Migration), and finally the session log (History) and power-user escapes (Console) at the very end.
+Tabs appear in new-user journey order: configure paths first (Setup), then confirm the cabinet is healthy (Diagnostics — read-only, so it's safe to explore before touching anything), then build out systems (Systems), then manage games within those systems (Games), enrich metadata (Metadata & Media), curate the library (Maintenance), manage cross-system wheels (Custom Wheels), manage the boot-video randomizer pool (Intro Video), configure hardware (LEDBlinky / Lightgun), launch-test games (Test games), then infrastructure (Backup & Restore → Migration), and finally the session log (History) and power-user escapes (Console) at the very end.
 
 Screenshots below show SpinDoctor's dark theme at 125% UI scale with a synthetic sample cabinet, not a real library. Your systems, paths and enabled controls will differ. Maintainers can regenerate them on Windows with `python scripts/capture_gui_screenshots.py`.
 
@@ -338,6 +338,17 @@ Two numbered steps cover the lightgun setup workflow.
 
 **Configure one system:** Pick a system, optionally choose a DemulShooter `-target` value (auto-detected from system name if left blank), and add optional extra args. **Configure system** writes the Pre/Post launch hooks. CLI: `spindoctor lightgun configure --system <NAME>`.
 
+### Test games
+
+Launches games through RocketLauncher, one after another, and shows which ones break: didn't start, closed by itself, an error pop-up, a Windows crash report, not responding, RocketLauncher log errors or a black screen. It runs [`spindoctor test`](commands.md#test); it isn't part of Diagnostics, because a test run launches games and edits RocketLauncher's play statistics (it puts them back after every game).
+
+- **Games to test** follows the sidebar **System** (or check **All systems**): a **Genre** (filled from the system's database; `*` and `?` work), **Game names** (wildcards, several separated by `|`), and **Random, per system**, **Random, in total** or **Every game** with a number. **Seconds per game**, **Open HyperSpin first**, **Include skipped wheels and PCLauncher games** and **Files the games create** (`report`, `remove` or `off`) match the command's options.
+- **Apply changes** keeps its meaning. Off, the button reads **Show games**: the picked games are listed with their file check and `doctor` notes, and nothing launches. On, it reads **Launch games**.
+- **Resume last run** and **Re-test failed** run `test --resume` and `test --only-failed`, also under the Apply switch.
+- **Stop after this game** asks the run to close its current game, put the statistics back and stop. The bottom bar's **Stop** does the same for a test run and only ends the program if the run hasn't stopped within about a minute; closing the window waits a few seconds.
+- If a run was ended before it could tidy up, a note at the top offers **Recover now** (`test --recover`): it closes the game the run left open and puts the statistics back.
+- **Last run** lists the newest run's results, failures first; double-click a row to open its screenshot. **Open report** opens the run's `report.html`, **Open run folder** its folder.
+
 ### Backup & Restore
 
 ![Backup & Restore tab, shown with a sample cabinet](screenshots/11-backup-restore.png)
@@ -497,6 +508,8 @@ Every `Entry` / `Text` / `ScrolledText` widget in the GUI — Setup paths, scrap
 ## Stopping a long-running command
 
 The **Stop** button, next to the progress bar at the bottom of the window and shown while a command runs, terminates the current subprocess (sends `SIGTERM` / Windows `TerminateProcess`). The GUI re-enables the Run buttons once the child exits.
+
+A game test from the **Test games** page is the exception: Stop first asks the run to close its game and put RocketLauncher's play statistics back, and only terminates it if it hasn't stopped within about a minute. Whatever a terminated run left behind is finished by **Recover now** on that page, or by the next test run.
 
 **Stop is not a rollback or a guarantee of a recovery manifest.** In particular,
 Windows `TerminateProcess` can prevent Python cleanup and interrupt handlers from

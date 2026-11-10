@@ -522,6 +522,12 @@ class WindowsPlatform:
     def start_time(self, pid: int) -> Optional[float]:
         return self._w.process_start_time(pid)
 
+    def image_path(self, pid: int) -> str:
+        return self._w.process_image_path(pid)
+
+    def watch_folder(self, root: str):
+        return self._w.DirectoryWatcher(root)
+
     def command_line(self, pid: int) -> str:
         return self._w.command_line(pid)
 
@@ -964,7 +970,7 @@ def restore_stats(rl_dir: Path, manifest: Path) -> tuple[int, int]:
 # ─── run folders, journal and results ─────────────────────────────────────────
 
 RESULT_FIELDS = ["System", "Game", "Status", "Reason", "Details", "Emulator", "Seconds",
-                 "Screenshot", "Log", "Fix", "Doctor", "Tested"]
+                 "Screenshot", "Log", "Fix", "Doctor", "Cleaned", "Tested"]
 PLAN_FIELDS = ["System", "Game", "Description", "Genre", "Emulator", "Reason", "Fix", "Doctor"]
 
 
@@ -1099,6 +1105,7 @@ def run_plan(
     play_intro: bool = False,
     leave_hyperspin_open: bool = False,
     on_hyperspin: Optional[Callable[[dict], None]] = None,
+    cleanup: Optional[str] = None,
 ) -> RunSummary:
     """Launch every game of *plan* that can launch; a new run folder unless
     *run_dir* (``--resume``) is given.  The caller runs :func:`recover` first.
@@ -1109,8 +1116,12 @@ def run_plan(
 
     With *with_hyperspin*, HyperSpin is opened first and its startup judged
     (:mod:`spindoctor.gametest_hyperspin`; *on_hyperspin* gets the result),
-    and closed again at the end unless *leave_hyperspin_open*."""
-    from . import gametest_hyperspin
+    and closed again at the end unless *leave_hyperspin_open*.
+
+    *cleanup* (``report`` / ``remove`` / ``off``, default ``test_cleanup``)
+    decides what happens to files the games create
+    (:mod:`spindoctor.gametest_cleanup`)."""
+    from . import gametest_cleanup, gametest_hyperspin
     rl_dir = Path(config.rocketlauncher_dir)
     resumed = run_dir is not None
     if run_dir is None:
@@ -1145,11 +1156,22 @@ def run_plan(
     _testrun.set_active(run_dir, {"pid": pid, "started": platform.start_time(pid)})
     stop_file = run_dir / "stop-request"
     n = 0
+    cleaner = None
     try:
         try:
             stop_file.unlink()
         except FileNotFoundError:
             pass
+        mode = cleanup or config.test_cleanup
+        if mode in ("report", "remove"):
+            roots = gametest_cleanup.watched_roots(config)
+            images = [platform.image_path(p.pid) for p in platform.list_processes()]
+            skip = gametest_cleanup.skip_folders(config, roots, [i for i in images if i])
+            cleaner = gametest_cleanup.Cleanup(config, run_dir, mode, roots, skip, since=time.time(),
+                                               watcher_factory=platform.watch_folder)
+            journal.data["cleanup"] = {"mode": mode, "roots": roots, "skip": skip, "since": cleaner.since}
+            journal.save()
+            cleaner.start()
         runner = Runner(config, settings, platform, run_dir, journal, stop_requested=stop_file.exists)
         if with_hyperspin:
             hs = gametest_hyperspin.start_and_check(config, settings, platform, run_dir, journal,
@@ -1172,6 +1194,7 @@ def run_plan(
             journal.data["stats"]["restored"] = True
             journal.data["current"] = {}
             journal.save()
+            cleaned = cleaner.after_game(f"{item.system} > {item.game}") if cleaner else ""
             if result is None:  # stop requested mid-launch
                 break
             summary.launched += 1
@@ -1181,7 +1204,7 @@ def run_plan(
                 "Reason": result.reason, "Details": "\n".join(result.details),
                 "Emulator": item.emulator, "Seconds": result.seconds,
                 "Screenshot": result.screenshot, "Log": result.log, "Fix": "", "Doctor": item.doctor,
-                "Tested": datetime.now().isoformat(sep=" ", timespec="seconds"),
+                "Cleaned": cleaned, "Tested": datetime.now().isoformat(sep=" ", timespec="seconds"),
             }], append=True)
             if on_result is not None:
                 per_game = (platform.now() - t_start) / n
@@ -1210,13 +1233,21 @@ def run_plan(
                 gametest_hyperspin.close(config, platform, hs_entry)
             journal.data["hyperspin"] = {}
             journal.save()
-        summary.stats_restored = journal.data["stats"]["restored"]
         info = read_run(run_dir)
+        if cleaner is not None:
+            try:
+                cleaner.finish()
+                info["cleanup"] = cleaner.summary()
+                journal.data["cleanup"] = {}
+                journal.save()
+            except OSError:
+                pass  # the journal still names the cleanup, so recover() sweeps again
+        summary.stats_restored = journal.data["stats"]["restored"]
         info["ended"] = datetime.now().isoformat(timespec="seconds")
         info["finished"] = summary.finished
         _save_run(run_dir, info)
         write_results_json(run_dir)
-        if summary.stats_restored:
+        if summary.stats_restored and not (journal.data.get("cleanup") or {}):
             _testrun.clear_active()
     return summary
 
@@ -1320,12 +1351,27 @@ def recover(config: Config, platform) -> Optional[RecoveryReport]:
                       or config.rocketlauncher_dir)
         report.stats_restored = restore_stats(rl_dir, manifest)
         report.messages.append("Put RocketLauncher's play statistics back.")
+    swept = None
+    clean = journal.data.get("cleanup") or {}
+    if clean.get("mode") in ("report", "remove"):
+        from .gametest_cleanup import Cleanup
+
+        # No watcher survived the kill: a full listing against the saved baseline.
+        cleaner = Cleanup(config, run_dir, clean["mode"], clean.get("roots") or [],
+                          clean.get("skip") or [], since=clean.get("since") or 0)
+        cleaner.finish("recovery")
+        swept = cleaner.summary()
+        verb = "removed" if clean["mode"] == "remove" else "found"
+        report.messages.append(f"Checked for files the games created: {swept[verb]} {verb}.")
     if journal.data:
         journal.data.setdefault("stats", {})["restored"] = True
         journal.data["current"] = {}
+        journal.data["cleanup"] = {}
         journal.save()
     if (run_dir / "run.json").is_file():
         info = read_run(run_dir)
+        if swept is not None:
+            info["cleanup"] = swept
         info["interrupted"] = True
         info["ended"] = info.get("ended") or datetime.now().isoformat(timespec="seconds")
         _save_run(run_dir, info)

@@ -87,9 +87,13 @@ def build_cabinet(tmp_path: Path) -> Config:
         _write(rl / "Modules" / Path(*name.split("\\")), "; module")
     _write(rl / "Data" / "Statistics" / "NES.ini", "[Alpha]\nNumber_of_Times_Played=1\n")
     _write(rl / "Data" / "Statistics" / "Global Statistics.ini", "[General]\nx=1\n")
+    # Files a cabinet always has, which every launch rewrites.
+    _write(rl / "RocketLauncher.log")
+    _write(hs / "log.txt")
+    _write(emu / "saves" / "Old Game.srm", "an old save")
 
     return Config(roms_dir=str(roms), hyperspin_dir=str(hs), rocketlauncher_dir=str(rl),
-                  test_results_dir=str(tmp_path / "runs"))
+                  emulators_dir=str(emu), test_results_dir=str(tmp_path / "runs"))
 
 
 # ─── the fake Windows ─────────────────────────────────────────────────────────
@@ -112,6 +116,7 @@ class GameBehaviour:
     helper_window: bool = False            # an AutoHotkey child shows a big window
     other_program_after: Optional[float] = None  # an unrelated new program opens a big window
     writes_stats: bool = True              # RocketLauncher updates the statistics on close
+    creates: tuple = ()                    # files (relative to the cabinet) written on close
 
 
 class FakeProc:
@@ -138,10 +143,31 @@ class HyperSpinBehaviour:
     log_lines: tuple = ()                  # extra lines logged at start
 
 
+class FakeWatcher:
+    """What ``_win32.DirectoryWatcher`` reports: names added under *root*."""
+
+    def __init__(self, root: str):
+        self.root = root
+        self.added: set[str] = set()
+        self.overflowed = False
+        self.closed = False
+
+    def drain(self):
+        added, over = self.added, self.overflowed
+        self.added, self.overflowed = set(), False
+        return added, over
+
+    def close(self):
+        self.closed = True
+
+
 class FakeWindows:
     def __init__(self, rl_dir: Path, behaviours: Optional[list[GameBehaviour]] = None,
                  hyperspin: Optional[HyperSpinBehaviour] = None):
         self.rl_dir = rl_dir
+        self.root = rl_dir.parent
+        self.watchers: list[FakeWatcher] = []
+        self.image_paths: dict[int, str] = {}
         self.hs_dir = rl_dir.parent / "hs"
         self.hyperspin = hyperspin or HyperSpinBehaviour()
         self.hs: Optional[dict] = None         # the running fake HyperSpin
@@ -248,6 +274,31 @@ class FakeWindows:
 
     def start_time(self, pid: int):
         return self.start_times.get(pid) if pid in self.procs else None
+
+    def image_path(self, pid: int) -> str:
+        return self.image_paths.get(pid, "")
+
+    def watch_folder(self, root: str) -> FakeWatcher:
+        w = FakeWatcher(root)
+        self.watchers.append(w)
+        return w
+
+    def create(self, rel: str, text: str = "data") -> Path:
+        """Write a file under the cabinet, as a game would, and tell the watchers
+        about it and every folder made for it."""
+        path = self.root / rel
+        made = []
+        p = path.parent
+        while not p.exists():
+            made.append(p)
+            p = p.parent
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+        for item in made + [path]:
+            for w in self.watchers:
+                if str(item).lower().startswith(str(w.root).lower()):
+                    w.added.add(str(item))
+        return path
 
     def command_line(self, pid: int) -> str:
         return self.cmdlines.get(pid, "")
@@ -382,6 +433,8 @@ class FakeWindows:
             cur["rl"].returncode = 0
             if cur["b"].writes_stats:
                 self.write_stats(cur["system"], cur["game"])
+            for rel in cur["b"].creates:
+                self.create(rel)
         self.fg = 100
 
     def write_stats(self, system: str, game: str) -> None:

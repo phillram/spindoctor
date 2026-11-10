@@ -91,6 +91,7 @@ tr:last-child td { border-bottom:0; }
   <div id="meta" class="muted"></div>
   <div id="cards" class="cards"></div>
   <div id="hs"></div>
+  <div id="cleanup"></div>
   <h2>Launch results</h2>
   <div class="toolbar" id="filters">
     <button data-f="all" class="on">All</button>
@@ -134,12 +135,27 @@ tr:last-child td { border-bottom:0; }
   const noted = ALL.filter(r => r.Doctor).length;
   const cards = [['Games launched', L.length, ''], ['Passed', tot.PASS, 'pass'], ['Warnings', tot.WARN, tot.WARN ? 'warn' : ''],
     ['Failed', tot.FAIL, tot.FAIL ? 'fail' : 'pass'], ['Skipped', S.length, ''], ['With doctor notes', noted, noted ? 'warn' : '']];
+  const cl = run.cleanup;
+  if (cl) cards.push(cl.mode === 'remove' ? ['New files removed', cl.removed, ''] : ['New files the games made', cl.found, cl.found ? 'warn' : '']);
   $('cards').innerHTML = cards.map(c => `<div class="card"><div class="n ${c[2]}">${Number(c[1] || 0).toLocaleString()}</div><div class="muted">${c[0]}</div></div>`).join('');
 
   const hs = run.hyperspin;
   if (hs) {
     const det = (hs.details || []).length ? `<ul>${hs.details.map(d => `<li>${esc(d)}</li>`).join('')}</ul>` : '';
     $('hs').innerHTML = `<h2>HyperSpin startup</h2><div class="box">${hs.screenshot ? `<img src="${enc(hs.screenshot)}" alt="HyperSpin screenshot">` : ''}<div><span class="badge ${hs.status}">${LABEL[hs.status]}</span> ${esc(hs.reason)}${det}</div></div>`;
+  }
+  if (cl) {
+    $('cleanup').innerHTML = `<h2>Files the games created</h2><div class="box"><div>` +
+      (!cl.found ? 'The games created no new files.'
+        : (cl.mode === 'remove'
+          ? `${cl.removed} new file(s) and folder(s) were removed, each file backed up first to <b>${esc(cl.backup_dir)}</b>.`
+          : `${cl.found} new file(s) and folder(s) were left in place (<code>test_cleanup = report</code>; <code>--cleanup remove</code> backs them up and deletes them).`)
+          + ' The full list is in cleanup.csv next to this report.') +
+      (cl.left ? `<p class="fail">${cl.left} could not be removed (see cleanup.csv).</p>` : '') +
+      (cl.baseline ? `<p class="muted">${Number(cl.baseline).toLocaleString()} items existed in ${(cl.roots || []).map(esc).join(', ')} when the run started; none of them can be touched.</p>` : '') +
+      ((cl.unreadable || []).length ? `<p class="warn">Folders that couldn't be read were protected whole: ${cl.unreadable.map(esc).join(', ')}</p>` : '') +
+      ((cl.skipped || []).length ? `<p class="muted">Left alone on purpose: ${cl.skipped.map(esc).join(', ')}.</p>` : '') +
+      `</div></div>`;
   }
 
   let filter = 'all', query = '', limit = 240;

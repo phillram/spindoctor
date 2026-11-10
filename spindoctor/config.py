@@ -256,6 +256,9 @@ class Config:
     gui_window_dpi_scale: float = 1.0
     gui_window_maximized: bool = False
     gui_last_active_tab: int = -1
+    # The last page by name ("" = use gui_last_active_tab, which counts pages
+    # in the order before the Test games page, as older versions read it).
+    gui_last_active_page: str = ""
     # Last-selected system per tab, keyed by tab label. Saved when the
     # user changes a combobox; restored on the next launch so cabinet
     # owners who live in a few systems don't re-pick every session.
@@ -369,6 +372,13 @@ class Config:
     test_hyperspin_timeout: int = 180
     test_ignore_hyperspin_log: list[str] = field(default_factory=list)
     test_skip_intro_video: bool = True
+    # Files the games create during a test run: "report" (list them),
+    # "remove" (back up, then delete) or "off".
+    test_cleanup: str = "report"
+    # Folders the cleanup leaves alone, relative to hyperspin_dir (or absolute):
+    # RocketLauncher's 7-Zip cache and the statistics the run restores itself.
+    test_cleanup_skip: list[str] = field(
+        default_factory=lambda: ["cache", "RocketLauncher\\Data\\Statistics"])
 
     # ── derived paths ──────────────────────────────────────────────────────────
 
