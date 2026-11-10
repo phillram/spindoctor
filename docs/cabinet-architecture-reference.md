@@ -740,6 +740,28 @@ Get-ChildItem "J:\Games\Daphne\*.txt" | ForEach-Object {
 
 Always preview before running the bulk replace, and always edit one file first to confirm the fix works before applying to all.
 
+### Key file (`dapinput.ini`): a 0 key slot isn't "no key"
+
+daphne.exe reads its keys from the `dapinput.ini` beside it: a `[KEYBOARD]` line, one line per action, then `END`. The Singe builds below read it the same way.
+
+```ini
+[KEYBOARD]
+KEY_START1 = 114 49 0
+KEY_QUIT = 27 296 0
+KEY_PAUSE = 112 296 0
+KEY_TILT = 296 296 0
+END
+```
+
+Each line is `<action> = <key 1> <key 2> <joystick button>`, in SDL 1.2 key codes (27 Esc, 112 P, 282–293 F1–F12, 296 F15). What matters on a cabinet:
+
+- **Never leave a key slot at 0.** SDL 1.2 reports keys it has no name for, such as volume and media keys (an I-PAC's Volume Up / Down shift functions), as 0, and Daphne checks both slots of every action, so a 0 slot fires on those keys: one volume press can quit, pause, reset or tilt the game. Use a key nothing sends instead, such as 296 (F15). A 0 joystick button (the third number) is fine.
+- **Write every action.** An action the file leaves out keeps Daphne's built-in keys, and most of those have a 0 second slot (`KEY_PAUSE` is P and 0, `KEY_TEST` F2 and 0, `KEY_TILT` T and 0). `KEY_CONSOLE` does nothing and can be left out.
+- **Keep the format exact.** Daphne ignores the whole file when it can't find the `[KEYBOARD]` line (a UTF-8 byte-order mark hides it, so save as ANSI or UTF-8 without BOM). It stops reading at the first line that isn't `<name> = <n> <n> <n>` with spaces around `=` (a `;` comment counts), and the actions after it keep their built-in keys.
+- **RocketLauncher's Daphne module replaces the file.** Before each launch it copies `controls\<game>.ini`, or else `controls\dapinput.ini`, from the emulator folder over `dapinput.ini`. Change those copies, not only the live file. The Daphne Singe module copies nothing, so for the Singe builds edit the `dapinput.ini` beside their daphne.exe.
+
+`spindoctor doctor`'s **Daphne keys** check reads all of these and names the actions left on key 0.
+
 ---
 
 ## Daphne Singe (WoW Action Max) — File Layout and Configuration

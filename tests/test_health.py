@@ -889,3 +889,24 @@ def test_health_report_overall_visits_nested_children():
     parent.children.append(health.Check("c2", health.Status.FAIL))
     rep.add(parent)
     assert rep.overall() == health.Status.FAIL
+
+
+# ── Emu_Path resolution ───────────────────────────────────────────────────────
+
+def test_emu_path_resolves_ignoring_case_like_windows(tmp_path):
+    rl = tmp_path / "RocketLauncher"
+    (rl / "Settings").mkdir(parents=True)
+    exe = tmp_path / "Emulators" / "Daphne" / "daphne.exe"
+    exe.parent.mkdir(parents=True)
+    exe.write_bytes(b"MZ")
+    candidates = health._resolve_emu_path(r"..\..\Emulators\DAPHNE\Daphne.EXE", rl)
+    assert candidates[0].is_file()
+    assert candidates[0].samefile(exe)
+
+
+def test_emu_path_with_no_match_is_left_as_written(tmp_path):
+    rl = tmp_path / "RocketLauncher"
+    (rl / "Settings").mkdir(parents=True)
+    candidates = health._resolve_emu_path(r"..\Emulators\Missing\x.exe", rl)
+    assert not any(c.exists() for c in candidates)
+    assert candidates[1].name == "x.exe"
