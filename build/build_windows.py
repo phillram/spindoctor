@@ -55,7 +55,8 @@ _MEDIA_WHEEL = {
     "spindoctor-recent": "Recently_Played",
     "spindoctor-stats": "Most_Played",
 }
-_MEDIA_PATTERNS = ("bg_*.png", "*.mp3", "video_*.mp4", "wheel_art_*.png", "theme_*.zip")
+_MEDIA_PATTERNS = ("bg_*.png", "*.mp3", "video_*.mp4", "wheel_art_*.png", "theme_*.zip",
+                   "toolkit_*.png")
 _SHARED_MEDIA_FILES = frozenset({"navigate_sound.mp3", "theme_blank.zip"})
 
 

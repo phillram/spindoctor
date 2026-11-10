@@ -1078,6 +1078,44 @@ def install_system_wheel_art(
     return _install_asset(src, dest, dry_run, overwrite=overwrite)
 
 
+def _toolkit_art(hyperspin_dir: Path, system_name: str, helper) -> "tuple[Optional[Path], Path]":
+    """The bundled logo for an `install-tools` helper (None if there's none) and
+    where it goes: ``<hyperspin_dir>/Media/<system>/Images/Wheel/<name>.png``."""
+    src = Path(__file__).parent / "assets" / f"toolkit_{helper.key}.png"
+    dest = hyperspin_dir / "Media" / system_name / "Images" / "Wheel" / f"{helper.name}.png"
+    return (src if src.is_file() else None), dest
+
+
+def install_toolkit_wheel_art(hyperspin_dir: Path, system_name: str, helper) -> "tuple[Optional[Path], str]":
+    """Copy a helper's bundled wheel logo to the wheel it was added to.
+
+    Art already there is kept (the wheel may have its own).  Returns
+    ``(dest, status)`` with *status* ``"installed"``, ``"skipped"`` or
+    ``"no_asset"``.
+    """
+    src, dest = _toolkit_art(hyperspin_dir, system_name, helper)
+    if src is None:
+        return None, "no_asset"
+    return _install_asset(src, dest, dry_run=False)
+
+
+def remove_toolkit_wheel_art(hyperspin_dir: Path, system_name: str, helper, *, apply: bool) -> Optional[Path]:
+    """The helper's wheel logo, removed when *apply*, if it's still SpinDoctor's.
+
+    Only a file byte for byte the same as the bundled logo goes; art someone
+    replaced it with stays.  Returns the path it removed (or would), else None.
+    """
+    src, dest = _toolkit_art(hyperspin_dir, system_name, helper)
+    try:
+        if src is None or not dest.is_file() or dest.read_bytes() != src.read_bytes():
+            return None
+        if apply:
+            dest.unlink()
+    except OSError:
+        return None
+    return dest
+
+
 def install_system_background(
     hyperspin_dir: Path,
     system_name: str,

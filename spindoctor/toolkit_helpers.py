@@ -3,7 +3,8 @@
 A helper is a ``.bat`` file that runs one SpinDoctor command through the
 install that wrote it.  `install-tools --tool <name>` writes the ones picked,
 for HyperSpin's Tools menu or, with ``--add-to-system``, as entries on a
-maintenance wheel such as Toolkit; `uninstall-tools --tool <name>` removes
+maintenance wheel such as Toolkit (the Idle Tour instead starts with
+HyperSpin, from its Startup Script); `uninstall-tools --tool <name>` removes
 them; the GUI shows the same list as a checklist and `doctor` checks the
 files.  Nothing here touches the disk.
 """
@@ -17,11 +18,16 @@ from ._runtime import tool_command_text
 
 class Helper(NamedTuple):
     """One helper: its name is the ``.bat`` stem, the wheel entry and the
-    PCLauncher section, so it must stay the same from release to release."""
+    PCLauncher section, so it must stay the same from release to release.
+
+    A *startup* helper runs beside HyperSpin for as long as it is open, so
+    it is never a wheel entry: install-tools adds it to HyperSpin's Startup
+    Script instead (:mod:`spindoctor.startup_script`)."""
 
     name: str
     summary: str
     body: Callable[[], str]
+    startup: bool = False
 
     @property
     def key(self) -> str:
@@ -81,6 +87,23 @@ def _toolkit(command: str, comment: str) -> Callable[[], str]:
     return body
 
 
+def _idle_tour() -> str:
+    """Runs ``spindoctor toolkit idle-tour`` until HyperSpin closes.
+
+    Not through ``start``: the Startup Script starts this ``.bat`` hidden, and
+    a console EXE run straight from it shares that hidden console instead of
+    opening a window over HyperSpin.
+    """
+    return (
+        "@echo off\r\n"
+        "REM Idle Tour: started with HyperSpin by its Startup Script; while HyperSpin's\r\n"
+        "REM own idle mode runs, it opens random consoles and goes back to the main menu.\r\n"
+        "REM Settings: Idle Tour settings.ini in this folder.\r\n"
+        f'{tool_command_text("spindoctor")} toolkit idle-tour --settings "%~dp0Idle Tour settings.ini"\r\n'
+        "exit\r\n"
+    )
+
+
 #: Every helper, in the order lists show them.
 HELPERS: tuple = (
     Helper("Refresh Favorites", "rebuild the Favorites wheel",
@@ -108,7 +131,15 @@ HELPERS: tuple = (
     Helper("Set Windows Resolution", "put Windows back to HyperSpin's resolution (Settings.ini [Resolution])",
            _toolkit("set-resolution", "Set Windows Resolution: back to HyperSpin's "
                                       "Settings.ini [Resolution] Width x Height.")),
+    Helper("Idle Tour", "while HyperSpin's idle mode runs, open random consoles and go back to the "
+                        "main menu (starts with HyperSpin)",
+           _idle_tour, startup=True),
 )
+
+#: The helpers that can be wheel entries (and have wheel art), and the ones
+#: HyperSpin's Startup Script starts.
+WHEEL_HELPERS: tuple = tuple(h for h in HELPERS if not h.startup)
+STARTUP_HELPERS: tuple = tuple(h for h in HELPERS if h.startup)
 
 #: Names older versions wrote and this one never does, with the helper that
 #: replaced each ("Refresh Both" became "Refresh All" in v2.4.27).  Removed
