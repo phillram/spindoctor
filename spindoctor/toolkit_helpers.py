@@ -65,6 +65,22 @@ def _refresh_all() -> str:
     )
 
 
+def _toolkit(command: str, comment: str) -> Callable[[], str]:
+    """A helper that starts ``spindoctor toolkit <command>`` and returns at once.
+
+    Not waited for: RocketLauncher ends and HyperSpin comes back while the
+    command's own window takes the front.
+    """
+    def body() -> str:
+        return (
+            "@echo off\r\n"
+            f"REM {comment}\r\n"
+            f'start "" {tool_command_text("spindoctor")} toolkit {command}\r\n'
+            "exit\r\n"
+        )
+    return body
+
+
 #: Every helper, in the order lists show them.
 HELPERS: tuple = (
     Helper("Refresh Favorites", "rebuild the Favorites wheel",
@@ -77,6 +93,12 @@ HELPERS: tuple = (
            _refresh_one("spindoctor-stats", "build-wheel --apply",
                         "Regenerates the Most Played wheel from RocketLauncher playtime.")),
     Helper("Refresh All", "rebuild all three wheels, stopping at the first that fails", _refresh_all),
+    Helper("Shut Down Cabinet", "count down 5 seconds (Esc cancels), close HyperSpin, then shut Windows down",
+           _toolkit("shutdown", "Shut Down Cabinet: a 5-second countdown (Esc cancels), "
+                                "then HyperSpin closes and Windows shuts down.")),
+    Helper("Restart Cabinet", "count down 5 seconds (Esc cancels), close HyperSpin, then restart Windows",
+           _toolkit("restart", "Restart Cabinet: a 5-second countdown (Esc cancels), "
+                               "then HyperSpin closes and Windows restarts.")),
 )
 
 #: Names older versions wrote and this one never does, with the helper that

@@ -14,7 +14,7 @@ Most destructive commands write a manifest under `~/.spindoctor/<category>/` and
 - [Editing](#editing) — `batch-edit`, `rename`, `clone`, `game`
 - [Library generation](#library-generation) — `generate-config`, `mainmenu`, `organize`, `add-system`, `add-pc-system`, `pc-rename`, `pc-fix-exe`, `migrate`, `backup`
 - [Health & integrity](#health--integrity) — `find-dupes`, `find-misplaced`, `curate`, `find-orphan-media`, `check-discs`, `check-archive-ext`, `verify`, `stats`, `preview`
-- [Custom wheels](#custom-wheels) — `fav`, `recent`, `install-tools`, `uninstall-tools`
+- [Custom wheels](#custom-wheels) — `fav`, `recent`, `install-tools`, `uninstall-tools`, `toolkit`
 - [Intro Video Randomizer](#intro-video-randomizer) — `introvideo`
 - [Playtime stats](#playtime-stats) — `stats-report`
 - [Resetting cabinet data](#resetting-cabinet-data) — `scrub`
@@ -1002,6 +1002,8 @@ spindoctor install-tools --tool refresh-all --add-to-system Toolkit --apply :: i
 | `refresh-recently-played` | `Refresh Recently Played` | `spindoctor-recent rebuild --apply` |
 | `refresh-most-played` | `Refresh Most Played` | `spindoctor-stats build-wheel --apply` |
 | `refresh-all` | `Refresh All` | all three, stopping at the first that fails |
+| `shut-down-cabinet` | `Shut Down Cabinet` | [`toolkit shutdown`](#toolkit): countdown, close HyperSpin, shut Windows down |
+| `restart-cabinet` | `Restart Cabinet` | [`toolkit restart`](#toolkit): countdown, close HyperSpin, restart Windows |
 
 Only the helpers you pick are written. Helpers an earlier run installed stay as they are, so you can add one later without touching the others; remove one with `uninstall-tools --tool`. Without `--tool`, `install-tools` lists the helpers and exits with code 2, writing nothing. (Before this release it always wrote the four Refresh helpers: add `--tool refresh-favorites,refresh-recently-played,refresh-most-played,refresh-all` to scripts that relied on that.) See [Standalone tools → Tools menu](standalone-tools.md#wiring-into-hyperspin-tools-menu).
 
@@ -1041,6 +1043,28 @@ When `--add-to-system <SYSTEM>` is given:
 3. Deletes those helpers' `<game>` entries from `<HyperSpin>/Databases/<SYSTEM>/<SYSTEM>.xml`.
 
 Only files and entries that exist are touched — missing ones are silently skipped.
+
+### `toolkit`
+
+Cabinet actions for a Toolkit wheel or HyperSpin's Tools menu. They're what the [`install-tools`](#install-tools) helpers run, and they work from a console too. Windows only.
+
+```bat
+spindoctor toolkit shutdown                 :: countdown, close HyperSpin, shut Windows down
+spindoctor toolkit shutdown --seconds 10    :: a longer countdown (0 skips it)
+spindoctor toolkit restart                  :: countdown, close HyperSpin, restart Windows
+
+:: put them on a Toolkit wheel
+spindoctor install-tools --tool shut-down-cabinet,restart-cabinet --add-to-system Toolkit --apply
+```
+
+The actions that leave HyperSpin share one sequence:
+
+1. **Countdown.** A black full-screen window shows "Shutting down in 5" (or "Restarting in 5") over "Press Esc to cancel" (`--seconds`, 0 to 60). It stays on top and takes the focus back every quarter second, because HyperSpin returns to the front as soon as RocketLauncher closes. While it counts, Esc is a system-wide hotkey, so HyperSpin never sees it (it would open its own exit menu). Esc, the Exit button on most panels, cancels: the window closes and HyperSpin comes back to the front.
+2. **HyperSpin closes the polite way**, with `WM_CLOSE` to its windows, so it saves its settings and runs its exit programs. A `RocketLauncher.exe` still running is ended first, because HyperSpin waiting for its "game" ignores the close. HyperSpin closes in under a second; if it's still running after 3 s it's ended.
+3. **LEDBlinky is told to quit** with `LEDBlinky.exe 2` (the EXE that's running, else the one in `ledblinky_dir`). HyperSpin sends LEDBlinky that quit only on its own exit, not when it's closed from outside, so without it the panel stays on the last game's layout. A second quit can restart LEDBlinky's quit animation, so none is sent when HyperSpin's `log.txt` shows it sent one. Nothing waits for LEDBlinky's quit animation, which can take half a minute.
+4. **The action, at once.** `shutdown` and `restart` run `shutdown.exe /s /f /t 0` or `shutdown.exe /r /f /t 0` as soon as HyperSpin has closed: `/f` stops an "app is preventing shutdown" screen from stalling it, Windows ends LEDBlinky and anything HyperSpin's exit programs left running with the rest, and does a full shutdown or a full restart (a cold boot). After the countdown only HyperSpin's close takes time (3 s at most), and the black screen stays up while Windows closes everything. If Windows refuses (exit code not 0), the window closes and the HyperSpin that was running is started again, so the cabinet isn't left on the desktop; the command exits 1.
+
+The helper `install-tools` writes starts the command with `start ""` and returns at once, so RocketLauncher ends and HyperSpin comes back while the countdown takes the front. The window is drawn by Windows itself (no tkinter), so it works from both EXEs. Each step is logged to `%USERPROFILE%\.spindoctor\toolkit.log` (see [Storage locations](spindoctor-files.md#toolkitlog)).
 
 ---
 

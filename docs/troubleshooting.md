@@ -723,6 +723,35 @@ for a Toolkit wheel (with `--output-dir <folder>` if one was used). The `fix:`
 line names the helpers it found. Keeping SpinDoctor in a folder whose name has
 no version number avoids this on later upgrades.
 
+### Shut Down Cabinet (or Restart Cabinet) counts down, then HyperSpin comes back instead
+
+The countdown ran to zero and HyperSpin closed, but a moment later HyperSpin
+started again and the cabinet stayed on.
+
+**Cause:** Windows refused the shutdown or restart, so `spindoctor toolkit
+shutdown` (or `restart`) started HyperSpin again rather than leave the cabinet
+on the desktop. Common reasons: another shutdown or restart already scheduled,
+an update installing, or a policy that stops this account shutting the PC down.
+
+**Find it:** the last lines of `%USERPROFILE%\.spindoctor\toolkit.log` show
+`shutdown.exe failed (exit code N)`. Run `shutdown /s /f /t 0` (or `/r`) in a
+console to see Windows' own message for that code.
+
+**If the countdown never appears** (no `countdown started` line in
+`toolkit.log`): the helper runs SpinDoctor by its full path, like the Refresh
+helpers above, so run `spindoctor doctor` and look at **SpinDoctor helpers**.
+
+**If Esc doesn't cancel:** another program already holds Esc as a system-wide
+hotkey, so the countdown only sees Esc while it has the focus. Alt+F4 on the
+countdown cancels too.
+
+**If the buttons are still lit as the cabinet goes off:** Shut Down Cabinet and
+Restart Cabinet don't wait for the lights. HyperSpin tells LEDBlinky to quit
+only on its own exit, so the helper sends `LEDBlinky.exe 2` itself, then shuts
+Windows down or restarts it at once, and Windows ends LEDBlinky part-way through
+its quit animation (which can take half a minute). Windows takes over a few
+seconds after the countdown.
+
 ## Intro Video Randomizer
 
 ### `introvideo` commands fail with "intro_randomizer_dir is not set" / "intro_video_target is not set"

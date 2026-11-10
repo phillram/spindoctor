@@ -782,6 +782,7 @@ _READ_ONLY_COMMANDS: frozenset[str] = frozenset({
     "ledblinky colors list",
     "lightgun audit", "lightgun detect",
     "doctor",
+    "toolkit",  # cabinet actions (shutdown, …): no --apply, a countdown instead
     "config show", "config init", "config set", "config system",
     "config verify-credentials",
     "backup list", "backup info", "backup sidecar list",

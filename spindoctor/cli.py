@@ -4446,6 +4446,8 @@ def install_tools(tools, output_dir, add_to_system, apply_changes):
       • refresh-recently-played → spindoctor-recent rebuild --apply
       • refresh-most-played     → spindoctor-stats build-wheel --apply
       • refresh-all             → fav + recent + most-played
+      • shut-down-cabinet       → spindoctor toolkit shutdown
+      • restart-cabinet         → spindoctor toolkit restart
 
     Drop them into HyperSpin's Tools folder (or point HyperSpin at the
     output directory) so users can refresh the wheels from the cabinet
@@ -4891,6 +4893,65 @@ def uninstall_tools(tools, add_to_system, apply_changes):
             "\n[dim]Dry-run — nothing was removed. "
             "Re-run with [cyan]--apply[/cyan] to delete.[/dim]"
         )
+
+
+# ─── toolkit ──────────────────────────────────────────────────────────────────
+
+@cli.group("toolkit")
+def toolkit_group():
+    """Cabinet helpers for a Toolkit wheel or HyperSpin's Tools menu.
+
+    \b
+    These are what the helpers `install-tools --tool` writes run; for example
+      spindoctor install-tools --tool shut-down-cabinet --add-to-system Toolkit --apply
+    puts Shut Down Cabinet on a Toolkit wheel. Windows only. Each run is
+    logged to ~/.spindoctor/toolkit.log.
+    """
+
+
+_COUNTDOWN_OPTION = click.option(
+    "--seconds", type=click.IntRange(0, 60), default=5, show_default=True,
+    help="Length of the countdown Esc cancels; 0 skips it.",
+)
+
+
+def _run_toolkit_power(mode: str, seconds: int) -> None:
+    if sys.platform != "win32":
+        err_console.print(f"[red]spindoctor toolkit {mode} runs on Windows only.[/red]")
+        sys.exit(1)
+    from . import cabinet_power
+
+    sys.exit(cabinet_power.run(mode, _cfg(), seconds=seconds))
+
+
+@toolkit_group.command("shutdown")
+@_COUNTDOWN_OPTION
+def toolkit_shutdown(seconds):
+    """Close HyperSpin, then shut Windows down, after a countdown.
+
+    \b
+    1. A full-screen "Shutting down in 5 … Press Esc to cancel". Esc (the
+       panel's Exit button on most cabinets) cancels and HyperSpin comes back.
+    2. HyperSpin is closed the polite way (WM_CLOSE), so it saves its settings
+       and runs its exit programs; forced after 3 s.
+    3. LEDBlinky is sent its quit (HyperSpin sends it only on its own exit);
+       nothing waits for its quit animation.
+    4. shutdown /s /f /t 0 at once. If Windows refuses, HyperSpin is started
+       again.
+    """
+    _run_toolkit_power("shutdown", seconds)
+
+
+@toolkit_group.command("restart")
+@_COUNTDOWN_OPTION
+def toolkit_restart(seconds):
+    """Close HyperSpin, then restart Windows, after a countdown.
+
+    The same sequence as `toolkit shutdown` ("Restarting in 5 … Press Esc to
+    cancel", then HyperSpin closes the polite way), ending in
+    shutdown /r /f /t 0. If Windows refuses, HyperSpin is started again.
+    """
+    _run_toolkit_power("restart", seconds)
 
 
 # ─── ignore ───────────────────────────────────────────────────────────────────
