@@ -254,10 +254,9 @@ def test_emulators_sharing_a_folder_share_its_rows(tmp_path):
     _register(rl, "Daphne", "..\\Emulators\\Daphne\\daphne.exe")
     _register(rl, "Daphne (Overlay)", "..\\Emulators\\daphne\\DAPHNE.EXE")
     result = health.check_daphne_keys(cfg)
-    if len(result.children) == 1:  # one folder (Windows paths ignore case)
-        assert result.children[0].name.startswith("Daphne, Daphne (Overlay): ")
-    else:  # a case-sensitive file system sees two folders, only one of them real
-        assert [c.name.split(":")[0] for c in result.children] == ["Daphne"]
+    # One folder on every OS: RocketLauncher's paths ignore case, as Windows does.
+    assert [c.name.split(": ")[0] for c in result.children] == ["Daphne, Daphne (Overlay)"]
+    assert result.children[0].name.endswith(str(emus / "Daphne" / "dapinput.ini"))
 
 
 def test_a_renamed_build_is_found_by_its_key_file(tmp_path):

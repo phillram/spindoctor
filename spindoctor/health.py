@@ -63,9 +63,35 @@ def _resolve_emu_path(emu_path: str, rl_dir: Path) -> list[Path]:
     if rel is None:
         return []
     return [
-        Path(os.path.normpath(rl_dir / "Settings" / rel)),
-        Path(os.path.normpath(rl_dir / rel)),
+        _windows_case(Path(os.path.normpath(rl_dir / "Settings" / rel))),
+        _windows_case(Path(os.path.normpath(rl_dir / rel))),
     ]
+
+
+def _windows_case(path: Path) -> Path:
+    """*path* as Windows would find it, ignoring case.
+
+    RocketLauncher's paths are Windows paths, where ``Emulators\\daphne\\DAPHNE.EXE``
+    is the same file as ``Emulators\\Daphne\\daphne.exe``.  On a case-sensitive
+    file system each part that doesn't exist as spelled is swapped for the
+    entry in its folder whose name matches ignoring case.  Unchanged on
+    Windows, when the path exists as spelled, or when a part has no match.
+    """
+    if os.name == "nt" or path.exists():
+        return path
+    found = Path(path.parts[0])
+    for part in path.parts[1:]:
+        if not (found / part).exists():
+            try:
+                with os.scandir(found) as it:
+                    matches = sorted(e.name for e in it if e.name.lower() == part.lower())
+            except OSError:
+                return path
+            if not matches:
+                return path
+            part = matches[0]
+        found = found / part
+    return found
 
 
 def _pc_app_exists(app_path: str) -> Optional[bool]:
