@@ -16,11 +16,11 @@ the one sequence in :func:`run`:
    panel would stay on the last layout.  Not twice: if HyperSpin's
    ``log.txt`` shows it sent the quit, none is sent.  Nothing waits for its
    quit animation, which can run for half a minute.
-4. The action, at once.  Shut Down runs ``shutdown.exe /s /f /t 0`` (``/f`` so
-   an "app is preventing shutdown" screen can't stall it; Windows ends
-   LEDBlinky and HyperSpin's exit programs with everything else).  If Windows
-   refuses, HyperSpin is started again so the cabinet isn't left on the
-   desktop.
+4. The action, at once.  Shut Down runs ``shutdown.exe /s /f /t 0`` and
+   Restart ``shutdown.exe /r /f /t 0`` (``/f`` so an "app is preventing
+   shutdown" screen can't stall it; Windows ends LEDBlinky and HyperSpin's
+   exit programs with everything else).  If Windows refuses, HyperSpin is
+   started again so the cabinet isn't left on the desktop.
 
 Every step is logged to ``~/.spindoctor/toolkit.log``.  The Windows calls sit
 behind :class:`WindowsOps`, so tests drive the sequence with fakes.
@@ -97,6 +97,7 @@ def _windows_power(flag: str) -> Callable[[_Context], int]:
 #: The helpers that leave HyperSpin, by ``spindoctor toolkit`` command.
 ACTIONS: dict = {
     "shutdown": Action("Shutting down", _windows_power("/s")),
+    "restart": Action("Restarting", _windows_power("/r")),
 }
 
 
