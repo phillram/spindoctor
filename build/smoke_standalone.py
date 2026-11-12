@@ -2,6 +2,7 @@
 
 Usage: python build/smoke_standalone.py DIST_DIR
 """
+import atexit
 import json
 import os
 from pathlib import Path
@@ -9,16 +10,37 @@ import shutil
 import subprocess
 import sys
 import tempfile
-import time
 
 ROOT = Path(__file__).resolve().parent.parent
 DIST = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else ROOT / "dist"
 ASSETS = ROOT / "spindoctor" / "assets"
 sys.path.insert(0, str(ROOT))
-from spindoctor._runtime import _child_pids, stop_worker  # noqa: E402
+from spindoctor._runtime import stop_worker  # noqa: E402
+from smoke_waits import gui_window_ready, owned_workers, wait_until, worker_identities  # noqa: E402
 
 work = Path(tempfile.mkdtemp(prefix="v3-smoke-"))
+atexit.register(shutil.rmtree, work, ignore_errors=True)
 results = {}
+
+
+def failed_check(label, error, output=None):
+    detail = str(error)
+    if output is not None and output.exists():
+        detail += "\n" + output.read_text(encoding="utf-8", errors="replace")[-2000:]
+    previous = results.get(label, {}).get("error", "")
+    results[label] = {"ok": False, "error": previous + detail}
+    print(f"FAIL {label}: {detail}", flush=True)
+
+
+def finish(proc, label):
+    try:
+        stop_worker(proc, timeout=30)
+        proc.wait(timeout=30)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        failed_check(label, error)
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait(timeout=30)
 
 
 def isolate(name):
@@ -89,26 +111,67 @@ for name in ("spindoctor-cli", "spindoctor"):
         "exit /b %errorlevel%\r\n", encoding="utf-8")
     run(f"{name}: bat waits + propagates exit", ["cmd", "/c", bat], env, expect=2, needle="version")
     if name == "spindoctor":
+        label = "spindoctor: window stays open"
         gui = subprocess.Popen([str(exe)], env=env)
-        time.sleep(20)
-        alive = gui.poll() is None
-        stop_worker(gui, timeout=30)
-        results["spindoctor: window stays open"] = {"ok": alive}
-        print(f"{'PASS' if alive else 'FAIL'} spindoctor: window stays open", flush=True)
+        try:
+            identities = wait_until(lambda: worker_identities(gui, exe.name), "GUI worker",
+                                    proc=gui, timeout=60)
+            with owned_workers(identities):
+                try:
+                    wait_until(lambda: gui_window_ready(gui, exe.name), "responsive GUI window",
+                               proc=gui, timeout=60, stable_for=1)
+                    results[label] = {"ok": True}
+                    print("PASS spindoctor: responsive window stays open", flush=True)
+                except (OSError, RuntimeError, TimeoutError) as error:
+                    failed_check(label, error)
+                finally:
+                    finish(gui, label)
+        except (OSError, RuntimeError, TimeoutError) as error:
+            failed_check(label, error)
+        finally:
+            if gui.poll() is None:
+                finish(gui, label)
     # Stop must end the real worker behind the one-file launcher, and the
     # launcher must then remove its temporary extraction folder.
-    temp = Path(tempfile.gettempdir())
-    before = {p.name for p in temp.glob("_MEI*")}
-    worker = subprocess.Popen([str(a) for a in pre + ["config", "init"]], stdin=subprocess.PIPE,
-                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env)
-    time.sleep(10)
-    stop_worker(worker, timeout=30)
-    time.sleep(2)
-    orphans = _child_pids(worker.pid, exe.name)
-    leaked = sorted({p.name for p in temp.glob("_MEI*")} - before)
-    ok = worker.poll() is not None and not orphans and not leaked
-    results[f"{name}: Stop ends worker and cleans up"] = {"ok": ok, "orphans": orphans, "leaked": leaked}
-    print(f"{'PASS' if ok else 'FAIL'} {name}: Stop ends worker and cleans up {orphans} {leaked}", flush=True)
+    # A private TEMP avoids mistaking another CI job's extraction for a leak.
+    temp = work / f"extract-{name}"
+    temp.mkdir()
+    worker_env = dict(env, TEMP=str(temp), TMP=str(temp))
+    output = work / f"worker-{name}.txt"
+    label = f"{name}: Stop ends worker and cleans up"
+    with output.open("wb") as log:
+        worker = subprocess.Popen([str(a) for a in pre + ["config", "init"]], stdin=subprocess.PIPE,
+                                  stdout=log, stderr=subprocess.STDOUT, env=worker_env)
+        try:
+            identities = wait_until(lambda: worker_identities(worker, exe.name),
+                                    "interactive worker", proc=worker, timeout=60)
+            with owned_workers(identities) as alive:
+                try:
+                    # Prove both Python/Click readiness and extraction into
+                    # our scoped TEMP before checking that Stop removes it.
+                    wait_until(lambda: b"ROMs directory" in output.read_bytes()
+                               and list(temp.glob("_MEI*")), "interactive worker prompt",
+                               proc=worker, timeout=60)
+                    finish(worker, label)
+                    wait_until(lambda: not alive() and not list(temp.glob("_MEI*")),
+                               "original worker exit and extraction cleanup", timeout=10)
+                    orphans = alive()
+                    leaked = sorted(p.name for p in temp.glob("_MEI*"))
+                    if label not in results:
+                        results[label] = {"ok": True, "orphans": orphans, "leaked": leaked}
+                    print(f"{'PASS' if results[label]['ok'] else 'FAIL'} {label} "
+                          f"{orphans} {leaked}", flush=True)
+                except (OSError, RuntimeError, TimeoutError) as error:
+                    failed_check(label, error, output)
+                finally:
+                    if worker.poll() is None:
+                        finish(worker, label)
+        except (OSError, RuntimeError, TimeoutError) as error:
+            failed_check(label, error, output)
+        finally:
+            if worker.poll() is None:
+                finish(worker, label)
+            worker.stdin.close()
     leftovers = sorted(p.name for p in exe.parent.iterdir() if p.name not in (exe.name, "t.bat"))
     results[f"{name}: no files created beside exe"] = {"ok": not leftovers, "extra": leftovers}
     print(f"{'FAIL' if leftovers else 'PASS'} {name}: no files beside exe {leftovers}", flush=True)
@@ -116,7 +179,6 @@ for name in ("spindoctor-cli", "spindoctor"):
 sizes = {p.name: p.stat().st_size for p in DIST.glob("*.exe")}
 results["sizes"] = sizes
 print(json.dumps(results, indent=2))
-shutil.rmtree(work, ignore_errors=True)
 failed = [k for k, v in results.items() if isinstance(v, dict) and v.get("ok") is False]
 print("SIZES", sizes)
 print("FAILED", failed)
