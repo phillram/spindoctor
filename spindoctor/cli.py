@@ -8127,41 +8127,35 @@ def wheel_start(systems, all_wheels, mode, apply_changes):
             err_console.print(f"[red]No HyperSpin settings file for {escape(name)}:[/red] "
                               f"{escape(str(path))}", highlight=False)
             sys.exit(1)
-    if systems:
-        wheels = list(dict.fromkeys(systems))
-    else:
-        try:
-            wheels = ws.main_menu_wheels(config)
-        except (OSError, ValueError, SyntaxError) as exc:   # XML parse errors are SyntaxErrors
-            err_console.print(f"[red]Can't read the main menu:[/red] {escape(str(exc))}", highlight=False)
-            sys.exit(1)
-        if not wheels:
-            err_console.print("[yellow]No wheels on the main menu[/yellow] "
-                              "(Databases\\Main Menu\\Main Menu.xml).")
-            sys.exit(1)
+    try:
+        rows = ws.overview(config, systems or None)
+    except (OSError, ValueError, SyntaxError) as exc:   # XML parse errors are SyntaxErrors
+        err_console.print(f"[red]Can't read the main menu:[/red] {escape(str(exc))}", highlight=False)
+        sys.exit(1)
+    if not rows:
+        err_console.print("[yellow]No wheels on the main menu[/yellow] "
+                          "(Databases\\Main Menu\\Main Menu.xml).")
+        sys.exit(1)
 
     if not mode:
         tbl = Table(box=box.SIMPLE, title="Where each wheel starts")
         tbl.add_column("Wheel", style="cyan")
         tbl.add_column("Starts on")
         counts: dict = {}
-        for name in wheels:
-            path = files.get(name.lower())
-            if path is None:
-                tbl.add_row(escape(name), "[dim]no settings file[/dim]")
+        for row in rows:
+            if row.path is None:
+                tbl.add_row(escape(row.name), "[dim]no settings file[/dim]")
                 continue
-            try:
-                now = ws.read_wheel_start(path).mode
-            except OSError as exc:
-                tbl.add_row(escape(name), f"[red]can't read: {escape(str(exc))}[/red]")
+            if row.mode is None:
+                tbl.add_row(escape(row.name), f"[red]can't read: {escape(row.error)}[/red]")
                 continue
-            counts[now] = counts.get(now, 0) + 1
-            style = {"random": "yellow", "both": "red"}.get(now)
-            text = escape(ws.DESCRIPTIONS[now])
-            tbl.add_row(escape(path.name[:-4]), f"[{style}]{text}[/{style}]" if style else text)
+            counts[row.mode] = counts.get(row.mode, 0) + 1
+            style = {"random": "yellow", "both": "red"}.get(row.mode)
+            text = escape(ws.DESCRIPTIONS[row.mode])
+            tbl.add_row(escape(row.name), f"[{style}]{text}[/{style}]" if style else text)
         console.print(tbl)
         console.print(", ".join(f"{counts[m]} {m}" for m in (*ws.MODES, "both") if m in counts)
-                      or "[dim]No settings files.[/dim]")
+                      or "[dim]No settings files.[/dim]", highlight=False)
         return
 
     mode = mode.lower()
@@ -8173,28 +8167,30 @@ def wheel_start(systems, all_wheels, mode, apply_changes):
     changed = same = no_file = failed = 0
     backups = []
     verb = "" if apply_changes else "would change "
-    for name in wheels:
-        path = files.get(name.lower())
-        if path is None:            # only main-menu wheels get here (named ones were checked)
+    for row in rows:
+        label = escape(row.name)
+        if row.path is None:        # only main-menu wheels get here (named ones were checked)
             no_file += 1
-            console.print(f"  [dim]– {escape(name)}: no settings file[/dim]", highlight=False)
+            console.print(f"  [dim]– {label}: no settings file[/dim]", highlight=False)
             continue
-        label = escape(path.name[:-4])
-        try:
-            old = ws.read_wheel_start(path).mode
-            if old == mode:
-                same += 1
-                continue
-            if apply_changes:
-                result = ws.set_wheel_start(path, mode, config)
-                if result and result.backup:
-                    backups.append(result.backup)
-        except OSError as exc:
+        if row.mode is None:
             failed += 1
-            err_console.print(f"  [red]✗ {label}: {escape(str(exc))}[/red]", highlight=False)
+            err_console.print(f"  [red]✗ {label}: {escape(row.error)}[/red]", highlight=False)
             continue
+        if row.mode == mode:
+            same += 1
+            continue
+        if apply_changes:
+            try:
+                result = ws.set_wheel_start(row.path, mode, config)
+            except OSError as exc:
+                failed += 1
+                err_console.print(f"  [red]✗ {label}: {escape(str(exc))}[/red]", highlight=False)
+                continue
+            if result and result.backup:
+                backups.append(result.backup)
         changed += 1
-        console.print(f"  [green]~[/green] {verb}{label}: {escape(ws.DESCRIPTIONS[old])} → "
+        console.print(f"  [green]~[/green] {verb}{label}: {escape(ws.DESCRIPTIONS[row.mode])} → "
                       f"{escape(ws.DESCRIPTIONS[mode])}", highlight=False)
     parts = [f"{changed} {'changed' if apply_changes else 'to change'}",
              f"{same} already start on {ws.DESCRIPTIONS[mode]}"]

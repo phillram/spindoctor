@@ -306,3 +306,135 @@ def test_set_refuses_hyperspins_own_settings(cabinet):
     result = _run("wheel-start", "-s", "Settings", "--set", "last", "--apply")
     assert result.exit_code == 1 and "not a game wheel" in result.output
     assert (cabinet["settings"] / "Settings.ini").read_bytes() == b"[Main]\r\nUse_Last_Game=false\r\n"
+
+
+# ── the shared reader ─────────────────────────────────────────────────────────
+
+def test_overview_lists_each_wheel_once_in_order(cabinet):
+    cfg = config_mod.load_config()
+    rows = ws.overview(cfg)
+    assert [(r.name, r.mode) for r in rows] == [
+        (NES, "random"), ("Sega Genesis", "last"), ("No Settings Wheel", None)]
+    assert rows[0].path == cabinet["nes"] and rows[2].path is None
+    rows = ws.overview(cfg, ["sega genesis", "SEGA GENESIS", NES])      # each once, any case
+    assert [(r.name, r.mode) for r in rows] == [("Sega Genesis", "last"), (NES, "random")]
+
+
+def test_a_file_that_cant_be_read_is_reported_and_left(cabinet, monkeypatch):
+    real = ws.read_wheel_start
+
+    def read(path):
+        if path.name == "Sega Genesis.ini":
+            raise PermissionError("Access is denied")
+        return real(path)
+
+    monkeypatch.setattr(ws, "read_wheel_start", read)
+    row = ws.overview(config_mod.load_config())[1]
+    assert row.mode is None and "Access is denied" in row.error
+    assert "can't read" in unstyle(_run("wheel-start").output)
+    result = _run("wheel-start", "--all", "--set", "first", "--apply")
+    assert result.exit_code == 1 and "1 changed" in unstyle(result.output)
+    assert "1 failed" in unstyle(result.output)
+    assert cabinet["genesis"].read_bytes() == GENESIS_INI
+    assert ws.read_text(cabinet["nes"].read_text(encoding="utf-8")).mode == "first"
+
+
+# ── the GUI: Systems → Where wheels start ─────────────────────────────────────
+
+def _table(app):
+    return [tuple(app._ws_tree.item(i, "values")) for i in app._ws_tree.get_children()]
+
+
+def test_gui_table_shows_and_sets_where_wheels_start(cabinet, monkeypatch):
+    from tests.test_gui import _build_gui_for_test
+
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        app._ws_refresh()
+        tree = app._ws_tree
+        assert _table(app) == [(NES, "a random game"), ("Sega Genesis", "the last game it was on"),
+                               ("No Settings Wheel", "no settings file")]
+        assert app._ws_summary_var.get() == (
+            "3 wheels on the main menu: 1 last game, 1 random, 1 no settings file")
+
+        # Start on follows the selection's setting, and keeps its value when
+        # the selected wheels differ.
+        tree.selection_set("0")
+        app._ws_on_select()
+        assert app._ws_mode_var.get() == "Random game"
+        tree.selection_set("1")
+        app._ws_on_select()
+        assert app._ws_mode_var.get() == "Last game it was on"
+        assert app._ws_summary_var.get().endswith(". 1 selected.")
+        tree.selection_set("0", "1", "2")
+        app._ws_on_select()
+        assert app._ws_mode_var.get() == "Last game it was on"
+
+        ran = []
+        monkeypatch.setattr(app, "_run_cli",
+                            lambda _bin, args, on_complete=None: ran.append((list(args), on_complete)))
+        # Apply changes off: a dry run, no question; a wheel with no settings
+        # file is left out.
+        app._ws_mode_var.set("First game")
+        app._ws_apply(all_wheels=False)
+        assert ran[-1][0] == ["wheel-start", "-s", NES, "-s", "Sega Genesis", "--set", "first"]
+        app._ws_apply(all_wheels=True)
+        assert ran[-1][0] == ["wheel-start", "--all", "--set", "first"]
+
+        # Apply changes on: it asks first, and No runs nothing.
+        app._global_apply_var.set(True)
+        asked = []
+        monkeypatch.setattr(app.messagebox, "askyesno", lambda _t, msg: asked.append(msg) or False)
+        app._ws_apply(all_wheels=True)
+        assert len(ran) == 2
+        assert "every wheel on the main menu" in asked[-1] and "the first game" in asked[-1]
+        monkeypatch.setattr(app.messagebox, "askyesno", lambda _t, msg: asked.append(msg) or True)
+        app._ws_apply(all_wheels=False)
+        assert "2 wheels" in asked[-1]
+        args, done = ran[-1]
+        assert args == ["wheel-start", "-s", NES, "-s", "Sega Genesis", "--set", "first", "--apply"]
+
+        # What it runs writes the files; when it finishes the table is read
+        # again, with the same wheels selected.
+        assert _run(*args).exit_code == 0
+        done(0)
+        assert _table(app) == [(NES, "the first game"), ("Sega Genesis", "the first game"),
+                               ("No Settings Wheel", "no settings file")]
+        assert set(tree.selection()) == {"0", "1", "2"}
+        assert app._ws_summary_var.get().startswith(
+            "3 wheels on the main menu: 2 first game, 1 no settings file")
+
+        # Nothing to run without a choice, or with only wheels that have no
+        # settings file selected.
+        prompts = []
+        monkeypatch.setattr(app, "_flash_validation", prompts.append)
+        app._ws_mode_var.set("")
+        app._ws_apply(all_wheels=True)
+        assert "Start on" in prompts[-1]
+        app._ws_mode_var.set("Random game")
+        tree.selection_set("2")
+        app._ws_apply(all_wheels=False)
+        assert "Select one or more wheels" in prompts[-1] and len(ran) == 3
+    finally:
+        app.root.destroy()
+
+
+def test_gui_table_says_why_it_is_empty(cabinet, monkeypatch):
+    from tests.test_gui import _build_gui_for_test
+
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        menu = cabinet["hs"] / "Databases" / "Main Menu" / "Main Menu.xml"
+        menu.write_text("<menu><game name=", encoding="utf-8")            # cut short
+        app._ws_refresh()
+        assert _table(app) == [] and "Can't read the main menu" in app._ws_summary_var.get()
+        menu.write_text("<menu></menu>", encoding="utf-8")
+        app._ws_refresh()
+        assert app._ws_summary_var.get() == "No wheels on the main menu."
+        cfg = config_mod.load_config()
+        cfg.hyperspin_dir = ""
+        config_mod.save_config(cfg)
+        app._ws_refresh()
+        assert "Set the HyperSpin folder in Setup first." == app._ws_summary_var.get()
+    finally:
+        app.root.destroy()

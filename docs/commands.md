@@ -568,6 +568,8 @@ spindoctor wheel-start --all --set first --apply      :: every wheel on the main
 - **Close HyperSpin first.** With `--apply` it refuses while HyperSpin is running, because HyperSpin writes these files itself and could put the old setting back. The change shows the next time HyperSpin starts.
 - **Wheels with no settings file** are listed as "no settings file", and `--all` skips them. Naming one with `--set` is an error, as is naming HyperSpin's own `Settings` or `Main Menu` file.
 
+> **GUI alternative:** **Systems** → **Where wheels start** shows the same table. Select wheels, pick **Start on**, then **Set selected wheels** or **Set all wheels**; it runs this command, with `--apply` when Apply is on. See [GUI walkthrough](gui.md).
+
 ### `organize`
 
 Populate per-axis sort wheels (genre/year/manufacturer/letter) and optionally restructure ROMs into per-game folders or multi-disc m3u playlists.

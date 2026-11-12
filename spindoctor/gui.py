@@ -10495,6 +10495,8 @@ class _SpinDoctorGUI:
         # 1–3 seconds on slow drives.
         self.root.after_idle(self._mm_refresh)
 
+        self._build_wheel_start_frame(frame)
+
         # ── Step 2 — Add a new system ────────────────────────────────────────
         add_frame = self.ttk.LabelFrame(frame, text="Add a new system")
         add_frame.pack(fill="x", pady=(4, 4))
@@ -10696,6 +10698,163 @@ class _SpinDoctorGUI:
         ).pack(side="left", padx=6)
 
         return frame
+
+    # ── Where wheels start ────────────────────────────────────────────────────
+    # The table reads spindoctor.wheel_start.overview, the reader the CLI's
+    # listing uses, and changes run `spindoctor wheel-start`, so the GUI and
+    # the CLI can't disagree about a wheel.
+
+    #: The Start on choices, in the order shown.
+    _WHEEL_START_CHOICES = (
+        ("first", "First game"),
+        ("last", "Last game it was on"),
+        ("random", "Random game"),
+    )
+
+    def _build_wheel_start_frame(self, parent) -> None:
+        lf = self.ttk.LabelFrame(parent, text="Where wheels start")
+        lf.pack(fill="x", pady=(4, 4))
+        lf.columnconfigure(0, weight=1)
+        self._help_text(
+            lf,
+            text="Each wheel opens on its first game, on the game it was on last time, or on a random game (a different letter every time). The table shows what each main-menu wheel's Settings\\<System>.ini asks for. Select wheels (Ctrl or Shift for more), pick Start on, then Set selected wheels, or Set all wheels for every wheel on the main menu. With Apply changes ON, each changed file is backed up and written; OFF shows what would change. Close HyperSpin first.",
+        ).grid(row=0, column=0, sticky="ew", padx=6, pady=(6, 8))
+
+        tree_frame = self.ttk.Frame(lf)
+        tree_frame.grid(row=1, column=0, sticky="nsew", padx=6, pady=(0, 4))
+        tree_frame.columnconfigure(0, weight=1)
+        tree_frame.rowconfigure(0, weight=1)
+        self._ws_tree = self.ttk.Treeview(
+            tree_frame, columns=("wheel", "start"), show="headings",
+            selectmode="extended", height=10,
+        )
+        self._ws_tree.heading("wheel", text="Wheel", anchor="w")
+        self._ws_tree.heading("start", text="Starts on", anchor="w")
+        self._ws_tree.column("wheel", width=self._px(340), stretch=True, anchor="w")
+        self._ws_tree.column("start", width=self._px(240), stretch=False, anchor="w")
+        self._ws_tree.tag_configure("unset", foreground=_FG_DIMMER)
+        vsb = self._vertical_scrollbar(tree_frame, self._ws_tree)
+        self._ws_tree.grid(row=0, column=0, sticky="nsew")
+        vsb.grid(row=0, column=1, sticky="ns")
+        self._ws_tree.bind("<<TreeviewSelect>>", lambda _e: self._ws_on_select())
+
+        btn_row = self.ttk.Frame(lf)
+        btn_row.grid(row=2, column=0, sticky="ew", padx=6, pady=(2, 4))
+        self.ttk.Label(btn_row, text="Start on").pack(side="left")
+        self._ws_mode_var = self.tk.StringVar()
+        self.ttk.Combobox(
+            btn_row, textvariable=self._ws_mode_var,
+            values=[label for _mode, label in self._WHEEL_START_CHOICES],
+            state="readonly", width=20,
+        ).pack(side="left", padx=6)
+        self.ttk.Button(
+            btn_row, text="Set selected wheels",
+            command=lambda: self._ws_apply(all_wheels=False),
+        ).pack(side="left", padx=(6, 0))
+        self.ttk.Button(
+            btn_row, text="Set all wheels",
+            command=lambda: self._ws_apply(all_wheels=True),
+        ).pack(side="left", padx=(6, 0))
+        self.ttk.Separator(btn_row, orient="vertical").pack(
+            side="left", fill="y", padx=10,
+        )
+        self.ttk.Button(btn_row, text="Refresh", command=self._ws_refresh).pack(side="left")
+
+        self._ws_summary_var = self.tk.StringVar()
+        self.ttk.Label(
+            lf, textvariable=self._ws_summary_var, foreground=_FG_DIMMER,
+        ).grid(row=3, column=0, sticky="w", padx=6, pady=(0, 6))
+        self._ws_rows: list = []
+        # Read after first paint, like the main menu table above.
+        self.root.after_idle(self._ws_refresh)
+
+    def _ws_refresh(self) -> None:
+        """Re-read where each main-menu wheel starts, keeping the selection."""
+        from . import wheel_start as _ws
+
+        tree = self._ws_tree
+        keep = {self._ws_rows[int(i)].name.lower() for i in tree.selection()
+                if int(i) < len(self._ws_rows)}
+        tree.delete(*tree.get_children())
+        self._ws_rows = []
+        cfg = load_config()
+        if not cfg.hyperspin_dir:
+            self._ws_summary_var.set("Set the HyperSpin folder in Setup first.")
+            return
+        try:
+            rows = _ws.overview(cfg)
+        except Exception as exc:  # noqa: BLE001 — shown under the table
+            self._ws_summary_var.set(f"Can't read the main menu: {exc}")
+            return
+        self._ws_rows = rows
+        for i, row in enumerate(rows):
+            if row.path is None:
+                text, tags = "no settings file", ("unset",)
+            elif row.mode is None:
+                text, tags = f"can't read: {row.error}", ("unset",)
+            else:
+                text, tags = _ws.DESCRIPTIONS[row.mode], ()
+            tree.insert("", "end", iid=str(i), values=(row.name, text), tags=tags)
+            if row.name.lower() in keep:
+                tree.selection_add(str(i))
+        self._ws_on_select()
+
+    def _ws_selected(self) -> list:
+        return [self._ws_rows[int(i)] for i in self._ws_tree.selection()
+                if int(i) < len(self._ws_rows)]
+
+    def _ws_on_select(self) -> None:
+        """Show the selected wheels' setting in Start on when they share one,
+        and the counts under the table."""
+        picked = self._ws_selected()
+        labels = dict(self._WHEEL_START_CHOICES)
+        modes = {r.mode for r in picked if r.mode is not None}
+        if len(modes) == 1 and next(iter(modes)) in labels:
+            self._ws_mode_var.set(labels[next(iter(modes))])
+        counts: dict = {}
+        for row in self._ws_rows:
+            key = row.mode or "none"
+            counts[key] = counts.get(key, 0) + 1
+        names = (("first", "first game"), ("last", "last game"), ("random", "random"),
+                 ("both", "both on"), ("none", "no settings file"))
+        text = f"{len(self._ws_rows)} wheels on the main menu: " + ", ".join(
+            f"{counts[key]} {name}" for key, name in names if key in counts)
+        if picked:
+            text += f". {len(picked)} selected."
+        self._ws_summary_var.set(text if self._ws_rows else "No wheels on the main menu.")
+
+    def _ws_apply(self, all_wheels: bool) -> None:
+        """Run `spindoctor wheel-start --set` for the selected wheels, or all."""
+        from . import wheel_start as _ws
+
+        mode = {label: m for m, label in self._WHEEL_START_CHOICES}.get(self._ws_mode_var.get())
+        if mode is None:
+            self._flash_validation("Pick where the wheels start (Start on) first.")
+            return
+        args = ["wheel-start"]
+        if all_wheels:
+            args.append("--all")
+            target = "every wheel on the main menu"
+        else:
+            names = [r.name for r in self._ws_selected() if r.path is not None]
+            if not names:
+                self._flash_validation(
+                    "Select one or more wheels in the table first, or use Set all wheels.")
+                return
+            for name in names:
+                args += ["-s", name]
+            target = names[0] if len(names) == 1 else f"{len(names)} wheels"
+        args += ["--set", mode]
+        if self._global_apply_var.get():
+            if not self.messagebox.askyesno(
+                "Change where wheels start",
+                f"Set {target} to start on {_ws.DESCRIPTIONS[mode]}?\n\n"
+                "Each changed Settings\\<System>.ini is backed up first. "
+                "Close HyperSpin first: nothing is changed while it runs.",
+            ):
+                return
+            args.append("--apply")
+        self._run_cli("spindoctor", args, on_complete=lambda _rc: self._ws_refresh())
 
     def _load_system_override(self) -> None:
         """Populate the override form from the saved overrides for

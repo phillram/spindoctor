@@ -226,6 +226,36 @@ def main_menu_wheels(config) -> "list[str]":
             if str((e.extra_attrs or {}).get("exe", "")).strip().lower() != "true"]
 
 
+class WheelRow(NamedTuple):
+    """One wheel in :func:`overview`."""
+    name: str                   # as its settings file spells it, else as asked for
+    path: Optional[Path]        # its settings file; None when it has none
+    mode: Optional[str]         # where it starts; None without a readable file
+    error: str = ""             # why the file couldn't be read
+
+
+def overview(config, names=None) -> "list[WheelRow]":
+    """Where each wheel starts: the main menu's wheels (:func:`main_menu_wheels`),
+    or the wheels in *names*, each once in any case and in that order.  The
+    CLI's listing and the GUI's table both read it here.  Raises ``OSError``,
+    ``ValueError`` or ``SyntaxError`` (XML) when the main menu can't be read."""
+    files = settings_files(config)
+    wanted: dict = {}
+    for name in (names if names else main_menu_wheels(config)):
+        wanted.setdefault(name.lower(), name)
+    rows = []
+    for key, name in wanted.items():
+        path = files.get(key)
+        if path is None:
+            rows.append(WheelRow(name, None, None))
+            continue
+        try:
+            rows.append(WheelRow(path.name[:-4], path, read_wheel_start(path).mode))
+        except OSError as exc:
+            rows.append(WheelRow(path.name[:-4], path, None, str(exc)))
+    return rows
+
+
 def hyperspin_running() -> bool:
     """HyperSpin.exe is running (Windows only; False elsewhere or when the
     process list can't be read)."""
