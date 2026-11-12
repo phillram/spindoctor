@@ -1,6 +1,6 @@
 """Tests for the cute_* animation set (spindoctor.lwax_cute) and `ledblinky lwax cute`.
 
-The 60 built-in themes are checked against the files first made by the C#
+The 100 built-in themes are checked against the files first made by the C#
 generator on the example cabinet, by SHA-256: the port keeps that generator's
 arithmetic and seeds a port of .NET's System.Random, so the bytes match.
 """
@@ -78,13 +78,14 @@ def test_dotnet_random_rejects_seeds_outside_int32():
 
 # ─── the built-in themes ──────────────────────────────────────────────────────
 
-def test_sixty_themes_three_per_pattern():
-    assert len(CUTE_THEMES) == 60
+def test_hundred_themes_five_per_pattern():
+    assert len(CUTE_THEMES) == 100
     assert len(CUTE_PATTERNS) == 20
     assert set(REFERENCE_SHA256) == {t.name for t in CUTE_THEMES}
+    assert len({t.name for t in CUTE_THEMES}) == 100
     for key in CUTE_PATTERNS:
         themes = [t for t in CUTE_THEMES if t.pattern == key]
-        assert len(themes) == 3, key
+        assert len(themes) == 5, key
         assert themes[0].name == f"cute_{key}"  # the original design comes first
     for theme in CUTE_THEMES:
         assert all(ch.isalnum() or ch == "_" for ch in theme.name), theme.name

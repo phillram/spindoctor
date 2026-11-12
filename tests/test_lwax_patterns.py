@@ -71,9 +71,16 @@ def test_soft_fill_and_drain_twins(generated):
     for name in soft:
         assert name.startswith(("fill_", "drain_"))
         assert name.replace("_soft", "") in names  # the flashing original stays
-    # Byte for byte the flash-free remakes first made from the installed files.
+    # Byte for byte the flash-free remakes made on the example cabinet from its
+    # installed files.
     for name, expected in (("fill_cyan_fast_soft.lwax", "6885ca135fe1823e"),
-                           ("drain_amber_fast_soft.lwax", "d436fd7a50935c3e")):
+                           ("drain_amber_fast_soft.lwax", "d436fd7a50935c3e"),
+                           ("drain_green_slow_soft.lwax", "58c5c62b50e22d1a"),
+                           ("drain_magenta_slow_soft.lwax", "9e4739d893a2d053"),
+                           ("drain_red_medium_soft.lwax", "66295e0a524ac5dc"),
+                           ("fill_indigo_slow_soft.lwax", "2b6a17931117dea0"),
+                           ("fill_spring_medium_soft.lwax", "d4ebc7b1dca6a0a6"),
+                           ("fill_yellow_slow_soft.lwax", "b580e5ae8852f2b5")):
         assert hashlib.sha256((out_dir / name).read_bytes()).hexdigest()[:16] == expected
 
 
@@ -81,9 +88,9 @@ def test_batch_includes_the_cute_set(generated):
     out_dir, written, _used = generated
     names = {f for f, _fr, _d in written}
     assert {f"{t.name}.lwax" for t in CUTE_THEMES} <= names
-    assert len(written) == 169 + 8 + 60
+    assert len(written) == 169 + 8 + 100
     # These exact bytes already receive the stricter in-memory smoothness
-    # checks in test_lwax_cute; don't parse and score all 60 files again.
+    # checks in test_lwax_cute; don't parse and score all 100 files again.
     for theme in CUTE_THEMES:
         digest = hashlib.sha256((out_dir / f"{theme.name}.lwax").read_bytes()).hexdigest()[:16]
         assert digest in {REFERENCE_SHA256[theme.name], *LIBM_VARIANTS.get(theme.name, ())}, theme.name

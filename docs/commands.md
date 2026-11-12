@@ -1713,13 +1713,13 @@ spindoctor ledblinky lwax batch --output D:\temp\patterns --apply :: pick the ou
 
 From a source checkout without `pip install`, the same generator runs as a standalone script (no `spindoctor` on PATH needed): `python scripts\generate_lwax_patterns.py`. Both share one implementation and produce the same files.
 
-It writes ~240 raw (unsigned) `.lwax` files plus a `README.md` index into `%USERPROFILE%\Downloads\spindoctor-lwax-patterns\` (macOS/Linux: `~/Downloads/spindoctor-lwax-patterns/`) by default. What it makes:
+It writes ~280 raw (unsigned) `.lwax` files plus a `README.md` index into `%USERPROFILE%\Downloads\spindoctor-lwax-patterns\` (macOS/Linux: `~/Downloads/spindoctor-lwax-patterns/`) by default. What it makes:
 
 - **22 effect families × 5 variants** — each family has four fixed-colour variants (every colour globally unique across the whole batch, so nothing clumps) plus one moving/fading **rainbow** variant, spread over slow / medium / fast timing. Strobes, heartbeats, checkerboards and the flashing fill/drain files are all still made.
 - A **`breathe_*` solid-colour library** — one file per named colour fading smoothly in and out (standard, `vivid_*`, and `pastel_*` sets), plus `breathe_rainbow`.
 - Two looping **colour-cycle** files — `breathe_cycle` (the panel breathes several unique solids in turn) and `pulse_cycle` (a radial pulse replays in each colour).
 - A flash-free **`_soft` twin of each fixed-colour fill and drain file** (e.g. `fill_cyan_fast_soft.lwax` next to `fill_cyan_fast.lwax`): same colour, groups and speed, but no double flash at the end of the loop. The full fill fades out over 20 frames and stays dark 6 frames before refilling; the empty drain fades back up over 20 frames.
-- The **60 `cute_*` files** — 20 smooth multi-colour patterns, each in its original colourway and two more. See [`ledblinky lwax cute`](#ledblinky-lwax-cute--smooth-multi-colour-patterns-and-new-colourways) below.
+- The **100 `cute_*` files** — 20 smooth multi-colour patterns, each in its original colourway and four more. See [`ledblinky lwax cute`](#ledblinky-lwax-cute--smooth-multi-colour-patterns-and-new-colourways) below.
 
 Every file the batch made before the `_soft` twins and `cute_*` set comes out byte for byte as before, so files already signed and installed from an earlier batch stay valid.
 
@@ -1732,7 +1732,7 @@ File names are `family_colour_speed.lwax` (e.g. `fade_red_lime_slow.lwax`, `brea
 Builds one of the 20 `cute_*` patterns: gumballs rolling round the panel, fairy lights, cotton-candy clouds, sherbet bands, a firefly meadow, two koi in a pond, a sprinkle donut, bubble tea, a lollipop pinwheel, falling petals, a sunrise with the trackball as the sun, aurora curtains, a rainbow caterpillar, a blooming garden, candy-cane stripes, fruit-punch blobs, a bouncy ball, mermaid scales, a starry lullaby round a trackball moon, and paw prints. Nothing in them flashes or hard-cuts, and each loops without a seam.
 
 ```bat
-spindoctor ledblinky lwax cute --list                                   :: patterns, their colour slots, the 60 themes
+spindoctor ledblinky lwax cute --list                                   :: patterns, their colour slots, the 100 themes
 spindoctor ledblinky lwax cute --theme cute_koi_moonlight               :: preview a built-in theme (prints its colours)
 spindoctor ledblinky lwax cute --theme cute_koi_moonlight --apply       :: write it
 spindoctor ledblinky lwax cute --pattern gumball_roll --color FF0000 --color FFC000 --color 00C0FF --name cute_gumball_mine --apply
@@ -1748,7 +1748,7 @@ Each pattern takes a **theme**, its colourway:
 
 Start from a built-in theme with `--theme`, or from a pattern's original colours with `--pattern` (the pattern key is the original theme's name without `cute_`); only the slots you pass are replaced. Colours are hex `RRGGBB`, scaled to LEDBlinky's 0-48 range as `lwax fade` does. The preview prints the palettes in that hex form, so you can copy a theme's colours and change one. The file is named after the theme, or `<theme>_custom` once anything changed, unless you pass `--name`. It goes to `<output_dir>\LEDBlinky\lwax\<name>.lwax`, or `--output`.
 
-Every build also prints its **flash check** tier (see `lwax flash-check` below), so a new colourway that came out flashy shows up before you sign it. The input map is found as `lwax batch` finds it. The patterns place controls on the example cabinet's confirmed panel layout (`PANEL_POS` in `spindoctor/lwax_cute.py`, from the [Physical button layout](cabinet-architecture-reference.md#physical-button-layout) table); a map with a control that isn't on it is refused with the label named. All 60 built-in themes are also part of `lwax batch`. Signing is the same manual **Save As** as any `.lwax`.
+Every build also prints its **flash check** tier (see `lwax flash-check` below), so a new colourway that came out flashy shows up before you sign it. The input map is found as `lwax batch` finds it. The patterns place controls on the example cabinet's confirmed panel layout (`PANEL_POS` in `spindoctor/lwax_cute.py`, from the [Physical button layout](cabinet-architecture-reference.md#physical-button-layout) table); a map with a control that isn't on it is refused with the label named. All 100 built-in themes are also part of `lwax batch`. Signing is the same manual **Save As** as any `.lwax`.
 
 ### `ledblinky lwax flash-check` — score animations for flashing
 

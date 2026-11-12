@@ -18,7 +18,7 @@ Design goals:
   colour reused anywhere in the batch** -- every button value differs file to
   file. Each family spreads over slow / medium / fast timing.
 - Flash-free ``_soft`` twins of the fixed-colour fill and drain files, and the
-  60 ``cute_*`` files from ``spindoctor.lwax_cute`` (fixed palettes, so they
+  100 ``cute_*`` files from ``spindoctor.lwax_cute`` (fixed palettes, so they
   take nothing from the shared palette).
 
 These files still need signing on the cabinet (open in
@@ -1158,7 +1158,7 @@ def generate_batch(controllers, out_dir):
     add("breathe", "rainbow", "slow", build_rainbow_breathe(controllers, duration_ms=BREATHE_SPEED["slow"][1]),
         "full spectrum", "whole panel breathing while cycling hue")
 
-    # 25. CUTE -- 20 smooth multi-colour scenes, three colourways each, with
+    # 25. CUTE -- 20 smooth multi-colour scenes, five colourways each, with
     # fixed palettes and names (spindoctor/lwax_cute.py). They take nothing
     # from the shared palette, so every file above keeps its colours.
     for theme in CUTE_THEMES:
@@ -1210,7 +1210,7 @@ def generate_batch(controllers, out_dir):
         ("gradient", "a two-colour gradient breathes and slides"),
         ("breathe", "one solid colour fades in and out (a pick-by-name colour library)"),
         ("pulse", "a radial pulse replays through several colours and loops"),
-        ("cute", "smooth multi-colour scenes (gumballs, koi, fairy lights, a sunrise, ...), three colourways each"),
+        ("cute", "smooth multi-colour scenes (gumballs, koi, fairy lights, a sunrise, ...), five colourways each"),
     ]
     counts = {}
     for filename, _frames, _desc in written:
@@ -1239,8 +1239,9 @@ def generate_batch(controllers, out_dir):
         "`pulse_cycle`).",
         "",
         "The **`cute_*`** files are 20 smooth multi-colour patterns, each in its original "
-        "colourway and two more (`cute_koi_pond`, `cute_koi_moonlight`, `cute_koi_lily_pads`, "
-        "...). Nothing in them flashes or hard-cuts. Make more colourways with "
+        "colourway and four more (`cute_koi_pond`, `cute_koi_moonlight`, `cute_koi_lily_pads`, "
+        "`cute_koi_clownfish`, `cute_koi_neon_tetra`, ...). Nothing in them flashes or hard-cuts. "
+        "Make more colourways with "
         "`spindoctor ledblinky lwax cute`.",
         "",
         "To check any file for flashing: `spindoctor ledblinky lwax flash-check <file or folder>`.",

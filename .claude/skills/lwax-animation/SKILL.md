@@ -45,7 +45,7 @@ files and custom work elsewhere.
 - Generic builders and parsers: `spindoctor/lwax.py` (`build_fill` / `build_drain`
   take `fade_reset_frames` for a flash-free, faded reset).
 - Batch effects and example layout groups: `spindoctor/lwax_patterns.py`.
-- Cute patterns, their 60 themes and the physical panel coordinates they use
+- Cute patterns, their 100 themes and the physical panel coordinates they use
   (`PANEL_POS`): `spindoctor/lwax_cute.py`. A new colourway is a `CuteTheme`
   (`p1` main palette, `p2`/`p3` backgrounds or second palette, `seed`), not new code.
 - Flash scorer: `spindoctor/lwax_flash.py` (`score_animation`, `score_lwax`).

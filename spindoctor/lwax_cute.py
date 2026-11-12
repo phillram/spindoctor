@@ -14,13 +14,13 @@ Each pattern takes a :class:`CuteTheme`, its colourway:
   :class:`CutePattern` entry says what it reads from them);
 - ``seed`` drives random placement.
 
-:data:`CUTE_THEMES` holds 60 themes: each pattern's original design plus two
+:data:`CUTE_THEMES` holds 100 themes: each pattern's original design plus four
 colourways, named as the files are (``cute_koi_pond``, ``cute_koi_moonlight``,
 ...). :func:`build_cute` turns a theme into an animation.
 
 The set was first built by a PowerShell/C# script on the example cabinet. This
 port keeps its frame counts, frame durations and arithmetic, and seeds a port
-of .NET's ``System.Random`` (:class:`DotNetRandom`), so the 60 themes come out
+of .NET's ``System.Random`` (:class:`DotNetRandom`), so the 100 themes come out
 byte for byte the same as those files (``tests/test_lwax_cute.py`` checks it).
 
 The patterns place controls with :data:`PANEL_POS`, the example cabinet's
@@ -936,7 +936,7 @@ def _theme(pattern, name, title, blurb, p1, p2=(), p3=(), seed=0) -> CuteTheme:
 
 
 # --------------------------------------------------------------------------- #
-# The 60 themes: each pattern's original ("cute_<pattern>") and two colourways.
+# The 100 themes: each pattern's original ("cute_<pattern>") and four colourways.
 # --------------------------------------------------------------------------- #
 CUTE_THEMES: Tuple[CuteTheme, ...] = (
     # Gumball roll
@@ -952,6 +952,14 @@ CUTE_THEMES: Tuple[CuteTheme, ...] = (
            "Sea-glass gumballs in seafoam, cobalt, turquoise, kelp green and periwinkle tumble around the panel.",
            p1=[(0, 48, 30), (0, 22, 48), (0, 44, 44), (18, 48, 10),
                (6, 8, 48), (0, 40, 18), (22, 30, 48), (0, 34, 48)]),
+    _theme("gumball_roll", "cute_gumball_roll_neon_arcade", "Neon arcade",
+           "Neon gumballs in hot pink, electric blue, laser lime, cyber yellow, ultraviolet and aqua roll around the panel.",
+           p1=[(48, 0, 30), (0, 20, 48), (24, 48, 0), (48, 44, 0),
+               (30, 0, 48), (48, 18, 0), (0, 48, 40), (48, 0, 48)]),
+    _theme("gumball_roll", "cute_gumball_roll_macarons", "Macarons",
+           "Macaron gumballs in pistachio, raspberry, lemon, lavender, salted caramel and mint roll around the panel.",
+           p1=[(24, 48, 16), (48, 4, 22), (48, 42, 12), (30, 16, 48),
+               (48, 24, 6), (48, 16, 26), (16, 20, 48), (10, 48, 30)]),
     # Fairy lights
     _theme("fairy_lights", "cute_fairy_lights", "Original",
            "A string of vintage bulbs, every button a different colour, each softly brightening and dimming on its own.",
@@ -965,6 +973,14 @@ CUTE_THEMES: Tuple[CuteTheme, ...] = (
            "Icy bulbs in frost white, ice blue, lilac, aqua and orchid twinkle like a frosty window.",
            p1=[(10, 26, 48), (40, 42, 48), (26, 8, 48), (0, 44, 44), (14, 14, 48), (40, 14, 48)],
            seed=4),
+    _theme("fairy_lights", "cute_fairy_lights_spooky", "Spooky cute",
+           "Not-so-scary bulbs in pumpkin, witch purple, slime green, candy-corn yellow, ghost white and potion pink.",
+           p1=[(48, 20, 0), (28, 0, 48), (20, 48, 0), (48, 38, 0), (40, 42, 48), (48, 0, 30)],
+           seed=22),
+    _theme("fairy_lights", "cute_fairy_lights_holiday", "Holiday",
+           "Holiday bulbs in red, evergreen, gold, snow white, ice blue and cranberry glow up and dim on their own.",
+           p1=[(48, 0, 2), (0, 40, 6), (48, 32, 0), (44, 44, 40), (0, 24, 48), (40, 0, 14)],
+           seed=23),
     # Cotton candy clouds
     _theme("cotton_candy_clouds", "cute_cotton_candy_clouds", "Original",
            "Pink, baby-blue and lavender clouds drift and swirl into each other.",
@@ -975,6 +991,12 @@ CUTE_THEMES: Tuple[CuteTheme, ...] = (
     _theme("cotton_candy_clouds", "cute_cotton_candy_sour_apple", "Sour apple",
            "Sour-apple clouds in green apple, mint, lemon and aqua drift and swirl.",
            p1=[(16, 48, 0), (0, 48, 30), (44, 46, 4), (0, 38, 44), (30, 48, 16)]),
+    _theme("cotton_candy_clouds", "cute_cotton_candy_ocean_breeze", "Ocean breeze",
+           "Breezy clouds of sky blue, aqua, periwinkle, seafoam and ice drift and swirl into each other.",
+           p1=[(8, 32, 48), (0, 48, 42), (18, 18, 48), (10, 48, 28), (30, 44, 48)]),
+    _theme("cotton_candy_clouds", "cute_cotton_candy_grape_soda", "Grape soda",
+           "Fizzy grape-soda clouds of grape, violet, magenta, blackcurrant and lilac swirl into each other.",
+           p1=[(30, 0, 48), (40, 8, 48), (48, 6, 36), (18, 0, 36), (36, 24, 48)]),
     # Rainbow sherbet
     _theme("rainbow_sherbet", "cute_rainbow_sherbet", "Original",
            "Raspberry, orange, lemon and lime bands slide across the panel like a melting scoop.",
@@ -985,6 +1007,12 @@ CUTE_THEMES: Tuple[CuteTheme, ...] = (
     _theme("rainbow_sherbet", "cute_sherbet_lavender_honey", "Lavender honey",
            "Lavender, honey, pink, violet and apricot bands glide across the panel.",
            p1=[(30, 10, 48), (48, 34, 0), (48, 10, 30), (20, 0, 40), (48, 24, 8)]),
+    _theme("rainbow_sherbet", "cute_sherbet_mango_tango", "Mango tango",
+           "Mango, papaya, passionfruit, pineapple and guava bands slide across the panel.",
+           p1=[(48, 24, 0), (48, 10, 6), (40, 0, 30), (48, 40, 0), (48, 8, 24)]),
+    _theme("rainbow_sherbet", "cute_sherbet_bubblegum", "Bubblegum",
+           "Bubblegum pink, sky blue, cotton white, mint and lavender bands glide across the panel.",
+           p1=[(48, 14, 32), (10, 32, 48), (44, 42, 48), (8, 48, 32), (28, 16, 48)]),
     # Firefly meadow
     _theme("firefly_meadow", "cute_firefly_meadow", "Original",
            "A dusky meadow where little yellow, gold and aqua fireflies glow up and fade all over the panel.",
@@ -1001,6 +1029,16 @@ CUTE_THEMES: Tuple[CuteTheme, ...] = (
            p1=[(48, 6, 0), (48, 26, 0), (48, 40, 8), (48, 0, 14)],
            p2=[(6, 0, 14), (2, 2, 10)],
            seed=7),
+    _theme("firefly_meadow", "cute_jellyfish_bay", "Jellyfish bay",
+           "Pink, violet, aqua and magenta jellyfish glow up and fade in the deep blue sea.",
+           p1=[(48, 10, 40), (24, 0, 48), (0, 40, 48), (48, 0, 24)],
+           p2=[(0, 2, 10), (0, 4, 6)],
+           seed=24),
+    _theme("firefly_meadow", "cute_pixie_forest", "Pixie forest",
+           "Pink, lime, gold and lilac pixie dust sparkles up and fades in a dark green forest.",
+           p1=[(48, 16, 40), (30, 48, 0), (48, 38, 10), (32, 20, 48)],
+           p2=[(2, 0, 8), (0, 6, 2)],
+           seed=25),
     # Koi pond
     _theme("koi_pond", "cute_koi_pond", "Original",
            "Two koi, one orange and one red-and-white, glide in loops through rippling teal water.",
@@ -1017,6 +1055,16 @@ CUTE_THEMES: Tuple[CuteTheme, ...] = (
            p1=[(48, 32, 38), (48, 8, 24), (48, 4, 18), (40, 0, 14)],
            p2=[(30, 44, 48), (0, 30, 48), (0, 22, 48), (0, 14, 40)],
            p3=[(2, 20, 4), (0, 14, 10)]),
+    _theme("koi_pond", "cute_koi_clownfish", "Clownfish reef",
+           "An orange-and-white clownfish and a blue tang with a yellow tail swim loops over a reef.",
+           p1=[(48, 18, 0), (46, 44, 40), (48, 16, 0), (40, 10, 0)],
+           p2=[(0, 20, 48), (0, 14, 48), (10, 6, 40), (48, 40, 0)],
+           p3=[(0, 10, 20), (0, 18, 16)]),
+    _theme("koi_pond", "cute_koi_neon_tetra", "Neon tetras",
+           "A neon-blue-and-red tetra and a lime-and-yellow one dart in loops through a dark aquarium.",
+           p1=[(10, 40, 48), (0, 30, 48), (30, 0, 30), (48, 0, 6)],
+           p2=[(30, 48, 10), (20, 48, 0), (40, 48, 0), (48, 36, 0)],
+           p3=[(0, 8, 6), (2, 4, 12)]),
     # Sprinkle donut
     _theme("sprinkle_donut", "cute_sprinkle_donut", "Original",
            "Strawberry-pink frosting with rainbow sprinkles popping up and melting away.",
@@ -1033,6 +1081,16 @@ CUTE_THEMES: Tuple[CuteTheme, ...] = (
            p1=[(48, 40, 0), (48, 0, 20), (44, 44, 40), (0, 48, 20), (48, 16, 0), (40, 0, 48)],
            p2=[(3, 6, 28), (8, 10, 36)],
            seed=9),
+    _theme("sprinkle_donut", "cute_donut_lemon_glaze", "Lemon glaze",
+           "Lemon glaze with pink, blue, purple, green, orange and white sprinkles popping up and melting away.",
+           p1=[(48, 0, 30), (0, 30, 48), (30, 0, 48), (0, 48, 24), (48, 10, 0), (44, 40, 44)],
+           p2=[(24, 20, 0), (30, 26, 2)],
+           seed=26),
+    _theme("sprinkle_donut", "cute_donut_mint_frosting", "Mint frosting",
+           "Mint frosting with pastel pink, butter, lilac, peach, sky and cream sprinkles.",
+           p1=[(48, 20, 34), (48, 40, 20), (30, 22, 48), (48, 30, 14), (20, 30, 48), (48, 46, 36)],
+           p2=[(2, 22, 12), (6, 28, 16)],
+           seed=27),
     # Bubble tea
     _theme("bubble_tea", "cute_bubble_tea", "Original",
            "Taro, matcha, strawberry, mango and butterfly-pea bubbles float up through warm milk tea.",
@@ -1049,6 +1107,16 @@ CUTE_THEMES: Tuple[CuteTheme, ...] = (
            p1=[(48, 24, 4), (48, 6, 14), (48, 44, 24), (40, 0, 44), (48, 40, 0)],
            p2=[(8, 20, 2), (4, 12, 1)],
            seed=10),
+    _theme("bubble_tea", "cute_bubble_tea_strawberry_milk", "Strawberry milk",
+           "Cream, strawberry, blueberry, kiwi and lemon bubbles float up through pink strawberry milk.",
+           p1=[(48, 42, 32), (48, 0, 10), (8, 10, 48), (20, 48, 0), (48, 44, 0)],
+           p2=[(30, 6, 14), (18, 2, 8)],
+           seed=28),
+    _theme("bubble_tea", "cute_bubble_tea_thai_tea", "Thai tea",
+           "Taro, pandan, lychee, blue and coconut bubbles float up through orange Thai tea.",
+           p1=[(32, 4, 48), (6, 48, 10), (48, 16, 28), (0, 22, 48), (44, 44, 40)],
+           p2=[(30, 12, 0), (20, 6, 0)],
+           seed=29),
     # Lollipop swirl
     _theme("lollipop_swirl", "cute_lollipop_swirl", "Original",
            "A six-colour candy pinwheel slowly spins around the middle of the panel.",
@@ -1059,6 +1127,12 @@ CUTE_THEMES: Tuple[CuteTheme, ...] = (
     _theme("lollipop_swirl", "cute_lollipop_watermelon", "Watermelon",
            "A watermelon swirl of red, pink, creamy rind, green and lime spins slowly.",
            p1=[(48, 0, 10), (48, 18, 24), (40, 44, 30), (0, 44, 8), (24, 48, 10), (48, 6, 16)]),
+    _theme("lollipop_swirl", "cute_lollipop_pastel_rainbow", "Pastel rainbow",
+           "A pastel pinwheel of pink, peach, butter, mint, sky and lilac spins slowly around the middle.",
+           p1=[(48, 16, 28), (48, 28, 12), (48, 44, 16), (14, 48, 26), (12, 30, 48), (32, 18, 48)]),
+    _theme("lollipop_swirl", "cute_lollipop_citrus", "Citrus wheel",
+           "A citrus pinwheel of lemon, lime, orange, grapefruit, tangerine and key lime spins around the middle.",
+           p1=[(48, 44, 0), (20, 48, 0), (48, 20, 0), (48, 10, 14), (48, 30, 0), (36, 48, 20)]),
     # Sakura breeze
     _theme("sakura_breeze", "cute_sakura_breeze", "Original",
            "Cherry-blossom petals in pinks and white drift down and sideways over a spring sky.",
@@ -1075,6 +1149,16 @@ CUTE_THEMES: Tuple[CuteTheme, ...] = (
            p1=[(48, 0, 28), (48, 40, 0), (0, 44, 48), (20, 48, 0), (36, 0, 48), (48, 16, 0)],
            p2=[(4, 0, 16), (0, 2, 12)],
            seed=12),
+    _theme("sakura_breeze", "cute_first_snow", "First snow",
+           "Snowflakes in white, ice blue, lilac and frosty aqua drift down over a navy winter night.",
+           p1=[(44, 46, 48), (20, 36, 48), (36, 30, 48), (30, 48, 48)],
+           p2=[(0, 2, 14), (4, 6, 12)],
+           seed=30),
+    _theme("sakura_breeze", "cute_butterfly_garden", "Butterfly garden",
+           "Orange, blue, yellow, pink, purple and aqua butterflies flutter down and across a dusky garden.",
+           p1=[(48, 22, 0), (0, 26, 48), (48, 44, 0), (48, 8, 30), (28, 0, 48), (0, 48, 36)],
+           p2=[(12, 4, 16), (2, 10, 0)],
+           seed=31),
     # Sunrise sunset
     _theme("sunrise_sunset", "cute_sunrise_sunset", "Original",
            "Night to dawn to day and back: indigo, magenta, coral, peach and gold rise from the bottom row, with the trackball as the sun.",
@@ -1088,6 +1172,14 @@ CUTE_THEMES: Tuple[CuteTheme, ...] = (
            "A soft morning over lavender fields: plum, violet, lavender, pink and apricot, then spring green and pale blue.",
            p1=[(6, 0, 14), (20, 0, 40), (36, 10, 48), (48, 14, 30), (48, 32, 18), (36, 48, 20), (26, 38, 48)],
            p2=[(48, 44, 24)]),
+    _theme("sunrise_sunset", "cute_arctic_dawn", "Arctic dawn",
+           "An arctic dawn: navy and deep teal turn ice blue, then pink, peach and pale gold, into a frosty sky.",
+           p1=[(0, 2, 14), (0, 10, 24), (0, 24, 40), (40, 14, 34), (48, 30, 24), (48, 42, 20), (30, 44, 48)],
+           p2=[(48, 46, 30)]),
+    _theme("sunrise_sunset", "cute_candy_sky", "Candy sky",
+           "A candy-coloured day: midnight purple, grape and magenta turn pink, coral and lemon, into a mint sky.",
+           p1=[(8, 0, 20), (24, 0, 40), (44, 0, 40), (48, 10, 28), (48, 18, 16), (48, 40, 8), (14, 48, 36)],
+           p2=[(48, 30, 30)]),
     # Aurora dance
     _theme("aurora_dance", "cute_aurora_dance", "Original",
            "Northern-lights curtains in emerald, teal, violet and pink sway across a night sky.",
@@ -1101,6 +1193,14 @@ CUTE_THEMES: Tuple[CuteTheme, ...] = (
            "Aqua, chartreuse, pink and violet light curtains sway across the night sky.",
            p1=[(0, 48, 40), (40, 48, 0), (48, 10, 40), (24, 0, 48)],
            p2=[(1, 0, 6)]),
+    _theme("aurora_dance", "cute_aurora_rose_quartz", "Rose quartz",
+           "Rose-quartz curtains of pink, coral, peach and lilac sway across the night sky.",
+           p1=[(48, 10, 24), (48, 20, 14), (48, 32, 20), (34, 14, 48)],
+           p2=[(3, 0, 4)]),
+    _theme("aurora_dance", "cute_aurora_glacier", "Glacier",
+           "Icy curtains of seafoam, glacier blue, cobalt and indigo sway across the night sky.",
+           p1=[(0, 48, 28), (20, 44, 48), (0, 16, 48), (16, 0, 40)],
+           p2=[(0, 1, 4)]),
     # Rainbow caterpillar
     _theme("rainbow_caterpillar", "cute_rainbow_caterpillar", "Original",
            "A pink-headed rainbow caterpillar crawls a winding path through every button on the panel.",
@@ -1114,6 +1214,14 @@ CUTE_THEMES: Tuple[CuteTheme, ...] = (
            "A friendly sea serpent fading from aqua through blue to purple winds around the panel.",
            p1=[(30, 48, 48), (0, 48, 40), (0, 36, 48), (0, 20, 48), (12, 0, 48), (30, 0, 48), (44, 0, 40)],
            p2=[(0, 2, 6)]),
+    _theme("rainbow_caterpillar", "cute_pastel_caterpillar", "Pastel caterpillar",
+           "A lavender-headed caterpillar in pastel pink, sky blue and mint crawls through every button.",
+           p1=[(36, 16, 48), (48, 12, 32), (48, 20, 36), (16, 30, 48), (24, 36, 48), (16, 48, 34), (30, 48, 40)],
+           p2=[(2, 0, 4)]),
+    _theme("rainbow_caterpillar", "cute_garden_snake", "Garden snake",
+           "A friendly lime-headed garden snake with green and yellow stripes winds through every button.",
+           p1=[(30, 48, 0), (0, 44, 6), (40, 48, 0), (0, 38, 10), (36, 44, 0), (0, 32, 12), (30, 40, 0)],
+           p2=[(3, 2, 0)]),
     # Garden bloom
     _theme("garden_bloom", "cute_garden_bloom", "Original",
            "Green buds open into tulips, daffodils, violets and bluebells, then close again, all over the panel.",
@@ -1130,6 +1238,16 @@ CUTE_THEMES: Tuple[CuteTheme, ...] = (
            p1=[(48, 0, 24), (48, 30, 0), (48, 8, 0), (48, 44, 10), (30, 0, 48), (48, 18, 30)],
            p2=[(6, 12, 2)],
            seed=16),
+    _theme("garden_bloom", "cute_hydrangea", "Hydrangeas",
+           "Hydrangeas in blue, purple, pink, lilac, periwinkle and orchid open and close all over the panel.",
+           p1=[(6, 14, 48), (30, 0, 48), (48, 10, 32), (36, 24, 48), (16, 24, 48), (48, 20, 40)],
+           p2=[(2, 10, 4)],
+           seed=32),
+    _theme("garden_bloom", "cute_sunflower_field", "Sunflower field",
+           "Sunflowers, marigolds, poppies, cornflowers and daisies open and close in a summer field.",
+           p1=[(48, 40, 0), (48, 30, 0), (48, 16, 0), (48, 2, 0), (4, 16, 48), (46, 46, 40)],
+           p2=[(4, 10, 0)],
+           seed=33),
     # Candy cane stripes
     _theme("candy_cane_stripes", "cute_candy_cane_stripes", "Original",
            "Red, mint and pink candy stripes with white between them roll diagonally across the panel.",
@@ -1140,6 +1258,12 @@ CUTE_THEMES: Tuple[CuteTheme, ...] = (
     _theme("candy_cane_stripes", "cute_beach_towel", "Beach towel",
            "Aqua, sunshine, pink, green, orange and violet towel stripes roll across the panel.",
            p1=[(0, 40, 48), (48, 40, 0), (48, 8, 20), (0, 48, 20), (48, 20, 0), (20, 0, 48)]),
+    _theme("candy_cane_stripes", "cute_easter_egg", "Easter egg",
+           "Lilac, mint, butter, pink, sky and peach Easter-egg stripes roll across the panel.",
+           p1=[(32, 16, 48), (10, 48, 28), (48, 44, 14), (48, 14, 30), (12, 30, 48), (48, 28, 14)]),
+    _theme("candy_cane_stripes", "cute_ribbon_candy", "Ribbon candy",
+           "Hot pink, purple and teal ribbon-candy stripes with white between them roll across the panel.",
+           p1=[(48, 0, 30), (44, 40, 40), (30, 0, 48), (44, 40, 40), (0, 44, 40), (44, 40, 40)]),
     # Fruit punch
     _theme("fruit_punch", "cute_fruit_punch", "Original",
            "Mango, pineapple, watermelon, kiwi, passionfruit and blueberry blobs wander the panel and blend where they meet.",
@@ -1153,6 +1277,14 @@ CUTE_THEMES: Tuple[CuteTheme, ...] = (
            "Indigo, magenta, blue, cyan, pink and starlight clouds wander and blend like a galaxy.",
            p1=[(20, 0, 48), (48, 0, 36), (0, 24, 48), (0, 48, 48), (48, 24, 40), (30, 40, 48)],
            seed=18),
+    _theme("fruit_punch", "cute_lava_lamp", "Lava lamp",
+           "Orange, red, magenta, yellow, purple and pink lava blobs wander up and down and melt into each other.",
+           p1=[(48, 16, 0), (48, 0, 4), (48, 0, 30), (48, 40, 0), (30, 0, 48), (48, 10, 20)],
+           seed=34),
+    _theme("fruit_punch", "cute_peacock", "Peacock",
+           "Teal, royal blue, emerald, gold, purple and turquoise feather blobs wander the panel and blend.",
+           p1=[(0, 40, 40), (0, 10, 48), (0, 48, 10), (48, 36, 0), (24, 0, 48), (0, 48, 48)],
+           seed=35),
     # Bouncy ball
     _theme("bouncy_ball", "cute_bouncy_ball", "Original",
            "A glowing ball bounces around the panel and changes colour every time it hits an edge.",
@@ -1166,6 +1298,14 @@ CUTE_THEMES: Tuple[CuteTheme, ...] = (
            "A soap bubble bounces around, shimmering pink, sky, lime, peach and lilac at each wall.",
            p1=[(48, 16, 36), (16, 40, 48), (36, 48, 20), (48, 36, 16), (30, 20, 48)],
            p2=[(0, 2, 6)]),
+    _theme("bouncy_ball", "cute_bouncy_marble", "Glass marble",
+           "A glass marble bounces around, glinting cobalt, amber, emerald, ruby and opal at each wall.",
+           p1=[(0, 14, 48), (48, 26, 0), (0, 48, 12), (48, 0, 8), (36, 40, 48)],
+           p2=[(2, 0, 2)]),
+    _theme("bouncy_ball", "cute_bouncy_moon", "Moon bounce",
+           "A little moon bounces through the night sky, glowing white, lilac, sky blue, mint and rose at each wall.",
+           p1=[(44, 44, 48), (30, 20, 48), (10, 30, 48), (14, 48, 36), (48, 36, 40)],
+           p2=[(0, 0, 4)]),
     # Mermaid scales
     _theme("mermaid_scales", "cute_mermaid_scales", "Original",
            "Teal, aqua, purple and pink scales shimmer, with a soft glint sweeping across every few seconds.",
@@ -1179,6 +1319,14 @@ CUTE_THEMES: Tuple[CuteTheme, ...] = (
            "Rose gold, apricot, rose, lilac and champagne scales shimmer, with a soft glint sweeping across.",
            p1=[(48, 18, 14), (48, 30, 10), (48, 6, 20), (40, 20, 48), (48, 36, 24)],
            p2=[(48, 44, 40)]),
+    _theme("mermaid_scales", "cute_opal_scales", "Opal",
+           "Opal scales in pink, aqua, lilac, mint and peach shimmer, with a white glint sweeping across.",
+           p1=[(48, 14, 30), (0, 44, 44), (30, 16, 48), (10, 48, 26), (48, 28, 16)],
+           p2=[(48, 48, 48)]),
+    _theme("mermaid_scales", "cute_midnight_scales", "Midnight",
+           "Midnight scales in navy, violet, teal, indigo and cobalt shimmer, with a starlight glint sweeping across.",
+           p1=[(0, 8, 40), (20, 0, 44), (0, 30, 36), (8, 0, 30), (0, 18, 48)],
+           p2=[(30, 40, 48)]),
     # Starry lullaby
     _theme("starry_lullaby", "cute_starry_lullaby", "Original",
            "Pastel stars twinkle slowly around a glowing trackball moon, with a shooting star now and then.",
@@ -1195,6 +1343,16 @@ CUTE_THEMES: Tuple[CuteTheme, ...] = (
            p1=[(48, 14, 8), (48, 30, 0), (48, 6, 20), (30, 48, 10), (0, 48, 36), (40, 10, 48)],
            p2=[(0, 6, 14), (0, 3, 8), (40, 40, 48), (30, 48, 48)],
            seed=21),
+    _theme("starry_lullaby", "cute_starry_night", "Starry night",
+           "Yellow, gold, white and pale-blue stars twinkle in a deep-blue sky around a golden trackball moon.",
+           p1=[(48, 44, 0), (48, 34, 0), (44, 44, 40), (20, 36, 48), (48, 40, 16), (30, 44, 48)],
+           p2=[(0, 6, 24), (0, 2, 14), (48, 36, 0), (44, 44, 48)],
+           seed=36),
+    _theme("starry_lullaby", "cute_pink_moon", "Pink moon",
+           "Mint, coral, lilac, sky, blush and lime stars twinkle around a pink trackball moon.",
+           p1=[(10, 48, 30), (48, 16, 10), (32, 16, 48), (10, 30, 48), (48, 30, 30), (36, 48, 10)],
+           p2=[(0, 6, 8), (2, 2, 8), (48, 16, 30), (40, 48, 40)],
+           seed=37),
     # Paw prints
     _theme("paw_prints", "cute_paw_prints", "Original",
            "Little paw prints in strawberry, honeydew, periwinkle, apricot, lilac and lemonade pad across the panel and back.",
@@ -1208,6 +1366,14 @@ CUTE_THEMES: Tuple[CuteTheme, ...] = (
            "Dinosaur footprints in green, orange, blue, pink, lime and purple stomp across the panel and back.",
            p1=[(10, 48, 0), (48, 20, 0), (0, 30, 48), (48, 0, 30), (40, 48, 0), (30, 0, 48)],
            p2=[(2, 2, 0)]),
+    _theme("paw_prints", "cute_kitty_beans", "Kitty toe beans",
+           "Pink, rose, orchid, blush, cherry and lilac kitty toe beans pad across the panel and back.",
+           p1=[(48, 10, 24), (48, 20, 30), (40, 8, 40), (48, 30, 36), (48, 4, 16), (36, 20, 48)],
+           p2=[(2, 0, 1)]),
+    _theme("paw_prints", "cute_duck_waddle", "Duck waddle",
+           "Yellow and orange duck feet waddle across the panel and back, past sky-blue puddles.",
+           p1=[(48, 40, 0), (48, 30, 0), (0, 30, 48), (48, 44, 20), (20, 40, 48), (48, 20, 0)],
+           p2=[(0, 1, 3)]),
 )
 
 CUTE_THEMES_BY_NAME: Dict[str, CuteTheme] = {t.name: t for t in CUTE_THEMES}

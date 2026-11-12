@@ -779,10 +779,10 @@ spindoctor ledblinky lwax fade --color FF0000 --color 0000FF --apply            
 spindoctor ledblinky lwax fade --color FF0000 --color 00FF00 --labels P1B1,P1B2 --apply :: only specific controls
 spindoctor ledblinky lwax fade --color FF0000 --color 0000FF --name mypattern --output D:\temp\mypattern.lwax --apply :: custom name/path
 spindoctor ledblinky lwax fade --color FF0000 --color 00FF00 --steps-per-leg 24 --duration-ms 60 --apply :: tune fade smoothness/speed
-spindoctor ledblinky lwax batch          :: preview the whole pattern library (~240 animated effects)
+spindoctor ledblinky lwax batch          :: preview the whole pattern library (~280 animated effects)
 spindoctor ledblinky lwax batch --apply  :: generate the library into ~/Downloads/spindoctor-lwax-patterns/ (see commands.md)
 :: (no pip install? the same generator runs as: python scripts\generate_lwax_patterns.py)
-spindoctor ledblinky lwax cute --list                                        :: the 20 smooth cute_* patterns, their colour slots and 60 themes
+spindoctor ledblinky lwax cute --list                                        :: the 20 smooth cute_* patterns, their colour slots and 100 themes
 spindoctor ledblinky lwax cute --theme cute_koi_moonlight --apply            :: write one built-in theme
 spindoctor ledblinky lwax cute --pattern gumball_roll --color FF0000 --color FFC000 --color 00C0FF --name cute_gumball_mine --apply :: a new colourway
 spindoctor ledblinky lwax flash-check "%USERPROFILE%\Downloads\spindoctor-lwax-patterns" :: score files Strobe / Fast blink / Borderline / Fast motion / Smooth (read-only)

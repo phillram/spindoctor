@@ -10955,7 +10955,7 @@ def ledblinky_lwax_group():
     \b
     Subcommands:
       fade        Generate a single color-cycle fade animation across wired controls
-      batch       Generate the whole pattern library (~240 animated effects)
+      batch       Generate the whole pattern library (~280 animated effects)
       cute        Build one smooth multi-colour cute_* animation, or a new colourway
       flash-check Score .lwax files for flashing (strobe ... smooth); read-only
       calibrate   Light each control a distinct named colour (button-mapping aid)
@@ -11071,7 +11071,7 @@ def ledblinky_lwax_fade(hex_colors, labels, steps_per_leg, duration_ms, name, ou
 @click.option("--apply", "apply_changes", is_flag=True,
               help="Generate the files (default: dry-run preview).")
 def ledblinky_lwax_batch(output_dir, apply_changes):
-    """Generate the whole colour-diverse pattern library (~240 raw .lwax files).
+    """Generate the whole colour-diverse pattern library (~280 raw .lwax files).
 
     \b
     22 effect families x 5 variants (fade, sweep, rain, radial pulse, cyclone,
@@ -11079,8 +11079,8 @@ def ledblinky_lwax_batch(output_dir, apply_changes):
     each with one rainbow variant and slow/medium/fast timing, plus a breathe
     solid-colour library and two colour-cycle files. Every fixed-colour variant
     uses a globally unique colour. The fixed-colour fill and drain files also
-    get flash-free *_soft twins, and the 60 smooth cute_* files (20 patterns,
-    3 colourways each; see `lwax cute`) are included. Same deterministic
+    get flash-free *_soft twins, and the 100 smooth cute_* files (20 patterns,
+    5 colourways each; see `lwax cute`) are included. Same deterministic
     output as `python scripts/generate_lwax_patterns.py`.
 
     \b
@@ -11117,9 +11117,9 @@ def ledblinky_lwax_batch(output_dir, apply_changes):
 
     if not apply_changes:
         console.print(
-            "\n[yellow]Would generate ~240 raw (unsigned) .lwax files + README.md "
+            "\n[yellow]Would generate ~280 raw (unsigned) .lwax files + README.md "
             "here[/yellow] (22 effect families x 5, a breathe colour library, "
-            "2 colour-cycle files, flash-free fill/drain twins and 60 cute_* files)."
+            "2 colour-cycle files, flash-free fill/drain twins and 100 cute_* files)."
         )
         console.print("[dim]Dry-run — pass --apply to write the files.[/dim]")
         return
@@ -11192,7 +11192,7 @@ def _print_cute_list() -> None:
 
 @ledblinky_lwax_group.command("cute")
 @click.option("--list", "list_only", is_flag=True,
-              help="List the patterns, what each colour slot means, and the 60 built-in themes.")
+              help="List the patterns, what each colour slot means, and the 100 built-in themes.")
 @click.option("--theme", "theme_name", default=None,
               help="Start from a built-in theme, e.g. cute_koi_moonlight (see --list).")
 @click.option("--pattern", "pattern_key", default=None,
@@ -11219,7 +11219,7 @@ def ledblinky_lwax_cute(list_only, theme_name, pattern_key, colors1, colors2, co
     --color2 / --color3 its backgrounds or second palette, and --seed its
     random placement. Start from a built-in theme (--theme) or a pattern's
     original colours (--pattern); only the slots you pass are replaced.
-    `--list` says what each pattern reads from each slot. The 60 built-in
+    `--list` says what each pattern reads from each slot. The 100 built-in
     themes are also part of `lwax batch`. Prints the flash check tier too.
 
     \b
