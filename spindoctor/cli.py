@@ -10954,9 +10954,11 @@ def ledblinky_lwax_group():
 
     \b
     Subcommands:
-      fade      Generate a single color-cycle fade animation across wired controls
-      batch     Generate the whole pattern library (~170 animated effects)
-      calibrate Light each control a distinct named colour (button-mapping aid)
+      fade        Generate a single color-cycle fade animation across wired controls
+      batch       Generate the whole pattern library (~240 animated effects)
+      cute        Build one smooth multi-colour cute_* animation, or a new colourway
+      flash-check Score .lwax files for flashing (strobe ... smooth); read-only
+      calibrate   Light each control a distinct named colour (button-mapping aid)
 
     IMPORTANT: the output is NOT signed and will not load in LedBlinky as-is.
     LedBlinky Config validates a per-file signature that cannot be reproduced
@@ -11069,15 +11071,17 @@ def ledblinky_lwax_fade(hex_colors, labels, steps_per_leg, duration_ms, name, ou
 @click.option("--apply", "apply_changes", is_flag=True,
               help="Generate the files (default: dry-run preview).")
 def ledblinky_lwax_batch(output_dir, apply_changes):
-    """Generate the whole colour-diverse pattern library (~170 raw .lwax files).
+    """Generate the whole colour-diverse pattern library (~240 raw .lwax files).
 
     \b
     22 effect families x 5 variants (fade, sweep, rain, radial pulse, cyclone,
     heartbeat, strobe, ripple, spiral, comet, lava-lamp, twinkle, candle, ...),
     each with one rainbow variant and slow/medium/fast timing, plus a breathe
     solid-colour library and two colour-cycle files. Every fixed-colour variant
-    uses a globally unique colour. Same deterministic output as
-    `python scripts/generate_lwax_patterns.py`.
+    uses a globally unique colour. The fixed-colour fill and drain files also
+    get flash-free *_soft twins, and the 60 smooth cute_* files (20 patterns,
+    3 colourways each; see `lwax cute`) are included. Same deterministic
+    output as `python scripts/generate_lwax_patterns.py`.
 
     \b
     spindoctor ledblinky lwax batch            :: preview (writes nothing)
@@ -11113,9 +11117,9 @@ def ledblinky_lwax_batch(output_dir, apply_changes):
 
     if not apply_changes:
         console.print(
-            "\n[yellow]Would generate ~170 raw (unsigned) .lwax files + README.md "
-            "here[/yellow] (22 effect families x 5, a breathe colour library, and "
-            "2 colour-cycle files)."
+            "\n[yellow]Would generate ~240 raw (unsigned) .lwax files + README.md "
+            "here[/yellow] (22 effect families x 5, a breathe colour library, "
+            "2 colour-cycle files, flash-free fill/drain twins and 60 cute_* files)."
         )
         console.print("[dim]Dry-run — pass --apply to write the files.[/dim]")
         return
@@ -11135,6 +11139,266 @@ def ledblinky_lwax_batch(output_dir, apply_changes):
         "[cyan]Animation -> Save As[/cyan] (no edits), then copy into "
         "<ledblinky_dir>\\lwa\\. See the folder's README.md for details."
     )
+
+
+def _lwax_input_map_or_exit(config) -> Path:
+    """The input map the way `lwax batch` finds it: the configured
+    ledblinky_dir, else a ~/Downloads export, else the committed reference
+    copy. Exits 1 when there's none."""
+    from . import lwax_patterns
+    from .lwax import resolve_input_map_path
+
+    input_map_path = None
+    try:
+        input_map_path = resolve_input_map_path(config)
+        if not Path(input_map_path).exists():
+            input_map_path = None
+    except ValueError:
+        input_map_path = None
+    input_map_path = lwax_patterns.resolve_input_map(input_map_path)
+    if input_map_path is None:
+        err_console.print(
+            "[red]No LEDBlinkyInputMap.xml found.[/red] Configure ledblinky_dir "
+            "(spindoctor config set ledblinky_dir <path>), or drop a copy in ~/Downloads."
+        )
+        sys.exit(1)
+    return Path(input_map_path)
+
+
+def _lwax_hex(color) -> str:
+    """A 0-48 colour as the RRGGBB hex that `--color` accepts."""
+    from .ledblinky import ColorEntry
+
+    return ColorEntry("", round(color[0]), round(color[1]), round(color[2])).to_hex().lstrip("#")
+
+
+def _print_cute_list() -> None:
+    from .lwax_cute import CUTE_PATTERNS, CUTE_THEMES
+
+    console.print("[bold]Cute patterns[/bold] (pass the key to --pattern; it starts from the original colours):\n")
+    for pattern in CUTE_PATTERNS.values():
+        extra = "  [dim](uses --seed)[/dim]" if pattern.uses_seed else ""
+        console.print(f"[cyan]{pattern.key}[/cyan]  {pattern.family}{extra}")
+        for flag, (_slot_name, slot) in zip(("--color ", "--color2", "--color3"), pattern.slots()):
+            if slot is not None:
+                console.print(f"    {flag}  {slot.meaning} ({slot.count_text()})")
+        themes = [t for t in CUTE_THEMES if t.pattern == pattern.key]
+        console.print("    themes:  " + ", ".join(f"{t.name} ({t.title})" for t in themes))
+    console.print(
+        "\n[dim]Colours are hex RRGGBB, repeated once per colour. To see a theme's colours, "
+        "preview it: spindoctor ledblinky lwax cute --theme <name>[/dim]"
+    )
+
+
+@ledblinky_lwax_group.command("cute")
+@click.option("--list", "list_only", is_flag=True,
+              help="List the patterns, what each colour slot means, and the 60 built-in themes.")
+@click.option("--theme", "theme_name", default=None,
+              help="Start from a built-in theme, e.g. cute_koi_moonlight (see --list).")
+@click.option("--pattern", "pattern_key", default=None,
+              help="Start from a pattern's original colours, e.g. koi_pond (see --list).")
+@click.option("--color", "colors1", multiple=True,
+              help="Main palette colour (hex RRGGBB); repeat once per colour. Replaces the whole main palette.")
+@click.option("--color2", "colors2", multiple=True,
+              help="Second slot colour: a background or second palette, depending on the pattern (see --list).")
+@click.option("--color3", "colors3", multiple=True,
+              help="Third slot colour (only koi_pond uses it: its two water colours).")
+@click.option("--seed", type=int, default=None,
+              help="Seed for the patterns that place things at random (fireflies, sprinkles, petals, ...).")
+@click.option("--name", default=None,
+              help="File name without .lwax. Default: the theme's name, or <theme>_custom once anything is changed.")
+@click.option("--output", "output_path", type=click.Path(), default=None,
+              help="Write to this exact path instead of <output_dir>/LEDBlinky/lwax/<name>.lwax.")
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Write the file (default: dry-run preview).")
+def ledblinky_lwax_cute(list_only, theme_name, pattern_key, colors1, colors2, colors3, seed, name,
+                        output_path, apply_changes):
+    """Build a smooth multi-colour cute_* animation, or a new colourway of one.
+
+    Each of the 20 patterns takes a theme: --color sets its main palette,
+    --color2 / --color3 its backgrounds or second palette, and --seed its
+    random placement. Start from a built-in theme (--theme) or a pattern's
+    original colours (--pattern); only the slots you pass are replaced.
+    `--list` says what each pattern reads from each slot. The 60 built-in
+    themes are also part of `lwax batch`. Prints the flash check tier too.
+
+    \b
+    spindoctor ledblinky lwax cute --list
+    spindoctor ledblinky lwax cute --theme cute_koi_moonlight --apply
+    spindoctor ledblinky lwax cute --pattern gumball_roll --color FF0000 --color FFC000 --color 00C0FF --name cute_gumball_mine --apply
+    spindoctor ledblinky lwax cute --theme cute_firefly_meadow --seed 42 --apply
+    """
+    if list_only:
+        _print_cute_list()
+        return
+
+    config = _cfg()
+
+    from . import lwax_cute
+    from .lwax import parse_input_map
+    from .lwax_flash import score_animation
+    from .lwax_patterns import slugify
+
+    if not theme_name and not pattern_key:
+        err_console.print("[red]Pass --theme or --pattern (see --list).[/red]")
+        sys.exit(1)
+
+    input_map_path = _lwax_input_map_or_exit(config)
+    try:
+        if theme_name:
+            base = lwax_cute.find_theme(theme_name)
+            if pattern_key and pattern_key.strip().lower() not in (base.pattern, f"cute_{base.pattern}"):
+                raise ValueError(f"{base.name} is a {base.pattern} theme; drop --pattern or pick another theme.")
+        else:
+            key = pattern_key.strip().lower()
+            key = key[len("cute_"):] if key.startswith("cute_") else key
+            if key not in lwax_cute.CUTE_PATTERNS:
+                raise ValueError(f"Unknown cute pattern '{pattern_key}'. Known: {', '.join(lwax_cute.CUTE_PATTERNS)}")
+            base = lwax_cute.CUTE_THEMES_BY_NAME[f"cute_{key}"]
+        changes = {}
+        for slot_name, values in (("p1", colors1), ("p2", colors2), ("p3", colors3)):
+            if values:
+                changes[slot_name] = [_parse_lwax_hex_color(v) for v in values]
+        if seed is not None:
+            changes["seed"] = seed
+        file_name = slugify(name) if name else (f"{base.name}_custom" if changes else base.name)
+        if not file_name:
+            raise ValueError("--name needs at least one letter or digit.")
+        theme = base.with_changes(name=file_name, **changes)
+        pattern = lwax_cute.CUTE_PATTERNS[theme.pattern]
+        pattern.check(theme, slot_labels={"p1": "--color", "p2": "--color2", "p3": "--color3"})
+        controllers = parse_input_map(input_map_path)
+        animation = lwax_cute.build_cute(controllers, theme)
+        score = score_animation(animation)
+    except ValueError as e:
+        err_console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+
+    if output_path:
+        out_path = Path(output_path)
+    elif config.output_dir:
+        out_path = Path(config.output_dir) / "LEDBlinky" / "lwax" / f"{file_name}.lwax"
+    else:
+        err_console.print(
+            "[red]Pass --output PATH, or configure output_dir "
+            "(spindoctor config set output_dir <path>).[/red]"
+        )
+        sys.exit(1)
+
+    frame_ms = animation.frames[0].duration_ms
+    console.print(f"Input map    : [cyan]{input_map_path}[/cyan]")
+    console.print(f"Pattern      : {pattern.family} ([cyan]{pattern.key}[/cyan]), from {base.name}")
+    for flag, (slot_name, slot) in zip(("--color ", "--color2", "--color3"), pattern.slots()):
+        if slot is not None:
+            hexes = " ".join(_lwax_hex(c) for c in getattr(theme, slot_name))
+            console.print(f"{flag}     : {hexes}  [dim]{slot.meaning}[/dim]")
+    if pattern.uses_seed:
+        console.print(f"Seed         : {theme.seed}")
+    elif seed is not None:
+        console.print(f"[dim]--seed has no effect: {pattern.key} places nothing at random.[/dim]")
+    console.print(f"Frames       : [cyan]{len(animation.frames)}[/cyan] @ {frame_ms}ms "
+                  f"({len(animation.frames) * frame_ms / 1000:.1f} s loop)")
+    console.print(f"Flash check  : {score.tier_title}")
+
+    if not apply_changes:
+        console.print(f"\n[yellow]Would write:[/yellow] {out_path}")
+        console.print("[dim]Dry-run — pass --apply to write the file.[/dim]")
+        return
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    with out_path.open("w", encoding="utf-8", newline="") as _fh:
+        _fh.write(animation.render())
+    console.print(f"\n[green]Wrote:[/green] {out_path}")
+    console.print(
+        "\n[yellow]This file is not signed yet.[/yellow] Open it in "
+        "[cyan]LEDBlinkyAnimationEditor.exe[/cyan] and use "
+        "[cyan]Animation -> Save As[/cyan] with no edits to sign it, "
+        "then copy the result into <ledblinky_dir>\\lwa\\."
+    )
+
+
+@ledblinky_lwax_group.command("flash-check")
+@click.argument("paths", nargs=-1, required=True, type=click.Path(exists=True, path_type=Path))
+def ledblinky_lwax_flash_check(paths):
+    """Score .lwax animations for flashing. Read-only.
+
+    Pass files or folders (each folder's own *.lwax files, not its
+    subfolders). Each file is replayed against LEDBlinkyInputMap.xml and
+    sorted into a tier, worst first:
+
+    \b
+      Strobe       the whole panel flashes 2.5+ times a second
+      Fast blink   half the panel or more hard-cuts together 4+ times a second
+      Borderline   lockstep cuts 1.5+ times a second, or 2+ panel flashes in 1 s
+      Fast motion  2.5+ hard cuts per button per second, no panel flashing
+      Smooth       everything else
+
+    Columns: whole-panel flashes per second (Flash/s) and in the busiest
+    second (Worst 1s), times per second half the panel hard-cuts together
+    (Sync/s), and hard cuts per button per second (Cuts/LED/s). A hard cut
+    is a channel jumping by a third of full brightness or more in one frame.
+    The loop wraps, so a snap back to the first frame counts. Works on raw
+    and editor-signed files.
+
+    \b
+    spindoctor ledblinky lwax flash-check "%USERPROFILE%\\Downloads\\spindoctor-lwax-patterns"
+    spindoctor ledblinky lwax flash-check cute_koi_pond.lwax strobe_lime_slow.lwax
+    """
+    config = _cfg()
+
+    from .lwax import parse_input_map
+    from .lwax_flash import TIER_TITLES, score_lwax
+
+    input_map_path = _lwax_input_map_or_exit(config)
+    try:
+        controllers = parse_input_map(input_map_path)
+    except ValueError as e:
+        err_console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+
+    files = []
+    for path in paths:
+        if path.is_dir():
+            files.extend(sorted(p for p in path.iterdir() if p.is_file() and p.suffix.lower() == ".lwax"))
+        else:
+            files.append(path)
+    if not files:
+        err_console.print("[red]No .lwax files found.[/red]")
+        sys.exit(1)
+
+    order = list(TIER_TITLES)
+    scored = []
+    for path in files:
+        try:
+            scored.append((path, score_lwax(path, controllers)))
+        except (OSError, ValueError) as e:
+            err_console.print(f"[yellow]Skipped {path.name}:[/yellow] {escape(str(e))}")
+    if not scored:
+        sys.exit(1)
+    scored.sort(key=lambda item: (order.index(item[1].tier), item[0].name.lower()))
+
+    console.print(f"Input map    : [cyan]{input_map_path}[/cyan]")
+    # Short headers so the file names fit; the docstring above says what each means.
+    tbl = Table(box=box.ROUNDED)
+    tbl.add_column("File", overflow="fold")
+    tbl.add_column("Tier", no_wrap=True)
+    tbl.add_column("Flash/s", justify="right")
+    tbl.add_column("Worst 1s", justify="right")
+    tbl.add_column("Sync/s", justify="right")
+    tbl.add_column("Cuts/LED/s", justify="right")
+    tier_style = {"strobe": "red", "blink": "red", "borderline": "yellow", "busy": "cyan", "smooth": "green"}
+    for path, score in scored:
+        tbl.add_row(
+            escape(path.name),
+            f"[{tier_style[score.tier]}]{score.tier_title}[/{tier_style[score.tier]}]",
+            f"{score.panel_flash_hz:g}",
+            f"{score.panel_worst_1s:g}",
+            f"{score.sync_blink_hz:g}",
+            f"{score.snaps_per_led_hz:g}",
+        )
+    console.print(tbl)
+    counts = {tier: sum(1 for _p, s in scored if s.tier == tier) for tier in order}
+    console.print(", ".join(f"{TIER_TITLES[t]}: {n}" for t, n in counts.items() if n))
 
 
 @ledblinky_lwax_group.command("calibrate")

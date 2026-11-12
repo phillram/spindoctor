@@ -17,6 +17,9 @@ Design goals:
 - Every fixed-colour variant draws from a single global palette with **no
   colour reused anywhere in the batch** -- every button value differs file to
   file. Each family spreads over slow / medium / fast timing.
+- Flash-free ``_soft`` twins of the fixed-colour fill and drain files, and the
+  60 ``cute_*`` files from ``spindoctor.lwax_cute`` (fixed palettes, so they
+  take nothing from the shared palette).
 
 These files still need signing on the cabinet (open in
 LEDBlinkyAnimationEditor.exe -> Save As) before LedBlinky Config will manage
@@ -42,6 +45,7 @@ from .lwax import (
     merge_animations,
     parse_input_map,
 )
+from .lwax_cute import CUTE_PATTERNS, CUTE_THEMES, build_cute
 
 # --------------------------------------------------------------------------- #
 # This cabinet's layout groups -- copied verbatim from
@@ -228,6 +232,10 @@ SCROLL_SPEED = {                                                               #
     "fast": (60, 2, 30),
 }
 CHECKER_SPEED = {"slow": 600, "medium": 400, "fast": 200}                      # hold_ms
+# The "_soft" fill/drain twins: the loop's reset fades over 20 frames instead
+# of flashing twice and snapping; a soft fill then stays dark 6 frames.
+SOFT_RESET_FRAMES = 20
+SOFT_FILL_DARK_FRAMES = 6
 HEART_SPEED = {"slow": (6, 45, 26), "medium": (4, 40, 16), "fast": (3, 30, 10)}  # up/down frames, dur, rest
 STROBE_SPEED = {"slow": (4, 4, 45), "medium": (2, 2, 35), "fast": (1, 1, 25)}    # on, off, dur
 
@@ -904,6 +912,8 @@ def generate_batch(controllers, out_dir):
         "full spectrum pastel", "rainbow radiating from trackball")
 
     # 5. FILL (combo-meter) -- accumulating bar radiating from the trackball.
+    # Each fixed-colour variant also gets a "_soft" twin in the same colour and
+    # speed: no end flash, and the full bar fades out instead of snapping off.
     for i in range(4):
         speed = VARIANT_SPEEDS[i]
         fps, dur = BAR_SPEED[speed]
@@ -911,12 +921,17 @@ def generate_batch(controllers, out_dir):
         add("fill", h, speed, build_fill(controllers, RADIAL_RINGS, ca, flash_color=lighten(ca, 0.6),
                                          frames_per_step=fps, duration_ms=dur), f"{sh} {h}",
             "combo meter fill and flash")
+        add("fill", h, f"{speed}_soft", build_fill(controllers, RADIAL_RINGS, ca, frames_per_step=fps,
+                                                   duration_ms=dur, fade_reset_frames=SOFT_RESET_FRAMES,
+                                                   fade_reset_dark_frames=SOFT_FILL_DARK_FRAMES),
+            f"{sh} {h}", "combo meter fill, fading out with no flash")
     fps, dur = BAR_SPEED["fast"]
     add("fill", "rainbow", "fast", build_rainbow_fill(controllers, RADIAL_RINGS, frames_per_step=fps,
                                                       duration_ms=dur), "full spectrum",
         "rainbow gradient fill and glow")
 
-    # 6. DRAIN (countdown / fuse) -- extinguish left-to-right.
+    # 6. DRAIN (countdown / fuse) -- extinguish left-to-right, plus "_soft"
+    # twins that fade back up instead of flashing and snapping on.
     for i in range(4):
         speed = VARIANT_SPEEDS[i]
         fps, dur = BAR_SPEED[speed]
@@ -924,6 +939,9 @@ def generate_batch(controllers, out_dir):
         add("drain", h, speed, build_drain(controllers, LEFT_RIGHT_ORDER, ca, flash_color=lighten(ca, 0.6),
                                            frames_per_step=fps, duration_ms=dur), f"{sh} {h}",
             "countdown drain and flash")
+        add("drain", h, f"{speed}_soft", build_drain(controllers, LEFT_RIGHT_ORDER, ca, frames_per_step=fps,
+                                                     duration_ms=dur, fade_reset_frames=SOFT_RESET_FRAMES),
+            f"{sh} {h}", "countdown drain, fading back up with no flash")
     fps, dur = BAR_SPEED["medium"]
     add("drain", "rainbow", "medium", build_rainbow_drain(controllers, LEFT_RIGHT_ORDER, frames_per_step=fps,
                                                           duration_ms=dur), "full spectrum",
@@ -1140,6 +1158,17 @@ def generate_batch(controllers, out_dir):
     add("breathe", "rainbow", "slow", build_rainbow_breathe(controllers, duration_ms=BREATHE_SPEED["slow"][1]),
         "full spectrum", "whole panel breathing while cycling hue")
 
+    # 25. CUTE -- 20 smooth multi-colour scenes, three colourways each, with
+    # fixed palettes and names (spindoctor/lwax_cute.py). They take nothing
+    # from the shared palette, so every file above keeps its colours.
+    for theme in CUTE_THEMES:
+        if theme.name in used_names:
+            raise RuntimeError(f"Duplicate .lwax name: {theme.name}")
+        used_names.add(theme.name)
+        family = CUTE_PATTERNS[theme.pattern].family
+        batch.append(("cute", f"{theme.name}.lwax", build_cute(controllers, theme),
+                      f"{family}: {theme.title.lower()} colourway"))
+
     # --- validate + write ---
     written = []
     for family, filename, animation, desc in batch:
@@ -1161,8 +1190,8 @@ def generate_batch(controllers, out_dir):
         ("rain", "colour drops fall top-to-bottom, out of sync"),
         ("confetti", "single buttons twinkle at random (rain, spread out)"),
         ("scroll", "a hue gradient scrolls across the panel"),
-        ("fill", "a bar fills up from the centre, holds, flashes, refills"),
-        ("drain", "a full panel empties one step at a time (countdown/fuse)"),
+        ("fill", "a bar fills up from the centre, holds, flashes, refills (`_soft`: fades out, no flash)"),
+        ("drain", "a full panel empties one step at a time (countdown/fuse; `_soft`: fades back up, no flash)"),
         ("checker", "interleaved halves swap colours in lockstep"),
         ("radial", "rings pulse outward from / inward to the trackball"),
         ("cyclone", "a front spins around the top-then-bottom loop"),
@@ -1181,6 +1210,7 @@ def generate_batch(controllers, out_dir):
         ("gradient", "a two-colour gradient breathes and slides"),
         ("breathe", "one solid colour fades in and out (a pick-by-name colour library)"),
         ("pulse", "a radial pulse replays through several colours and loops"),
+        ("cute", "smooth multi-colour scenes (gumballs, koi, fairy lights, a sunrise, ...), three colourways each"),
     ]
     counts = {}
     for filename, _frames, _desc in written:
@@ -1207,6 +1237,13 @@ def generate_batch(controllers, out_dir):
         "Plus a **`breathe_*` colour library** (standard, `vivid_*`, `pastel_*`, and "
         "`breathe_rainbow`) and two looping colour-cycle files (`breathe_cycle`, "
         "`pulse_cycle`).",
+        "",
+        "The **`cute_*`** files are 20 smooth multi-colour patterns, each in its original "
+        "colourway and two more (`cute_koi_pond`, `cute_koi_moonlight`, `cute_koi_lily_pads`, "
+        "...). Nothing in them flashes or hard-cuts. Make more colourways with "
+        "`spindoctor ledblinky lwax cute`.",
+        "",
+        "To check any file for flashing: `spindoctor ledblinky lwax flash-check <file or folder>`.",
         "",
         "## File names",
         "",

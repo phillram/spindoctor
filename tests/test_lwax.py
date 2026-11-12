@@ -330,6 +330,43 @@ def test_build_fill_flashes_then_holds(input_map_path):
     assert resolved[5]["P1B1"] == (0, 0, 0)  # flash off
 
 
+def test_build_fill_fade_reset_replaces_the_flash(input_map_path):
+    controllers = parse_input_map(input_map_path)
+    red = (48, 0, 0)
+    anim = build_fill(
+        controllers, [["P1B1"], ["P1B2"]], fill_color=red, flash_color=(48, 48, 48),
+        frames_per_step=1, hold_frames=2, fade_reset_frames=5, fade_reset_dark_frames=3,
+    )
+    # 2 fill + 2 hold + 5 fade + 3 dark; no flash frames although flash_color is set.
+    assert len(anim.frames) == 12
+    resolved = anim._resolved_colors()
+    fade = [resolved[i]["P1B1"][0] for i in range(4, 9)]
+    assert fade == sorted(fade, reverse=True)          # only ever dims
+    assert 0 < fade[-1] < fade[0] < 48                  # eased, never full or off
+    assert all(resolved[i]["P1B1"] == resolved[i]["P1B2"] for i in range(4, 12))
+    assert all(resolved[i]["P1B1"] == (0, 0, 0) for i in range(9, 12))
+    assert all(resolved[i]["P1B1"][1] == 0 for i in range(12))  # the white flash never shows
+
+
+def test_build_fill_fade_reset_is_symmetric_smoothstep(input_map_path):
+    controllers = parse_input_map(input_map_path)
+    anim = build_fill(controllers, [["P1B1"]], fill_color=(48, 48, 48), frames_per_step=1,
+                      hold_frames=1, fade_reset_frames=20, fade_reset_dark_frames=0)
+    levels = [c["P1B1"][0] for c in anim._resolved_colors()[2:]]
+    assert len(levels) == 20
+    # smoothstep(k / 21), mirrored: the fade-out runs the same curve backwards.
+    assert levels[0] == 48 - levels[-1] == 48 - round(48 * (1 / 21) ** 2 * (3 - 2 / 21))
+
+
+def test_build_fill_default_still_flashes(input_map_path):
+    controllers = parse_input_map(input_map_path)
+    default = build_fill(controllers, [["P1B1"]], fill_color=(48, 0, 0))
+    explicit = build_fill(controllers, [["P1B1"]], fill_color=(48, 0, 0), fade_reset_frames=0)
+    assert default.render() == explicit.render()
+    # 4 fill + 20 hold + 2 x (6 flash + 6 dark).
+    assert len(default.frames) == 48
+
+
 # ─── merge_animations ───────────────────────────────────────────────────────────
 
 def test_merge_animations_combines_disjoint_labels(input_map_path):
@@ -396,6 +433,24 @@ def test_build_drain_flashes_after_emptying(input_map_path):
     assert resolved[1]["P1B1"] == (0, 0, 0)  # drained
     assert resolved[3]["P1B1"] == white  # flash on
     assert resolved[4]["P1B1"] == (0, 0, 0)  # flash off
+
+
+def test_build_drain_fade_reset_rises_back_to_full(input_map_path):
+    controllers = parse_input_map(input_map_path)
+    red = (48, 0, 0)
+    anim = build_drain(
+        controllers, [["P1B1"], ["P1B2"]], fill_color=red,
+        frames_per_step=1, hold_full_frames=2, hold_empty_frames=2, fade_reset_frames=6,
+    )
+    # 2 hold-full + 2 drain + 2 hold-empty + 6 fade-up; no flash, no dark tail.
+    assert len(anim.frames) == 12
+    resolved = anim._resolved_colors()
+    rise = [resolved[i]["P1B1"][0] for i in range(6, 12)]
+    assert rise == sorted(rise)
+    assert 0 < rise[0] < rise[-1] < 48
+    # The last fade frame leads straight back into the full hold at frame 0.
+    assert resolved[0]["P1B1"] == red
+    assert 48 - rise[-1] < 16  # no hard cut across the loop seam
 
 
 # ─── build_alternate ────────────────────────────────────────────────────────────
