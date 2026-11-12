@@ -3,20 +3,8 @@ from __future__ import annotations
 
 import pytest
 
-import spindoctor.config as config_mod
 from spindoctor.audit import scan_roms
 from spindoctor.config import Config, save_config
-
-
-@pytest.fixture
-def isolated_config(tmp_path, monkeypatch):
-    monkeypatch.setattr(config_mod, "CONFIG_DIR", tmp_path / "spindoctor_home")
-    monkeypatch.setattr(
-        config_mod, "CONFIG_FILE", tmp_path / "spindoctor_home" / "config.json"
-    )
-    config_mod.reset_override_cache()
-    yield
-    config_mod.reset_override_cache()
 
 
 @pytest.fixture
@@ -43,11 +31,13 @@ def _save_overrides(overrides):
 
 
 def test_flat_scan_is_default(isolated_config, pc_layout):
-    # No overrides → default flat scan only sees the top-level .lnk
-    # because .exe/.url aren't in the default extension set.  A genesis
-    # rom is the simplest way to verify flat behaviour is preserved.
+    # Recognise all fixture extensions, but deliberately omit recursive_scan.
+    _save_overrides({
+        "PC Games": {"rom_extensions": [".exe", ".lnk", ".url"]}
+    })
     roms = scan_roms("PC Games", pc_layout)
-    assert roms == {}  # no override → no recognised extensions in this dir
+    assert set(roms) == {"Hades"}
+    assert roms["Hades"].path == pc_layout / "PC Games" / "Hades.lnk"
 
 
 def test_recursive_scan_finds_nested_files(isolated_config, pc_layout):

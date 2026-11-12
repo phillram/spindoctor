@@ -9,6 +9,8 @@ restore --apply``, so this is what guarantees the GUI button keeps
 working.
 """
 from __future__ import annotations
+from spindoctor.config import Config
+from spindoctor.backup import find_sidecars
 
 import json
 from pathlib import Path
@@ -302,3 +304,46 @@ def test_backup_list_json_empty_when_no_backups(tmp_path):
     )
     assert result.exit_code == 0
     assert json.loads(result.output) == []
+
+
+def test_sidecar_cli_discovers_both_names_and_configured_backup_tree(tmp_path, monkeypatch):
+    import spindoctor.cli as cli_module
+    import json
+
+    led = tmp_path / "led"
+    led.mkdir()
+    target = led / "Controls.ini"
+    target.write_bytes(b"live")
+    backup_root = tmp_path / "backups"
+    central = backup_root / "LEDBlinky"
+    central.mkdir(parents=True)
+    newest = central / "controls.ini.20260101_120000_10.bak"
+    newest.write_bytes(b"new")
+    older = led / "Controls.20260101_120000_2.bak"
+    older.write_bytes(b"old")
+    (led / "Controls.20270101_120000.bak").mkdir()
+    config = Config(ledblinky_dir=str(led), backup_dir=str(backup_root))
+    monkeypatch.setattr(cli_module, "_cfg", lambda: config)
+    assert find_sidecars(target, config) == [newest, older]
+    result = CliRunner().invoke(cli_module.cli, ["backup", "sidecar", "list", str(target), "--json"])
+    assert result.exit_code == 0, result.output
+    assert [Path(entry["path"]) for entry in json.loads(result.output)] == [newest, older]
+    result = CliRunner().invoke(cli_module.cli, ["backup", "sidecar", "restore", str(target),
+                                                "--from", str(newest), "--apply"])
+    assert result.exit_code == 0, result.output
+    assert target.read_bytes() == b"new"
+
+
+def test_sidecars_follow_rocketlauncher_nested_backup_layout(tmp_path):
+    rl = tmp_path / "rl"
+    target = rl / "Settings" / "MAME" / "Emulators.ini"
+    target.parent.mkdir(parents=True)
+    target.write_bytes(b"live")
+    central = tmp_path / "backups" / "RocketLauncher"
+    (central / "Settings" / "MAME").mkdir(parents=True)
+    (central / "Settings" / "NES").mkdir(parents=True)
+    own = central / "Settings" / "MAME" / "Emulators.ini.20260101_120000.bak"
+    own.write_bytes(b"own")
+    (central / "Settings" / "NES" / "Emulators.ini.20260102_120000.bak").write_bytes(b"other")
+    config = Config(rocketlauncher_dir=str(rl), backup_dir=str(tmp_path / "backups"))
+    assert find_sidecars(target, config) == [own]

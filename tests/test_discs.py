@@ -1,22 +1,9 @@
 """Multi-disc and m3u-playlist validation."""
 from __future__ import annotations
 
-import pytest
 
-import spindoctor.config as config_mod
 from spindoctor.config import Config, save_config
 from spindoctor.discs import check_discs
-
-
-@pytest.fixture
-def isolated_config(tmp_path, monkeypatch):
-    monkeypatch.setattr(config_mod, "CONFIG_DIR", tmp_path / "spindoctor_home")
-    monkeypatch.setattr(
-        config_mod, "CONFIG_FILE", tmp_path / "spindoctor_home" / "config.json"
-    )
-    config_mod.reset_override_cache()
-    yield
-    config_mod.reset_override_cache()
 
 
 def _cfg(roms_dir):

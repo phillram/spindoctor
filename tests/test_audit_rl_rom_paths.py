@@ -15,21 +15,13 @@ import os
 import pytest
 from click.testing import CliRunner
 
-import spindoctor.config as config_mod
 from spindoctor import audit
 from spindoctor.audit import audit_system, scan_roms
 from spindoctor.cli import cli
 from spindoctor.config import Config, save_config
 
 
-@pytest.fixture(autouse=True)
-def isolated_config(tmp_path, monkeypatch):
-    """Keep the real ~/.spindoctor (and its system overrides) out of the tests."""
-    monkeypatch.setattr(config_mod, "CONFIG_DIR", tmp_path / "spindoctor_home")
-    monkeypatch.setattr(config_mod, "CONFIG_FILE", tmp_path / "spindoctor_home" / "config.json")
-    config_mod.reset_override_cache()
-    yield
-    config_mod.reset_override_cache()
+pytestmark = pytest.mark.usefixtures("isolated_config")
 
 
 def _write(path, text=""):

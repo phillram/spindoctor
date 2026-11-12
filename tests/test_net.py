@@ -10,30 +10,28 @@ from __future__ import annotations
 
 import ssl
 
+import pytest
 
 from spindoctor._net import _TLS12Adapter, make_session
 
 
-def test_make_session_mounts_tls12_adapter_for_https():
+@pytest.mark.parametrize("scheme", ["https", "http"])
+def test_make_session_mounts_tls12_adapter(scheme):
     session = make_session()
-    adapter = session.get_adapter("https://example.invalid/")
+    adapter = session.get_adapter(f"{scheme}://example.invalid/")
     assert isinstance(adapter, _TLS12Adapter)
 
 
-def test_make_session_mounts_tls12_adapter_for_http():
-    session = make_session()
-    adapter = session.get_adapter("http://example.invalid/")
-    assert isinstance(adapter, _TLS12Adapter)
-
-
-def test_make_session_sets_user_agent():
-    session = make_session()
-    assert session.headers["User-Agent"] == "SpinDoctor/1.0"
-
-
-def test_make_session_user_agent_can_be_overridden():
-    session = make_session(user_agent="SpinDoctorTest/9.9")
-    assert session.headers["User-Agent"] == "SpinDoctorTest/9.9"
+@pytest.mark.parametrize(
+    "user_agent,expected",
+    [
+        pytest.param(None, "SpinDoctor/1.0", id="default"),
+        pytest.param("SpinDoctorTest/9.9", "SpinDoctorTest/9.9", id="custom"),
+    ],
+)
+def test_make_session_user_agent(user_agent, expected):
+    session = make_session() if user_agent is None else make_session(user_agent=user_agent)
+    assert session.headers["User-Agent"] == expected
 
 
 def test_tls12_adapter_poolmanager_uses_tls12_floor():

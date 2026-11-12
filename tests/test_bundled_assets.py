@@ -297,20 +297,6 @@ class TestFillMissingThemes:
         themes_dir.mkdir(parents=True, exist_ok=True)
         (themes_dir / f"{name}.zip").write_bytes(b"fake")
 
-    def test_installs_blank_theme_for_video_without_theme(self, tmp_path):
-        hs = _hs_dir(tmp_path)
-        self._make_video(hs, "MAME", "Galaga")
-        results = fill_missing_themes(hs, "MAME", dry_run=False)
-        assert results["Galaga"] == "installed"
-        assert (hs / "Media" / "MAME" / "Themes" / "Galaga.zip").exists()
-
-    def test_skips_game_with_existing_theme(self, tmp_path):
-        hs = _hs_dir(tmp_path)
-        self._make_video(hs, "MAME", "Galaga")
-        self._make_theme(hs, "MAME", "Galaga")
-        results = fill_missing_themes(hs, "MAME", dry_run=False)
-        assert results["Galaga"] == "skipped"
-
     def test_dry_run_does_not_write(self, tmp_path):
         hs = _hs_dir(tmp_path)
         self._make_video(hs, "MAME", "Galaga")
@@ -331,6 +317,13 @@ class TestFillMissingThemes:
         results = fill_missing_themes(hs, "SNES", dry_run=False)
         assert results["Donkey Kong Country"] == "installed"
         assert results["Super Mario World"] == "skipped"
+        # The new theme is a byte-for-byte copy of the bundled blank zip...
+        new_theme = hs / "Media" / "SNES" / "Themes" / "Donkey Kong Country.zip"
+        bundled = Path(__file__).parent.parent / "spindoctor" / "assets" / "theme_blank.zip"
+        assert new_theme.read_bytes() == bundled.read_bytes()
+        # ...and the pre-existing theme is left untouched.
+        existing = hs / "Media" / "SNES" / "Themes" / "Super Mario World.zip"
+        assert existing.read_bytes() == b"fake"
 
 
 # ── fill_default_theme ─────────────────────────────────────────────────────────
@@ -342,13 +335,7 @@ class TestFillDefaultTheme:
 
     def test_installs_default_when_absent(self, tmp_path):
         hs = _hs_dir(tmp_path)
-        status = fill_default_theme(hs, "MAME", dry_run=False)
-        assert status == "installed"
-        assert self._default_path(hs, "MAME").exists()
-
-    def test_creates_themes_dir_when_missing(self, tmp_path):
-        hs = _hs_dir(tmp_path)
-        # No Media/MAME/Themes/ directory exists yet.
+        # No Media/MAME/Themes/ directory exists yet — install must create it.
         assert not (hs / "Media" / "MAME" / "Themes").exists()
         status = fill_default_theme(hs, "MAME", dry_run=False)
         assert status == "installed"

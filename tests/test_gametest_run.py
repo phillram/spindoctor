@@ -13,6 +13,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from click import unstyle
 from click.testing import CliRunner
 
 import spindoctor.config as config_mod
@@ -275,7 +276,8 @@ def test_without_apply_the_command_only_lists_the_games(tmp_path, home):
     save_config(build_cabinet(tmp_path))
     result = CliRunner().invoke(cli, ["test", "--system", "NES", "--all"])
     assert result.exit_code == 0, result.output
-    assert "DRY RUN" in result.output and "3 of 4 picked games are ready" in result.output
+    output = unstyle(result.output)
+    assert "DRY RUN" in output and "3 of 4 picked games are ready" in output
     assert "Missing" in result.output and "game file not found" in result.output
     assert not (tmp_path / "runs").exists()
 

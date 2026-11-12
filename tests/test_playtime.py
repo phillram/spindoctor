@@ -5,9 +5,7 @@ import csv
 import json
 from datetime import datetime
 
-import pytest
 
-import spindoctor.config as config_mod
 from spindoctor.config import Config, save_config
 from spindoctor.medialink import LinkMode
 from spindoctor.playtime import (
@@ -16,16 +14,6 @@ from spindoctor.playtime import (
     aggregate_by_system, build_most_played_wheel, export_csv, export_json,
     format_duration, load_all_playtime, most_recent, top_games,
 )
-
-
-@pytest.fixture
-def isolated_config(tmp_path, monkeypatch):
-    home = tmp_path / "spindoctor_home"
-    monkeypatch.setattr(config_mod, "CONFIG_DIR", home)
-    monkeypatch.setattr(config_mod, "CONFIG_FILE", home / "config.json")
-    config_mod.reset_override_cache()
-    yield home
-    config_mod.reset_override_cache()
 
 
 def _write_stats_ini(path, sections):
@@ -94,7 +82,7 @@ def test_read_playstats_file_skips_settings_and_empty_records(tmp_path):
 
 # ─── load_all_playtime ────────────────────────────────────────────────────────
 
-def test_load_all_playtime_reads_global_dir(isolated_config, tmp_path):
+def test_load_all_playtime_reads_global_dir(config_home, tmp_path):
     rl = tmp_path / "rl"
     _write_stats_ini(
         rl / "Settings" / "Global Statistics" / "Super Nintendo.ini",
@@ -109,7 +97,7 @@ def test_load_all_playtime_reads_global_dir(isolated_config, tmp_path):
     assert rows[0].total_seconds == 600
 
 
-def test_load_all_playtime_merges_per_system_layout(isolated_config, tmp_path):
+def test_load_all_playtime_merges_per_system_layout(config_home, tmp_path):
     rl = tmp_path / "rl"
     _write_stats_ini(
         rl / "Settings" / "Global Statistics" / "MAME.ini",
@@ -218,7 +206,7 @@ def test_export_json_includes_totals_and_per_system(tmp_path):
 # ─── build_most_played_wheel ──────────────────────────────────────────────────
 
 def test_build_most_played_wheel_writes_db_media_and_launchers(
-    isolated_config, tmp_path,
+    config_home, tmp_path,
 ):
     hs = tmp_path / "hs"
     roms = tmp_path / "roms"
@@ -261,7 +249,7 @@ def test_build_most_played_wheel_writes_db_media_and_launchers(
     assert len(inis) == 1
 
 
-def test_build_most_played_wheel_adds_to_main_menu(isolated_config, tmp_path):
+def test_build_most_played_wheel_adds_to_main_menu(config_home, tmp_path):
     hs = tmp_path / "hs"
     roms = tmp_path / "roms"
     rl = tmp_path / "rl"
@@ -298,7 +286,7 @@ def test_build_most_played_wheel_adds_to_main_menu(isolated_config, tmp_path):
     assert "Most Played" in menu_xml
 
 
-def test_build_most_played_wheel_respects_limit(isolated_config, tmp_path):
+def test_build_most_played_wheel_respects_limit(config_home, tmp_path):
     hs = tmp_path / "hs"
     roms = tmp_path / "roms"
     rl = tmp_path / "rl"
@@ -345,7 +333,7 @@ def _game_order(db_path):
 
 
 def test_build_most_played_wheel_orders_by_playtime_not_alphabetical(
-    isolated_config, tmp_path,
+    config_home, tmp_path,
 ):
     """Wheel XML lists games most-played first, even when that differs from
     alphabetical order — covering both the fresh write and a rebuild over an
@@ -413,7 +401,7 @@ def _write_global_statistics_ini(path, top_time=None, top_count=None):
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
-def test_load_all_playtime_reads_data_statistics_dir(isolated_config, tmp_path):
+def test_load_all_playtime_reads_data_statistics_dir(config_home, tmp_path):
     """Stats in Data/Statistics/<system>.ini (newer RL layout) are found."""
     rl = tmp_path / "rl"
     _write_stats_ini(
@@ -430,7 +418,7 @@ def test_load_all_playtime_reads_data_statistics_dir(isolated_config, tmp_path):
     assert rows[0].total_seconds == 7516
 
 
-def test_load_all_playtime_fallback_uses_global_statistics(isolated_config, tmp_path):
+def test_load_all_playtime_fallback_uses_global_statistics(config_home, tmp_path):
     """When no per-system files exist the aggregate Global Statistics.ini is used."""
     rl = tmp_path / "rl"
     _write_global_statistics_ini(
@@ -454,7 +442,7 @@ def test_load_all_playtime_fallback_uses_global_statistics(isolated_config, tmp_
 
 
 def test_load_all_playtime_skips_global_statistics_when_per_system_exists(
-    isolated_config, tmp_path,
+    config_home, tmp_path,
 ):
     """Global Statistics.ini is not used when real per-system data exists."""
     rl = tmp_path / "rl"
@@ -505,7 +493,7 @@ def test_read_global_statistics_ini_extracts_time_and_count(tmp_path):
 
 
 def test_build_most_played_excludes_favorites_system_via_fallback(
-    isolated_config, tmp_path,
+    config_home, tmp_path,
 ):
     """Entries with system='Favorites' from Global Statistics.ini fallback must be excluded.
 

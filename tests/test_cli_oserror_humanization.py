@@ -11,24 +11,12 @@ the test going red.
 """
 from __future__ import annotations
 
-import pytest
 from click.testing import CliRunner
 
 import spindoctor.backup as backup_mod
-import spindoctor.config as config_mod
 import spindoctor.migrate as migrate_mod
 from spindoctor.cli import cli
 from spindoctor.config import Config, save_config
-
-
-@pytest.fixture
-def isolated_config(tmp_path, monkeypatch):
-    home = tmp_path / "spindoctor_home"
-    monkeypatch.setattr(config_mod, "CONFIG_DIR", home)
-    monkeypatch.setattr(config_mod, "CONFIG_FILE", home / "config.json")
-    config_mod.reset_override_cache()
-    yield home
-    config_mod.reset_override_cache()
 
 
 def _make_winerror_32(action_target: str = "Main Menu.xml") -> OSError:
@@ -43,7 +31,7 @@ def _make_winerror_32(action_target: str = "Main Menu.xml") -> OSError:
     return e
 
 
-def test_backup_create_humanizes_winerror_32(tmp_path, isolated_config, monkeypatch):
+def test_backup_create_humanizes_winerror_32(tmp_path, config_home, monkeypatch):
     """`backup create` on a locked target should emit the friendly
     "close HyperSpin and try again" sentence rather than `[WinError 32]`.
     """
@@ -82,7 +70,7 @@ def test_backup_create_humanizes_winerror_32(tmp_path, isolated_config, monkeypa
     )
 
 
-def test_migrate_humanizes_oserror_when_apply_raises(tmp_path, isolated_config, monkeypatch):
+def test_migrate_humanizes_oserror_when_apply_raises(tmp_path, config_home, monkeypatch):
     """`migrate` on disk-full / locked-target should emit a humanized
     sentence rather than `[Errno 28] No space left on device`.
     """

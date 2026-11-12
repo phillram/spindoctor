@@ -1,9 +1,9 @@
 """Tests for the preview / contact-sheet generator."""
 from __future__ import annotations
+from spindoctor.preview import _resolve_paths
 
 import pytest
 
-import spindoctor.config as config_mod
 from spindoctor.config import Config, save_config
 from spindoctor.preview import (
     collect_previews,
@@ -13,17 +13,6 @@ from spindoctor.preview import (
     render_game_card_html,
     render_system_overview,
 )
-
-
-@pytest.fixture
-def isolated_config(tmp_path, monkeypatch):
-    monkeypatch.setattr(config_mod, "CONFIG_DIR", tmp_path / "spindoctor_home")
-    monkeypatch.setattr(
-        config_mod, "CONFIG_FILE", tmp_path / "spindoctor_home" / "config.json"
-    )
-    config_mod.reset_override_cache()
-    yield
-    config_mod.reset_override_cache()
 
 
 def _make_system(tmp_path, system="nes", games=("Mario", "Zelda"),
@@ -291,3 +280,26 @@ def test_collect_previews_handles_jpeg_extension(isolated_config, tmp_path):
     items = collect_previews("nes", cfg)
     assert len(items) == 1
     assert items[0].wheel.suffix == ".jpg"
+
+
+@pytest.mark.parametrize("name, stem", (("Game: Deluxe?", "Game Deluxe"), ("CON", "CON_")))
+def test_preview_uses_shared_windows_safe_media_stem(tmp_path, name, stem):
+    for directory, extension in (("Images/Wheel", ".png"), ("Images/Artwork1", ".jpg"),
+                                 ("Video", ".mp4")):
+        parent = tmp_path / directory
+        parent.mkdir(parents=True)
+        (parent / (stem + extension)).write_bytes(b"media")
+    theme = tmp_path / "Themes" / stem
+    theme.mkdir(parents=True)
+    paths = _resolve_paths(tmp_path, name)
+    assert paths["wheel"].name == stem + ".png"
+    assert paths["artwork"].name == stem + ".jpg"
+    assert paths["video"].name == stem + ".mp4"
+    assert paths["theme"] == theme
+
+
+def test_preview_does_not_select_directories_as_image_files_or_empty_theme(tmp_path):
+    (tmp_path / "Images/Wheel/game.png").mkdir(parents=True)
+    (tmp_path / "Themes").mkdir()
+    assert _resolve_paths(tmp_path, "game")["wheel"] is None
+    assert all(p is None for p in _resolve_paths(tmp_path, "../:*?").values())

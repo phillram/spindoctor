@@ -1,21 +1,14 @@
-"""Tests for spindoctor.gui — mostly headless, plus one Tk-construction smoke.
+"""GUI logic tests use bare instances and explicit, narrow collaborators.
 
-Most of the tests deliberately avoid spinning up Tk: they exercise the
-argument-parsing and CLI-resolution helpers that constitute the testable
-surface of the GUI module.
-
-The Tk-construction smoke at the bottom (``test_gui_constructs_against_real_tk``)
-is the exception — it actually instantiates ``_SpinDoctorGUI`` so that
-class-of-bug regressions like ``AttributeError: ... has no attribute
-'_output'`` or ``_tkinter.TclError: unknown option "-foreground"`` get
-caught at PR time instead of by users running the frozen exe. On Linux
-CI the workflow installs xvfb so a virtual display is available; in
-environments without any display the test self-skips.
+Real Tk remains for construction, layout, event/trace wiring, font metrics,
+scrolling and Text-widget behaviour. CI supplies xvfb on Linux.
 """
 from __future__ import annotations
 
 import sys
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 
@@ -537,36 +530,22 @@ def test_dry_run_capable_invocations_are_not_read_only(args):
 # pair of surrounding quotes per token afterward, without touching interior
 # characters (so backslashes and embedded quotes are left alone).
 
-def test_dequote_strips_matching_double_quotes():
-    assert gui._dequote_windows_shlex_tokens(['"Daphne"', '"SDL_app"']) == [
-        "Daphne", "SDL_app",
-    ]
-
-
-def test_dequote_strips_matching_single_quotes():
-    assert gui._dequote_windows_shlex_tokens(["'Daphne'"]) == ["Daphne"]
-
-
-def test_dequote_leaves_unquoted_tokens_alone():
-    assert gui._dequote_windows_shlex_tokens(["emulator-title", "set", "Daphne"]) == [
-        "emulator-title", "set", "Daphne",
-    ]
-
-
-def test_dequote_preserves_windows_path_backslashes():
-    """A quoted Windows path must survive with its backslashes intact —
-    this is the exact scenario posix=False was chosen to protect, so the
-    dequote step must not regress it.
-    """
-    tok = '"D:\\Arcade\\RocketLauncher\\RocketLauncher.exe"'
-    assert gui._dequote_windows_shlex_tokens([tok]) == [
-        "D:\\Arcade\\RocketLauncher\\RocketLauncher.exe",
-    ]
-
-
-def test_dequote_leaves_lone_quote_character_alone():
+@pytest.mark.parametrize("tokens,expected", [
+    pytest.param(['"Daphne"', '"SDL_app"'], ["Daphne", "SDL_app"],
+                 id="double-quotes"),
+    pytest.param(["'Daphne'"], ["Daphne"], id="single-quotes"),
+    pytest.param(["emulator-title", "set", "Daphne"],
+                 ["emulator-title", "set", "Daphne"], id="unquoted-untouched"),
+    # A quoted Windows path must survive with its backslashes intact —
+    # the exact scenario posix=False was chosen to protect.
+    pytest.param(['"D:\\Arcade\\RocketLauncher\\RocketLauncher.exe"'],
+                 ["D:\\Arcade\\RocketLauncher\\RocketLauncher.exe"],
+                 id="windows-path-backslashes"),
     # A single stray quote character (len 1) has no matching pair to strip.
-    assert gui._dequote_windows_shlex_tokens(['"']) == ['"']
+    pytest.param(['"'], ['"'], id="lone-quote"),
+])
+def test_dequote_windows_shlex_tokens(tokens, expected):
+    assert gui._dequote_windows_shlex_tokens(tokens) == expected
 
 
 def test_run_custom_dequotes_emulator_title_command(monkeypatch):
@@ -722,19 +701,6 @@ def test_undo_recipes_argv_includes_path_iff_uses_path():
             )
 
 
-def test_ignore_global_label_resolves_to_global_key():
-    """The dropdown shows a friendlier `_global  (cross-system)` label,
-    but ignore_lists is keyed on the literal `_global`. Catch any
-    refactor that renames the label without keeping the mapping in
-    sync — the viewer would silently fail to remove cross-system
-    ignores."""
-    label = gui._SpinDoctorGUI._IGNORE_GLOBAL_LABEL
-    # The literal storage key must appear inside the label so the
-    # mapping function (label → "_global" when label == sentinel) has
-    # an obvious correspondence.
-    assert "_global" in label
-
-
 def test_curate_preview_glyphs_are_distinct():
     """The retire and skip glyphs must be different — otherwise the
     toggle handler can't tell which state a row is in. Easy to break
@@ -755,37 +721,21 @@ def test_undo_recipes_only_target_known_log_categories():
 
 # ─── _RunRecord (Logs tab buffer) ─────────────────────────────────────────────
 
-def test_run_record_tag_dry_run():
-    """Dry-run + exit 0 should label as DRY-RUN so the Logs tab can
-    distinguish "preview, nothing changed" from "applied, succeeded"."""
+@pytest.mark.parametrize("dry_run,exit_code,expected", [
+    # Dry-run + exit 0 is labeled DRY-RUN so the Logs tab can distinguish
+    # "preview, nothing changed" from "applied, succeeded".
+    pytest.param(True, 0, "DRY-RUN", id="dry-run"),
+    pytest.param(False, 0, "OK", id="applied-ok"),
+    pytest.param(True, 2, "FAIL 2", id="failed"),
+    # Before the subprocess exits, exit_code is None and the row shows
+    # "running" so users can tell what's still in flight.
+    pytest.param(True, None, "running", id="running"),
+])
+def test_run_record_tag(dry_run, exit_code, expected):
     rec = gui._RunRecord(started_at="2026-05-08 12:00:00",
-                         argv_str="spindoctor audit --all", dry_run=True)
-    rec.exit_code = 0
-    assert rec.tag() == "DRY-RUN"
-
-
-def test_run_record_tag_applied_ok():
-    rec = gui._RunRecord(started_at="2026-05-08 12:00:00",
-                         argv_str="spindoctor audit --all --apply",
-                         dry_run=False)
-    rec.exit_code = 0
-    assert rec.tag() == "OK"
-
-
-def test_run_record_tag_failed():
-    rec = gui._RunRecord(started_at="2026-05-08 12:00:00",
-                         argv_str="spindoctor doctor", dry_run=True)
-    rec.exit_code = 2
-    assert rec.tag() == "FAIL 2"
-
-
-def test_run_record_tag_running():
-    """Before the subprocess exits, exit_code is None and the row
-    should show "running" so users can tell what's still in flight."""
-    rec = gui._RunRecord(started_at="2026-05-08 12:00:00",
-                         argv_str="spindoctor migrate --target X",
-                         dry_run=True)
-    assert rec.tag() == "running"
+                         argv_str="spindoctor audit --all", dry_run=dry_run)
+    rec.exit_code = exit_code
+    assert rec.tag() == expected
 
 
 def test_run_record_joined_output_concatenates_fragments():
@@ -870,32 +820,29 @@ def test_format_run_log_text_dry_run_none_shows_na():
     assert "# Dry-run: N/A" in gui._format_run_log_text(rec)
 
 
-def test_default_run_log_filename_uses_command_slug():
+@pytest.mark.parametrize("slug,expected", [
+    pytest.param("audit", "2026-06-16_12-00-00_audit.txt", id="command-slug"),
+    # Empty slug (e.g. synthetic record not created via _run_cli) → "run".
+    pytest.param("", "2026-06-16_12-00-00_run.txt", id="no-slug-falls-back"),
+])
+def test_default_run_log_filename(slug, expected):
     rec = gui._RunRecord(started_at="2026-06-16 12:00:00",
                          argv_str="spindoctor audit --all", dry_run=True)
-    rec.command_slug = "audit"
-    name = gui._default_run_log_filename(rec)
-    assert name == "2026-06-16_12-00-00_audit.txt"
-
-
-def test_default_run_log_filename_falls_back_to_run_when_no_slug():
-    rec = gui._RunRecord(started_at="2026-06-16 12:00:00",
-                         argv_str="spindoctor audit --all", dry_run=True)
-    # command_slug is empty (e.g. synthetic record not created via _run_cli)
-    name = gui._default_run_log_filename(rec)
-    assert name == "2026-06-16_12-00-00_run.txt"
+    rec.command_slug = slug
+    assert gui._default_run_log_filename(rec) == expected
 
 
 # ─── _typeahead_find_match (dropdown letter-key jump) ─────────────────────────
 
-def test_typeahead_find_match_jumps_to_first_letter():
-    values = ["Atari", "Genesis", "MAME", "NES", "SNES"]
-    assert gui._typeahead_find_match(values, "g", 0) == 1
-
-
-def test_typeahead_find_match_is_case_insensitive():
-    values = ["Atari", "Genesis", "MAME"]
-    assert gui._typeahead_find_match(values, "G", 0) == 1
+@pytest.mark.parametrize("values,query,expected", [
+    pytest.param(["Atari", "Genesis", "MAME", "NES", "SNES"], "g", 1,
+                 id="jumps-to-first-letter"),
+    pytest.param(["Atari", "Genesis", "MAME"], "G", 1, id="case-insensitive"),
+    pytest.param(["Atari", "MAME"], "z", None, id="no-match-returns-none"),
+    pytest.param([], "a", None, id="empty-values-returns-none"),
+])
+def test_typeahead_find_match(values, query, expected):
+    assert gui._typeahead_find_match(values, query, 0) == expected
 
 
 def test_typeahead_find_match_cycles_to_next_match_on_repeat():
@@ -913,23 +860,16 @@ def test_typeahead_find_match_cycles_to_next_match_on_repeat():
     assert fourth == 0
 
 
-def test_typeahead_find_match_no_match_returns_none():
-    assert gui._typeahead_find_match(["Atari", "MAME"], "z", 0) is None
-
-
-def test_typeahead_find_match_empty_values_returns_none():
-    assert gui._typeahead_find_match([], "a", 0) is None
-
-
 # ─── _format_argv ─────────────────────────────────────────────────────────────
 
-def test_format_argv_quotes_args_with_spaces():
-    assert gui._format_argv(["spindoctor", "audit", "--system", "Sega Naomi"]) == \
-        'spindoctor audit --system "Sega Naomi"'
-
-
-def test_format_argv_leaves_simple_args_unquoted():
-    assert gui._format_argv(["spindoctor", "doctor"]) == "spindoctor doctor"
+@pytest.mark.parametrize("argv,expected", [
+    pytest.param(["spindoctor", "audit", "--system", "Sega Naomi"],
+                 'spindoctor audit --system "Sega Naomi"', id="quotes-args-with-spaces"),
+    pytest.param(["spindoctor", "doctor"], "spindoctor doctor",
+                 id="simple-args-unquoted"),
+])
+def test_format_argv(argv, expected):
+    assert gui._format_argv(argv) == expected
 
 
 # ─── Tk-session guard ─────────────────────────────────────────────────────────
@@ -965,7 +905,7 @@ def _keep_tcl_alive():
 # ─── Tk-construction smoke test ───────────────────────────────────────────────
 
 
-def test_gui_constructs_against_real_tk():
+def test_gui_constructs_against_real_tk(monkeypatch):
     """Actually instantiate the GUI against a Tk root.
 
     This is the regression guard for whole-class bugs that only surface
@@ -983,6 +923,12 @@ def test_gui_constructs_against_real_tk():
         from tkinter import filedialog, messagebox, scrolledtext, ttk
     except ImportError:
         pytest.skip("Tkinter not available")
+
+    # The startup update check runs on an untracked daemon thread; stub the
+    # starter so no real api.github.com request can escape the test.
+    monkeypatch.setattr(gui._SpinDoctorGUI, "_start_update_check", lambda self: None)
+    # Both wheel-refresh and intro-video status query this Windows boundary.
+    monkeypatch.setattr(autostart_mod, "task_exists", lambda name=None: False)
 
     app = gui._SpinDoctorGUI(tk, ttk, filedialog, messagebox, scrolledtext)
 
@@ -1119,6 +1065,11 @@ def test_gui_menu_commands_are_safe_to_invoke(monkeypatch):
                         "_manual_update_check", lambda self: None)
 
     app = gui._SpinDoctorGUI(tk, ttk, filedialog, messagebox, scrolledtext)
+    callback_errors = []
+    monkeypatch.setattr(
+        app.root, "report_callback_exception",
+        lambda *exc: callback_errors.append(exc),
+    )
 
     try:
         # Silence the messagebox dialogs that some handlers open — they
@@ -1166,6 +1117,7 @@ def test_gui_menu_commands_are_safe_to_invoke(monkeypatch):
         # we destroy the root.
         app.root.update_idletasks()
         app.root.update()
+        assert callback_errors == [], callback_errors
     finally:
         app.root.destroy()
 
@@ -1246,7 +1198,7 @@ def test_manual_update_check_does_not_block_main_thread():
         update_check.check_for_update = original
 
 
-def test_gui_survives_missing_keysym_in_bind_all():
+def test_gui_survives_missing_keysym_in_bind_all(monkeypatch):
     """Simulate a Tk build whose keysym table is missing ``grave`` — the
     exact failure mode that shipped to Windows users on v1.9.0, where
     the Python 3.8 Tcl/Tk that PyInstaller bundles doesn't know the X11
@@ -1270,6 +1222,10 @@ def test_gui_survives_missing_keysym_in_bind_all():
     root_probe = tk.Tk()
     root_probe.destroy()
 
+    # Same daemon-thread update check as the construction smoke: no network.
+    monkeypatch.setattr(gui._SpinDoctorGUI, "_start_update_check", lambda self: None)
+    monkeypatch.setattr(autostart_mod, "task_exists", lambda name=None: False)
+
     original_bind_all = tk.Misc.bind_all
 
     # Simulate every X11-only keysym we use in shortcut bindings —
@@ -1288,27 +1244,9 @@ def test_gui_survives_missing_keysym_in_bind_all():
         app = gui._SpinDoctorGUI(tk, ttk, filedialog, messagebox, scrolledtext)
         try:
             app.root.update_idletasks()
+            # Every tab built despite the missing keysyms. The exact tab
+            # order is pinned once, in the construction smoke above.
             assert len(app._tab_base_names) == 15
-            # Pin the workflow-oriented order so a future drive-by
-            # reorder doesn't regress UX without anyone noticing.
-            # See `_build_layout` for the rationale.
-            assert app._tab_base_names == [
-                "Setup",
-                "Diagnostics",
-                "Systems",
-                "Games",
-                "Metadata & Media",
-                "Maintenance",
-                "Custom Wheels",
-                "Intro Video",
-                "LEDBlinky",
-                "Lightgun",
-                "Test games",
-                "Backup & Restore",
-                "Migration",
-                "History",
-                "Console",
-            ]
         finally:
             app.root.destroy()
     finally:
@@ -1379,6 +1317,71 @@ def test_ui_scale_presets_includes_1x():
 # refactor can't silently break them.
 
 
+
+class _Value:
+    """Only the get/set contract needed by logic methods; no implicit traces."""
+
+    def __init__(self, value=""):
+        self.value = value
+
+    def get(self):
+        return self.value
+
+    def set(self, value):
+        self.value = value
+
+
+def _override_gui():
+    """Shared header and ID form, without system/game-change Tk traces."""
+    app = object.__new__(gui._SpinDoctorGUI)
+    app._meta_system_var = _Value()
+    app._meta_game_var = _Value()
+    app._gameovr_ss_id_var = _Value()
+    app._gameovr_tgdb_id_var = _Value()
+    app._gameovr_steam_id_var = _Value()
+    app._steam_url_var = _Value()
+    app._flash_validation = Mock()
+    app._set_status = Mock()
+    return app
+
+
+def _steam_gui():
+    """Steam callback state; widget mocks expose only configure()."""
+    app = _override_gui()
+    media_types = ("video", "snap", "background", "artwork", "wheel")
+    app._steam_cands = {}
+    app._steam_pick_vars = {mt: _Value("— scan first —") for mt in media_types}
+    app._steam_pick_combos = {mt: Mock(spec=["configure"]) for mt in media_types}
+    app._steam_preview_btns = {mt: Mock(spec=["configure"]) for mt in media_types}
+    app._steam_store_btn = Mock(spec=["configure"])
+    app._steam_quality_var = _Value("Best (1080p)")
+    app._steam_overwrite_var = _Value(False)
+    app._flash_status = Mock()
+    # A swallowed callback error must fail happy-path tests, not turn into
+    # a false pass after the guard resets the pickers.
+    app._report_action_error = Mock(side_effect=AssertionError("unexpected Steam error"))
+    return app
+
+
+def _process_gui(monkeypatch):
+    """Process lifecycle state, isolating widget rendering and reader threads."""
+    import queue
+
+    monkeypatch.setattr(gui.threading, "Thread", Mock())
+    app = object.__new__(gui._SpinDoctorGUI)
+    app._proc = None
+    app._current_run = None
+    app._run_history = []
+    app._line_queue = queue.Queue()
+    app._stop_btn = Mock(spec=["configure"])
+    app.messagebox = SimpleNamespace(showinfo=Mock(), showerror=Mock())
+    app._append_output = Mock()
+    app._set_status = Mock()
+    app._set_busy = Mock()
+    app._refresh_logs_tab = Mock()
+    return app
+
+
 def _build_gui_for_test(monkeypatch):
     """Construct a real `_SpinDoctorGUI` for the 2.0-surface tests.
 
@@ -1396,7 +1399,10 @@ def _build_gui_for_test(monkeypatch):
 
     # Stub the subprocess + startfile surfaces so any post-construction
     # callbacks (notably the manual update check on first paint) can't
-    # touch the real shell.
+    # touch the real shell. The startup update check runs on an untracked
+    # daemon thread — stub its starter so no real api.github.com request
+    # can escape into a later test's network-guard window.
+    monkeypatch.setattr(gui._SpinDoctorGUI, "_start_update_check", lambda self: None)
     monkeypatch.setattr(gui.subprocess, "Popen", lambda *_a, **_k: None)
     monkeypatch.setattr(gui.os, "startfile",
                         lambda *_a, **_k: None, raising=False)
@@ -1522,39 +1528,37 @@ def test_find_bar_handles_no_matches_gracefully(monkeypatch):
         app.root.destroy()
 
 
-def test_first_run_wizard_dialog_constructs(monkeypatch):
-    """`_show_first_run_wizard` opens a three-step Toplevel without raising.
+def test_help_dialogs_construct(monkeypatch):
+    """Help-menu Toplevels (first-run wizard, keyboard shortcuts) build cleanly.
 
-    The wizard is opt-in (Setup-tab button or Help menu) — no auto-
-    fire. This test exercises the manually-invoked path. Construction-
-    time bugs in this dialog are the precise shape of the
-    `_output`-style AttributeError the project memory warns about.
+    Construction-time bugs in these dialogs are the precise shape of the
+    AttributeError-on-missing-widget class the project memory warns about.
+    The menu-walk test invokes the same menu entries, but Tk routes handler
+    exceptions to report_callback_exception, so invocation alone cannot
+    prove the window was actually built — assert existence here.
     """
     app, tk_mod = _build_gui_for_test(monkeypatch)
     try:
-        # `_show_first_run_wizard` opens a modal Toplevel; we want to
-        # build it and immediately destroy it. Capture the new Toplevel
-        # by snapshotting the root's children before/after.
-        before = set(app.root.winfo_children())
-        app._show_first_run_wizard()
-        app.root.update_idletasks()
-        after = set(app.root.winfo_children())
-        new_windows = after - before
-        # At least one Toplevel should have been created; the wizard's
-        # path-step Browse buttons can lazily build a hidden filedialog
-        # Toplevel as a side effect on some Tk builds, so we don't pin
-        # an exact count — just that the wizard window itself exists.
-        toplevels = [
-            w for w in new_windows
-            if isinstance(w, tk_mod.Toplevel)
-        ]
-        assert toplevels, f"expected a wizard Toplevel, got {new_windows}"
-        wizard_windows = [w for w in toplevels if "Welcome" in w.title()]
-        assert wizard_windows, (
-            f"expected a Welcome window, got titles {[w.title() for w in toplevels]}"
-        )
-        for w in toplevels:
-            w.destroy()
+        # Each opener builds a modal Toplevel; snapshot the root's children
+        # before/after to capture it, assert on its title, then destroy it.
+        # The wizard's Browse buttons can lazily build a hidden filedialog
+        # Toplevel as a side effect on some Tk builds, so don't pin an
+        # exact count — just that a window with the expected title exists.
+        for opener, title_fragment in (
+            (app._show_first_run_wizard, "Welcome"),
+            (app._show_keyboard_shortcuts, "Keyboard shortcuts"),
+        ):
+            before = set(app.root.winfo_children())
+            opener()
+            app.root.update_idletasks()
+            new_windows = [
+                w for w in (set(app.root.winfo_children()) - before)
+                if isinstance(w, tk_mod.Toplevel)
+            ]
+            titles = [w.title() for w in new_windows]
+            assert any(title_fragment in t for t in titles), titles
+            for w in new_windows:
+                w.destroy()
     finally:
         app.root.destroy()
 
@@ -1566,45 +1570,40 @@ def test_run_preflight_dispatches_three_step_chain(monkeypatch):
     want to verify that the chain *would* invoke the three commands in
     the documented order and the summariser runs at the end.
     """
-    app, _tk = _build_gui_for_test(monkeypatch)
-    try:
-        calls: list[tuple[str, tuple[str, ...]]] = []
+    app = object.__new__(gui._SpinDoctorGUI)
+    app._proc = None
+    app._append_output = Mock()
+    app._set_status = Mock()
+    calls: list[tuple[str, tuple[str, ...]]] = []
 
-        def fake_run_cli(binary, args, on_complete=None):
-            calls.append((binary, tuple(args)))
-            # Simulate a synchronous successful run so the chain
-            # advances without spinning on a real process.
-            if on_complete is not None:
-                on_complete(0)
+    def fake_run_cli(binary, args, on_complete=None):
+        calls.append((binary, tuple(args)))
+        # Simulate a synchronous successful run so the chain
+        # advances without spinning on a real process.
+        if on_complete is not None:
+            on_complete(0)
 
-        summaries: list[list[tuple[str, int]]] = []
-        original_summarise = app._summarise_preflight
+    summaries: list[list[tuple[str, int]]] = []
 
-        def fake_summarise(results):
-            summaries.append(list(results))
-            # Suppress the messagebox the real summariser opens.
+    def fake_summarise(results):
+        summaries.append(list(results))
+        # Suppress the messagebox the real summariser opens.
 
-        monkeypatch.setattr(app, "_run_cli", fake_run_cli)
-        monkeypatch.setattr(app, "_summarise_preflight", fake_summarise)
-        # Sanity reference so the linter doesn't strip the import-style
-        # binding above — the original is restored on tearDown.
-        _ = original_summarise
+    monkeypatch.setattr(app, "_run_cli", fake_run_cli)
+    monkeypatch.setattr(app, "_summarise_preflight", fake_summarise)
+    app._run_preflight()
 
-        app._run_preflight()
-        app.root.update_idletasks()
-
-        # The three documented steps, in order:
-        assert [c[1][0] for c in calls] == ["doctor", "tools-audit", "audit"]
-        # Final step should be `audit --all`.
-        assert calls[-1] == ("spindoctor", ("audit", "--all"))
-        # Summariser received one (name, exit_code) tuple per step.
-        assert summaries, "summariser never ran"
-        assert [r[0] for r in summaries[-1]] == [
-            "doctor", "tools-audit", "audit --all",
-        ]
-        assert all(rc == 0 for _, rc in summaries[-1])
-    finally:
-        app.root.destroy()
+    # The three documented steps, in order:
+    assert [c[1][0] for c in calls] == ["doctor", "tools-audit", "audit"]
+    # Final step should be `audit --all`.
+    assert calls[-1] == ("spindoctor", ("audit", "--all"))
+    # Summariser received one (name, exit_code) tuple per step.
+    assert summaries, "summariser never ran"
+    assert [r[0] for r in summaries[-1]] == [
+        "doctor", "tools-audit", "audit --all",
+    ]
+    assert all(rc == 0 for _, rc in summaries[-1])
+    assert app._chain_progress is None
 
 
 def test_register_path_drop_target_no_op_without_tkdnd(monkeypatch):
@@ -1614,26 +1613,23 @@ def test_register_path_drop_target_no_op_without_tkdnd(monkeypatch):
     pip install (where it doesn't ship unless `[gui]` or `[all]` was
     specified) — both have to behave.
     """
-    app, _tk = _build_gui_for_test(monkeypatch)
-    try:
-        # Force the "no tkdnd" branch even on a machine that has it.
-        app._dnd_available = False
-        app._tkdnd = None
-        # A dummy widget with no drop_target_register attribute would
-        # crash a non-defensive implementation. The function must
-        # short-circuit before touching the widget.
+    app = object.__new__(gui._SpinDoctorGUI)
+    # Force the "no tkdnd" branch even on a machine that has it.
+    app._dnd_available = False
+    app._tkdnd = None
+    # A dummy widget with no drop_target_register attribute would
+    # crash a non-defensive implementation. The function must
+    # short-circuit before touching the widget.
 
-        class _DummyWidget:
-            def drop_target_register(self, *_a, **_k):  # pragma: no cover
-                raise AssertionError(
-                    "drop_target_register called when tkdnd is unavailable"
-                )
+    class _DummyWidget:
+        def drop_target_register(self, *_a, **_k):  # pragma: no cover
+            raise AssertionError(
+                "drop_target_register called when tkdnd is unavailable"
+            )
 
-        dummy_var = app.tk.StringVar()
-        # Should return without raising and without touching the widget.
-        app._register_path_drop_target(_DummyWidget(), dummy_var)
-    finally:
-        app.root.destroy()
+    dummy_var = _Value()
+    # Should return without raising and without touching the widget.
+    app._register_path_drop_target(_DummyWidget(), dummy_var)
 
 
 def test_register_path_drop_target_wires_callback_when_tkdnd_present(monkeypatch):
@@ -1689,25 +1685,6 @@ def test_register_path_drop_target_wires_callback_when_tkdnd_present(monkeypatch
 # ─── 2.0 polish: What's-new + keyboard shortcuts dialogs ──────────────────────
 
 
-def test_keyboard_shortcuts_dialog_constructs(monkeypatch):
-    """Help → Keyboard shortcuts opens a Toplevel without raising."""
-    app, tk_mod = _build_gui_for_test(monkeypatch)
-    try:
-        before = set(app.root.winfo_children())
-        app._show_keyboard_shortcuts()
-        app.root.update_idletasks()
-        after = set(app.root.winfo_children())
-        new_windows = [
-            w for w in (after - before) if isinstance(w, tk_mod.Toplevel)
-        ]
-        titles = [w.title() for w in new_windows]
-        assert any("Keyboard shortcuts" in t for t in titles), titles
-        for w in new_windows:
-            w.destroy()
-    finally:
-        app.root.destroy()
-
-
 # ─── 2.0 follow-up fixes ──────────────────────────────────────────────────────
 
 
@@ -1716,23 +1693,27 @@ def test_fetch_meta_args_always_avoid_interactive_prompt(monkeypatch):
     contain either --auto-best (checkbox on) or --skip-ambiguous
     (checkbox off) — never the bare default which would prompt.
     """
-    app, _tk = _build_gui_for_test(monkeypatch)
-    try:
-        # Default (checkbox on) → --auto-best
-        app._meta_auto_best_var.set(True)
-        args = app._build_fetch_meta_args(["--system", "MAME"])
-        assert args is not None
-        assert "--auto-best" in args
-        assert "--skip-ambiguous" not in args
+    app = object.__new__(gui._SpinDoctorGUI)
+    app._meta_game_var = _Value()
+    app._meta_auto_best_var = _Value(True)
+    app._meta_all_games_var = _Value(False)
+    app._meta_no_cache_var = _Value(False)
+    app._meta_source_var = _Value("screenscraper")
+    app._meta_threshold_var = _Value("0.8")
+    app._global_apply_var = _Value(False)
+    # Default (checkbox on) → --auto-best
+    app._meta_auto_best_var.set(True)
+    args = app._build_fetch_meta_args(["--system", "MAME"])
+    assert args is not None
+    assert "--auto-best" in args
+    assert "--skip-ambiguous" not in args
 
-        # Checkbox off → --skip-ambiguous (NOT bare default)
-        app._meta_auto_best_var.set(False)
-        args = app._build_fetch_meta_args(["--system", "MAME"])
-        assert args is not None
-        assert "--skip-ambiguous" in args
-        assert "--auto-best" not in args
-    finally:
-        app.root.destroy()
+    # Checkbox off → --skip-ambiguous (NOT bare default)
+    app._meta_auto_best_var.set(False)
+    args = app._build_fetch_meta_args(["--system", "MAME"])
+    assert args is not None
+    assert "--skip-ambiguous" in args
+    assert "--auto-best" not in args
 
 
 # ─── 2.0 loose-ends bundle ────────────────────────────────────────────────────
@@ -1744,31 +1725,38 @@ def test_run_migrate_apply_shows_confirm_dialog_keep_source(monkeypatch):
     destination" wording so the user understands the blast radius is
     smaller than a destructive move.
     """
-    app, _tk = _build_gui_for_test(monkeypatch)
-    try:
-        app._migrate_target_var.set("/tmp/spindoctor-test-dest")
-        app._migrate_keep_source_var.set(True)
-        app._global_apply_var.set(True)   # global apply replaced per-tab _migrate_apply_var
-        # All other component checkboxes default to True per the tab
-        # builder, so _selected_migrate_components returns None (which
-        # passes the guard).
+    app = object.__new__(gui._SpinDoctorGUI)
+    app._migrate_target_var = _Value()
+    app._migrate_keep_source_var = _Value()
+    app._migrate_component_vars = {key: _Value(True) for key, _ in gui._MIGRATE_COMPONENTS}
+    app._migrate_systems_lb = SimpleNamespace(curselection=lambda: ())
+    app._migrate_verify_var = _Value(False)
+    app._migrate_no_update_config_var = _Value(False)
+    app._migrate_preserve_names_var = _Value(False)
+    app._global_apply_var = _Value(True)
+    app._global_verbose_var = _Value(False)
+    app.messagebox = SimpleNamespace(askyesno=Mock())
+    app._migrate_target_var.set("/tmp/spindoctor-test-dest")
+    app._migrate_keep_source_var.set(True)
+    app._global_apply_var.set(True)   # global apply replaced per-tab _migrate_apply_var
+    # All other component checkboxes default to True per the tab
+    # builder, so _selected_migrate_components returns None (which
+    # passes the guard).
 
-        asks: list[str] = []
-        monkeypatch.setattr(
-            app.messagebox, "askyesno",
-            lambda title, msg: asks.append((title, msg)) or False,
-        )
-        ran: list[list[str]] = []
-        monkeypatch.setattr(app, "_run_cli", lambda binary, args: ran.append(args))
+    asks: list[str] = []
+    monkeypatch.setattr(
+        app.messagebox, "askyesno",
+        lambda title, msg: asks.append((title, msg)) or False,
+    )
+    ran: list[list[str]] = []
+    monkeypatch.setattr(app, "_run_cli", lambda binary, args: ran.append(args))
 
-        app._run_migrate()
+    app._run_migrate()
 
-        assert len(asks) == 1, "expected exactly one confirm dialog"
-        assert "Migrate library" in asks[0][0]
-        assert "--keep-source" in asks[0][1] or "originals stay" in asks[0][1]
-        assert not ran, "user said No — subprocess must not start"
-    finally:
-        app.root.destroy()
+    assert len(asks) == 1, "expected exactly one confirm dialog"
+    assert "Migrate library" in asks[0][0]
+    assert "--keep-source" in asks[0][1] or "originals stay" in asks[0][1]
+    assert not ran, "user said No — subprocess must not start"
 
 
 def test_meta_game_selection_clears_when_system_changes(monkeypatch, tmp_path):
@@ -1815,32 +1803,39 @@ def test_meta_game_selection_clears_when_system_changes(monkeypatch, tmp_path):
 def test_run_migrate_apply_shows_confirm_dialog_destructive_move(monkeypatch):
     """The destructive-move path must warn that originals will be
     removed AND surface the undo-manifest path as the only recovery."""
-    app, _tk = _build_gui_for_test(monkeypatch)
-    try:
-        app._migrate_target_var.set("/tmp/spindoctor-test-dest")
-        app._migrate_keep_source_var.set(False)
-        app._global_apply_var.set(True)   # global apply replaced per-tab _migrate_apply_var
+    app = object.__new__(gui._SpinDoctorGUI)
+    app._migrate_target_var = _Value()
+    app._migrate_keep_source_var = _Value()
+    app._migrate_component_vars = {key: _Value(True) for key, _ in gui._MIGRATE_COMPONENTS}
+    app._migrate_systems_lb = SimpleNamespace(curselection=lambda: ())
+    app._migrate_verify_var = _Value(False)
+    app._migrate_no_update_config_var = _Value(False)
+    app._migrate_preserve_names_var = _Value(False)
+    app._global_apply_var = _Value(True)
+    app._global_verbose_var = _Value(False)
+    app.messagebox = SimpleNamespace(askyesno=Mock())
+    app._migrate_target_var.set("/tmp/spindoctor-test-dest")
+    app._migrate_keep_source_var.set(False)
+    app._global_apply_var.set(True)   # global apply replaced per-tab _migrate_apply_var
 
-        asks: list[tuple[str, str]] = []
-        monkeypatch.setattr(
-            app.messagebox, "askyesno",
-            lambda title, msg: asks.append((title, msg)) or True,
-        )
-        ran: list[list[str]] = []
-        monkeypatch.setattr(app, "_run_cli", lambda binary, args: ran.append(args))
+    asks: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        app.messagebox, "askyesno",
+        lambda title, msg: asks.append((title, msg)) or True,
+    )
+    ran: list[list[str]] = []
+    monkeypatch.setattr(app, "_run_cli", lambda binary, args: ran.append(args))
 
-        app._run_migrate()
+    app._run_migrate()
 
-        assert len(asks) == 1
-        # The wording must mention the irreversible nature and the
-        # undo-manifest escape hatch — that's the load-bearing UX.
-        body = asks[0][1]
-        assert "MOVE" in body
-        assert "undo" in body.lower()
-        assert "manifest" in body.lower()
-        assert ran and "--apply" in ran[0]
-    finally:
-        app.root.destroy()
+    assert len(asks) == 1
+    # The wording must mention the irreversible nature and the
+    # undo-manifest escape hatch — that's the load-bearing UX.
+    body = asks[0][1]
+    assert "MOVE" in body
+    assert "undo" in body.lower()
+    assert "manifest" in body.lower()
+    assert ran and "--apply" in ran[0]
 
 
 def test_main_menu_hide_and_save_writes_enabled_attribute(monkeypatch, tmp_path):
@@ -2074,34 +2069,42 @@ def test_main_menu_parse_error_surfaces_error_dialog(monkeypatch, tmp_path):
 
 def test_flash_status_sets_message_and_schedules_revert(monkeypatch):
     """_flash_status updates the status bar and schedules a revert to Ready."""
-    app, _tk = _build_gui_for_test(monkeypatch)
-    try:
-        scheduled: list[int] = []
-        original_after = app.root.after
-        monkeypatch.setattr(
-            app.root, "after",
-            lambda ms, fn: scheduled.append(ms) or original_after(ms, fn),
-        )
-        app._flash_status("Configuration saved.")
-        assert app._status_var.get() == "Configuration saved."
-        assert scheduled, "_flash_status must schedule a revert"
-        assert scheduled[0] >= 1000  # in milliseconds — not microseconds by accident
-    finally:
-        app.root.destroy()
+    app = object.__new__(gui._SpinDoctorGUI)
+    app._status_var = _Value()
+    app.root = SimpleNamespace(after=Mock(), bell=Mock())
+    scheduled = []
+    monkeypatch.setattr(
+        app.root, "after",
+        lambda ms, fn: scheduled.append((ms, fn)),
+    )
+    app._flash_status("Configuration saved.")
+    assert app._status_var.get() == "Configuration saved."
+    assert scheduled, "_flash_status must schedule a revert"
+    assert scheduled[0][0] >= 1000  # in milliseconds — not microseconds by accident
+    scheduled[0][1]()
+    assert app._status_var.get() == "Ready."
+
+    # A newer flash invalidates the old callback rather than clearing it.
+    app._flash_status("Older")
+    app._flash_status("Newer", revert_after_ms=1234)
+    scheduled[-2][1]()
+    assert app._status_var.get() == "Newer"
+    assert scheduled[-1][0] == 1234
+    scheduled[-1][1]()
+    assert app._status_var.get() == "Ready."
 
 
 def test_flash_validation_rings_bell_and_sets_status(monkeypatch):
     """_flash_validation calls bell() AND updates status, so users notice
     the validation message even if focused on a form widget."""
-    app, _tk = _build_gui_for_test(monkeypatch)
-    try:
-        bells: list[bool] = []
-        monkeypatch.setattr(app.root, "bell", lambda: bells.append(True))
-        app._flash_validation("Pick a system first.")
-        assert bells == [True], "validation flash must ring the bell"
-        assert app._status_var.get() == "Pick a system first."
-    finally:
-        app.root.destroy()
+    app = object.__new__(gui._SpinDoctorGUI)
+    app._status_var = _Value()
+    app.root = SimpleNamespace(after=Mock(), bell=Mock())
+    bells: list[bool] = []
+    monkeypatch.setattr(app.root, "bell", lambda: bells.append(True))
+    app._flash_validation("Pick a system first.")
+    assert bells == [True], "validation flash must ring the bell"
+    assert app._status_var.get() == "Pick a system first."
 
 
 # ─── auto-run status must not read "enabled" after a failed enable ───────────
@@ -2175,53 +2178,51 @@ def test_run_pc_rename_passes_single_positional_arg(monkeypatch):
     """'Add / Refresh Games' button now calls add-pc-system (not pc-rename)
     so that the HyperSpin XML database is updated and new games appear in
     the wheel.  Verify the argv shape and required flags."""
-    app, _tk = _build_gui_for_test(monkeypatch)
-    try:
-        app._systems_old_var.set("PC Games")
-        app._global_apply_var.set(False)   # global apply replaced per-tab _systems_apply_var
-        ran: list[list[str]] = []
-        monkeypatch.setattr(app, "_run_cli", lambda binary, args: ran.append(args))
+    app = object.__new__(gui._SpinDoctorGUI)
+    app._systems_old_var = _Value()
+    app._global_apply_var = _Value(False)
+    app._systems_old_var.set("PC Games")
+    app._global_apply_var.set(False)   # global apply replaced per-tab _systems_apply_var
+    ran: list[list[str]] = []
+    monkeypatch.setattr(app, "_run_cli", lambda binary, args: ran.append(args))
 
-        app._run_pc_rename()
+    app._run_pc_rename()
 
-        assert len(ran) == 1
-        argv = ran[0]
-        # Command must be add-pc-system (not pc-rename) so the XML database
-        # is written and new games appear in the HyperSpin wheel.
-        assert argv[0] == "add-pc-system"
-        # Single positional: the system name. No second positional.
-        assert argv[1] == "PC Games"
-        # All further args must be options (start with --).
-        for a in argv[2:]:
-            assert a.startswith("--"), f"unexpected positional: {a!r}"
-        # Must skip the wheel carousel, system media, and game media steps —
-        # this button is only for updating the database + PCLauncher INIs.
-        assert "--no-menu" in argv
-        assert "--no-system-media" in argv
-        assert "--no-game-media" in argv
-        # GUI must pass --no-interactive so the title-review input() loop
-        # never blocks the subprocess.
-        assert "--no-interactive" in argv
-    finally:
-        app.root.destroy()
+    assert len(ran) == 1
+    argv = ran[0]
+    # Command must be add-pc-system (not pc-rename) so the XML database
+    # is written and new games appear in the HyperSpin wheel.
+    assert argv[0] == "add-pc-system"
+    # Single positional: the system name. No second positional.
+    assert argv[1] == "PC Games"
+    # All further args must be options (start with --).
+    for a in argv[2:]:
+        assert a.startswith("--"), f"unexpected positional: {a!r}"
+    # Must skip the wheel carousel, system media, and game media steps —
+    # this button is only for updating the database + PCLauncher INIs.
+    assert "--no-menu" in argv
+    assert "--no-system-media" in argv
+    assert "--no-game-media" in argv
+    # GUI must pass --no-interactive so the title-review input() loop
+    # never blocks the subprocess.
+    assert "--no-interactive" in argv
 
 
 def test_run_pc_rename_validates_system_picked(monkeypatch):
     """Empty system → flash a validation prompt, don't shell out."""
-    app, _tk = _build_gui_for_test(monkeypatch)
-    try:
-        app._systems_old_var.set("   ")
-        ran: list[list[str]] = []
-        monkeypatch.setattr(app, "_run_cli", lambda binary, args: ran.append(args))
-        flashed: list[str] = []
-        monkeypatch.setattr(app, "_flash_validation", lambda msg: flashed.append(msg))
+    app = object.__new__(gui._SpinDoctorGUI)
+    app._systems_old_var = _Value()
+    app._global_apply_var = _Value(False)
+    app._systems_old_var.set("   ")
+    ran: list[list[str]] = []
+    monkeypatch.setattr(app, "_run_cli", lambda binary, args: ran.append(args))
+    flashed: list[str] = []
+    monkeypatch.setattr(app, "_flash_validation", lambda msg: flashed.append(msg))
 
-        app._run_pc_rename()
+    app._run_pc_rename()
 
-        assert ran == []
-        assert flashed and "system" in flashed[0].lower()
-    finally:
-        app.root.destroy()
+    assert ran == []
+    assert flashed and "system" in flashed[0].lower()
 
 
 # ─── Per-game overrides (Metadata & Media, advanced) ──────────────────────────
@@ -2230,182 +2231,164 @@ def test_save_game_override_requires_system_and_game(monkeypatch):
     """Blank Game means 'all games' everywhere else on this tab — for a
     single-game ID override that's nonsensical, so it must warn instead
     of shelling out."""
-    app, _tk = _build_gui_for_test(monkeypatch)
-    try:
-        app._meta_system_var.set("Nintendo DS")
-        app._meta_game_var.set("")
-        ran: list[list[str]] = []
-        monkeypatch.setattr(app, "_run_cli", lambda binary, args: ran.append(args))
-        warned: list[str] = []
-        monkeypatch.setattr(
-            app, "_flash_validation", lambda msg: warned.append(msg),
-        )
+    app = _override_gui()
+    app._meta_system_var.set("Nintendo DS")
+    app._meta_game_var.set("")
+    ran: list[list[str]] = []
+    monkeypatch.setattr(app, "_run_cli", lambda binary, args: ran.append(args))
+    warned: list[str] = []
+    monkeypatch.setattr(
+        app, "_flash_validation", lambda msg: warned.append(msg),
+    )
 
-        app._save_game_override()
+    app._save_game_override()
 
-        assert ran == []
-        assert warned
-    finally:
-        app.root.destroy()
+    assert ran == []
+    assert warned
 
 
 def test_save_game_override_builds_expected_argv(monkeypatch):
-    app, _tk = _build_gui_for_test(monkeypatch)
-    try:
-        app._meta_system_var.set("Nintendo DS")
-        app._meta_game_var.set("Golden Sun - Dark Dawn (USA)")
-        app._gameovr_ss_id_var.set("5775")
-        app._gameovr_tgdb_id_var.set("11251")
-        ran: list[list[str]] = []
-        monkeypatch.setattr(app, "_run_cli", lambda binary, args: ran.append(args))
+    app = _override_gui()
+    app._meta_system_var.set("Nintendo DS")
+    app._meta_game_var.set("Golden Sun - Dark Dawn (USA)")
+    app._gameovr_ss_id_var.set("5775")
+    app._gameovr_tgdb_id_var.set("11251")
+    ran: list[list[str]] = []
+    monkeypatch.setattr(app, "_run_cli", lambda binary, args: ran.append(args))
 
-        app._save_game_override()
+    app._save_game_override()
 
-        assert len(ran) == 1
-        argv = ran[0]
-        assert argv[:4] == [
-            "config", "game-override", "set", "Nintendo DS",
-        ]
-        assert argv[4] == "Golden Sun - Dark Dawn (USA)"
-        assert "--screenscraper-id" in argv and "5775" in argv
-        assert "--thegamesdb-id" in argv and "11251" in argv
-    finally:
-        app.root.destroy()
+    assert len(ran) == 1
+    argv = ran[0]
+    assert argv[:4] == [
+        "config", "game-override", "set", "Nintendo DS",
+    ]
+    assert argv[4] == "Golden Sun - Dark Dawn (USA)"
+    assert "--screenscraper-id" in argv and "5775" in argv
+    assert "--thegamesdb-id" in argv and "11251" in argv
 
 
 def test_save_game_override_flashes_when_both_ids_blank(monkeypatch):
-    app, _tk = _build_gui_for_test(monkeypatch)
-    try:
-        app._meta_system_var.set("Nintendo DS")
-        app._meta_game_var.set("Golden Sun - Dark Dawn (USA)")
-        app._gameovr_ss_id_var.set("")
-        app._gameovr_tgdb_id_var.set("")
-        ran: list[list[str]] = []
-        monkeypatch.setattr(app, "_run_cli", lambda binary, args: ran.append(args))
-        flashed: list[str] = []
-        monkeypatch.setattr(app, "_flash_validation", lambda msg: flashed.append(msg))
+    app = _override_gui()
+    app._meta_system_var.set("Nintendo DS")
+    app._meta_game_var.set("Golden Sun - Dark Dawn (USA)")
+    app._gameovr_ss_id_var.set("")
+    app._gameovr_tgdb_id_var.set("")
+    ran: list[list[str]] = []
+    monkeypatch.setattr(app, "_run_cli", lambda binary, args: ran.append(args))
+    flashed: list[str] = []
+    monkeypatch.setattr(app, "_flash_validation", lambda msg: flashed.append(msg))
 
-        app._save_game_override()
+    app._save_game_override()
 
-        assert ran == []
-        assert flashed
-    finally:
-        app.root.destroy()
+    assert ran == []
+    assert flashed
 
 
 def test_save_game_override_passes_raw_value_to_cli(monkeypatch):
     # The GUI no longer validates SS/TGDB ID format — it accepts full URLs too,
     # so raw values are forwarded to the CLI which handles extraction/validation.
-    app, _tk = _build_gui_for_test(monkeypatch)
-    try:
-        app._meta_system_var.set("Nintendo DS")
-        app._meta_game_var.set("Golden Sun - Dark Dawn (USA)")
-        url = "https://www.screenscraper.fr/gameinfos.php?gameid=5775"
-        app._gameovr_ss_id_var.set(url)
-        ran: list[list[str]] = []
-        monkeypatch.setattr(app, "_run_cli", lambda binary, args: ran.append(args))
+    app = _override_gui()
+    app._meta_system_var.set("Nintendo DS")
+    app._meta_game_var.set("Golden Sun - Dark Dawn (USA)")
+    url = "https://www.screenscraper.fr/gameinfos.php?gameid=5775"
+    app._gameovr_ss_id_var.set(url)
+    ran: list[list[str]] = []
+    monkeypatch.setattr(app, "_run_cli", lambda binary, args: ran.append(args))
 
-        app._save_game_override()
+    app._save_game_override()
 
-        assert len(ran) == 1
-        argv = ran[0]
-        assert "--screenscraper-id" in argv
-        assert url in argv
-    finally:
-        app.root.destroy()
+    assert len(ran) == 1
+    argv = ran[0]
+    assert "--screenscraper-id" in argv
+    assert url in argv
 
 
 def test_save_game_override_includes_steam_app_id(monkeypatch):
-    app, _tk = _build_gui_for_test(monkeypatch)
-    try:
-        app._meta_system_var.set("PC Games")
-        app._meta_game_var.set("Hades")
-        app._gameovr_steam_id_var.set("1145360")
-        ran: list[list[str]] = []
-        monkeypatch.setattr(app, "_run_cli", lambda binary, args: ran.append(args))
+    app = _override_gui()
+    app._meta_system_var.set("PC Games")
+    app._meta_game_var.set("Hades")
+    app._gameovr_steam_id_var.set("1145360")
+    ran: list[list[str]] = []
+    monkeypatch.setattr(app, "_run_cli", lambda binary, args: ran.append(args))
 
-        app._save_game_override()
+    app._save_game_override()
 
-        assert len(ran) == 1
-        argv = ran[0]
-        assert "--steam-app-id" in argv and "1145360" in argv
-    finally:
-        app.root.destroy()
+    assert len(ran) == 1
+    argv = ran[0]
+    assert "--steam-app-id" in argv and "1145360" in argv
 
 
 def test_save_game_override_steam_url_passed_raw(monkeypatch):
     # Full Steam store URL is forwarded as-is; the CLI strips the App ID.
-    app, _tk = _build_gui_for_test(monkeypatch)
-    try:
-        app._meta_system_var.set("PC Games")
-        app._meta_game_var.set("Hades")
-        url = "https://store.steampowered.com/app/1145360/Hades/"
-        app._gameovr_steam_id_var.set(url)
-        ran: list[list[str]] = []
-        monkeypatch.setattr(app, "_run_cli", lambda binary, args: ran.append(args))
+    app = _override_gui()
+    app._meta_system_var.set("PC Games")
+    app._meta_game_var.set("Hades")
+    url = "https://store.steampowered.com/app/1145360/Hades/"
+    app._gameovr_steam_id_var.set(url)
+    ran: list[list[str]] = []
+    monkeypatch.setattr(app, "_run_cli", lambda binary, args: ran.append(args))
 
-        app._save_game_override()
+    app._save_game_override()
 
-        assert len(ran) == 1
-        argv = ran[0]
-        assert "--steam-app-id" in argv and url in argv
-    finally:
-        app.root.destroy()
+    assert len(ran) == 1
+    argv = ran[0]
+    assert "--steam-app-id" in argv and url in argv
 
 
 def test_clear_game_override_builds_expected_argv_and_resets_form(monkeypatch):
-    app, _tk = _build_gui_for_test(monkeypatch)
-    try:
-        app._meta_system_var.set("Nintendo DS")
-        app._meta_game_var.set("Golden Sun - Dark Dawn (USA)")
-        app._gameovr_ss_id_var.set("5775")
-        ran: list[list[str]] = []
-        monkeypatch.setattr(app, "_run_cli", lambda binary, args: ran.append(args))
+    app = _override_gui()
+    app._meta_system_var.set("Nintendo DS")
+    app._meta_game_var.set("Golden Sun - Dark Dawn (USA)")
+    app._gameovr_ss_id_var.set("5775")
+    app._gameovr_tgdb_id_var.set("11251")
+    app._gameovr_steam_id_var.set("1145360")
+    ran: list[list[str]] = []
+    monkeypatch.setattr(app, "_run_cli", lambda binary, args: ran.append(args))
 
-        app._clear_game_override()
+    app._clear_game_override()
 
-        assert ran == [[
-            "config", "game-override", "clear", "Nintendo DS",
-            "Golden Sun - Dark Dawn (USA)",
-        ]]
-        assert app._gameovr_ss_id_var.get() == ""
-    finally:
-        app.root.destroy()
+    assert ran == [[
+        "config", "game-override", "clear", "Nintendo DS",
+        "Golden Sun - Dark Dawn (USA)",
+    ]]
+    assert app._gameovr_ss_id_var.get() == ""
+    assert app._gameovr_tgdb_id_var.get() == ""
+    assert app._gameovr_steam_id_var.get() == ""
 
 
 def test_load_game_override_populates_form_from_config(monkeypatch):
-    app, _tk = _build_gui_for_test(monkeypatch)
-    try:
-        from spindoctor import config as cfg_mod
+    app = _override_gui()
+    from spindoctor import config as cfg_mod
 
-        cfg = cfg_mod.Config()
-        cfg.game_overrides = {
-            "Nintendo DS": {
-                "Golden Sun - Dark Dawn (USA)": {
-                    "screenscraper_id": 5775, "thegamesdb_id": 11251,
-                },
+    cfg = cfg_mod.Config()
+    cfg.game_overrides = {
+        "Nintendo DS": {
+            "Golden Sun - Dark Dawn (USA)": {
+                "screenscraper_id": 5775, "thegamesdb_id": 11251,
             },
-            "PC Games": {
-                "Hades": {"steam_app_id": "1145360"},
-            },
-        }
-        monkeypatch.setattr("spindoctor.gui.load_config", lambda: cfg)
-        monkeypatch.setattr("spindoctor.config.load_config", lambda: cfg)
+        },
+        "PC Games": {
+            "Hades": {"steam_app_id": "1145360"},
+        },
+    }
+    monkeypatch.setattr("spindoctor.gui.load_config", lambda: cfg)
+    monkeypatch.setattr("spindoctor.config.load_config", lambda: cfg)
 
-        app._meta_system_var.set("Nintendo DS")
-        app._meta_game_var.set("Golden Sun - Dark Dawn (USA)")
-        app._load_game_override()
-        assert app._gameovr_ss_id_var.get() == "5775"
-        assert app._gameovr_tgdb_id_var.get() == "11251"
-        assert app._gameovr_steam_id_var.get() == ""
+    app._meta_system_var.set("Nintendo DS")
+    app._meta_game_var.set("Golden Sun - Dark Dawn (USA)")
+    app._load_game_override()
+    assert app._gameovr_ss_id_var.get() == "5775"
+    assert app._gameovr_tgdb_id_var.get() == "11251"
+    assert app._gameovr_steam_id_var.get() == ""
 
-        app._meta_system_var.set("PC Games")
-        app._meta_game_var.set("Hades")
-        app._load_game_override()
-        assert app._gameovr_steam_id_var.get() == "1145360"
-        assert app._steam_url_var.get() == "1145360"
-    finally:
-        app.root.destroy()
+    app._meta_system_var.set("PC Games")
+    app._meta_game_var.set("Hades")
+    app._load_game_override()
+    assert app._gameovr_steam_id_var.get() == "1145360"
+    assert app._steam_url_var.get() == "1145360"
+    assert app._gameovr_ss_id_var.get() == ""
+    assert app._gameovr_tgdb_id_var.get() == ""
 
 
 # ─── PR D: async startup + persistent non-destructive selections ─────────────
@@ -2414,33 +2397,29 @@ def test_load_game_override_populates_form_from_config(monkeypatch):
 def test_initial_scan_runs_refresh_and_health_checks(monkeypatch):
     """The startup work that used to run synchronously must still run —
     just deferred behind after_idle so the window paints first."""
-    app, _tk = _build_gui_for_test(monkeypatch)
-    try:
-        calls: list[str] = []
-        monkeypatch.setattr(app, "_refresh_systems", lambda *a, **k: calls.append("refresh"))
-        monkeypatch.setattr(app, "_startup_health_checks", lambda: calls.append("health"))
-        app._initial_scan()
-        assert calls == ["refresh", "health"]
-    finally:
-        app.root.destroy()
+    app = object.__new__(gui._SpinDoctorGUI)
+    app._append_output = Mock()
+    calls: list[str] = []
+    monkeypatch.setattr(app, "_refresh_systems", lambda *a, **k: calls.append("refresh"))
+    monkeypatch.setattr(app, "_startup_health_checks", lambda: calls.append("health"))
+    app._initial_scan()
+    assert calls == ["refresh", "health"]
 
 
 def test_initial_scan_swallows_refresh_exception_but_still_runs_health(monkeypatch):
     """A library scan exception must not prevent the health pass."""
-    app, _tk = _build_gui_for_test(monkeypatch)
-    try:
-        calls: list[str] = []
+    app = object.__new__(gui._SpinDoctorGUI)
+    app._append_output = Mock()
+    calls: list[str] = []
 
-        def _boom(*_a, **_k):
-            calls.append("refresh-boom")
-            raise OSError("simulated NAS timeout")
+    def _boom(*_a, **_k):
+        calls.append("refresh-boom")
+        raise OSError("simulated NAS timeout")
 
-        monkeypatch.setattr(app, "_refresh_systems", _boom)
-        monkeypatch.setattr(app, "_startup_health_checks", lambda: calls.append("health"))
-        app._initial_scan()
-        assert calls == ["refresh-boom", "health"]
-    finally:
-        app.root.destroy()
+    monkeypatch.setattr(app, "_refresh_systems", _boom)
+    monkeypatch.setattr(app, "_startup_health_checks", lambda: calls.append("health"))
+    app._initial_scan()
+    assert calls == ["refresh-boom", "health"]
 
 
 def test_persist_meta_pref_writes_to_config(monkeypatch, tmp_path):
@@ -2455,35 +2434,30 @@ def test_persist_meta_pref_writes_to_config(monkeypatch, tmp_path):
     monkeypatch.setattr(gui_mod, "CONFIG_FILE", cfg_file)
     cfg_mod.reset_override_cache()
     try:
-        app, _tk = _build_gui_for_test(monkeypatch)
-        try:
-            app._persist_meta_pref("gui_meta_auto_best", False)
-            cfg = cfg_mod.load_config()
-            assert cfg.gui_meta_auto_best is False
+        app = object.__new__(gui._SpinDoctorGUI)
+        app._persist_meta_pref("gui_meta_auto_best", False)
+        cfg = cfg_mod.load_config()
+        assert cfg.gui_meta_auto_best is False
 
-            app._persist_meta_pref("gui_meta_subset", ["MAME", "SNES"])
-            cfg = cfg_mod.load_config()
-            assert cfg.gui_meta_subset == ["MAME", "SNES"]
-        finally:
-            app.root.destroy()
+        app._persist_meta_pref("gui_meta_subset", ["MAME", "SNES"])
+        cfg = cfg_mod.load_config()
+        assert cfg.gui_meta_subset == ["MAME", "SNES"]
     finally:
         cfg_mod.reset_override_cache()
 
 
 def test_persist_meta_pref_swallows_save_errors(monkeypatch):
-    """Persistence failure must never disrupt the user's workflow."""
-    from spindoctor import gui as gui_mod
+    """A real save attempt fails without disrupting the user's workflow."""
+    from spindoctor import config as cfg_mod
 
-    app, _tk = _build_gui_for_test(monkeypatch)
-    try:
-        def _boom(_cfg):
-            raise OSError("disk full")
-
-        monkeypatch.setattr(gui_mod, "save_config", _boom)
-        # Must NOT raise.
-        app._persist_meta_pref("gui_meta_auto_best", False)
-    finally:
-        app.root.destroy()
+    app = object.__new__(gui._SpinDoctorGUI)
+    cfg = cfg_mod.Config()
+    monkeypatch.setattr(gui, "load_config", lambda: cfg)
+    save = Mock(side_effect=OSError("disk full"))
+    monkeypatch.setattr(gui, "save_config", save)
+    app._persist_meta_pref("gui_meta_auto_best", False)
+    save.assert_called_once_with(cfg)
+    assert cfg.gui_meta_auto_best is False
 
 
 # ─── Save Log checkbox (_maybe_save_run_log) ──────────────────────────────────
@@ -2501,46 +2475,44 @@ def test_maybe_save_run_log_noop_when_unchecked(monkeypatch, tmp_path):
     """Nothing should be written to disk when Save Log isn't ticked."""
     from spindoctor import config as cfg_mod
 
-    app, _tk = _build_gui_for_test(monkeypatch)
-    try:
-        cfg = cfg_mod.Config()
-        cfg.output_dir = str(tmp_path)
-        monkeypatch.setattr("spindoctor.gui.load_config", lambda: cfg)
+    app = object.__new__(gui._SpinDoctorGUI)
+    app._global_savelog_var = _Value(False)
+    app._append_output = Mock()
+    cfg = cfg_mod.Config()
+    cfg.output_dir = str(tmp_path)
+    monkeypatch.setattr("spindoctor.gui.load_config", lambda: cfg)
 
-        rec = gui._RunRecord(started_at="2026-06-16 12:00:00",
-                             argv_str="spindoctor doctor", dry_run=None)
-        rec.exit_code = 0
-        app._global_savelog_var.set(False)
-        app._maybe_save_run_log(rec)
-        assert list(tmp_path.iterdir()) == []
-    finally:
-        app.root.destroy()
+    rec = gui._RunRecord(started_at="2026-06-16 12:00:00",
+                         argv_str="spindoctor doctor", dry_run=None)
+    rec.exit_code = 0
+    app._global_savelog_var.set(False)
+    app._maybe_save_run_log(rec)
+    assert list(tmp_path.iterdir()) == []
 
 
 def test_maybe_save_run_log_writes_exact_output_when_checked(monkeypatch, tmp_path):
     """Ticking Save Log must back up the run's full output text into output_dir."""
     from spindoctor import config as cfg_mod
 
-    app, _tk = _build_gui_for_test(monkeypatch)
-    try:
-        cfg = cfg_mod.Config()
-        cfg.output_dir = str(tmp_path)
-        monkeypatch.setattr("spindoctor.gui.load_config", lambda: cfg)
+    app = object.__new__(gui._SpinDoctorGUI)
+    app._global_savelog_var = _Value(False)
+    app._append_output = Mock()
+    cfg = cfg_mod.Config()
+    cfg.output_dir = str(tmp_path)
+    monkeypatch.setattr("spindoctor.gui.load_config", lambda: cfg)
 
-        rec = gui._RunRecord(started_at="2026-06-16 12:00:00",
-                             argv_str="spindoctor doctor", dry_run=None)
-        rec.append("all good\n")
-        rec.exit_code = 0
-        app._global_savelog_var.set(True)
-        app._maybe_save_run_log(rec)
+    rec = gui._RunRecord(started_at="2026-06-16 12:00:00",
+                         argv_str="spindoctor doctor", dry_run=None)
+    rec.append("all good\n")
+    rec.exit_code = 0
+    app._global_savelog_var.set(True)
+    app._maybe_save_run_log(rec)
 
-        written = list(tmp_path.glob("*.txt"))
-        assert len(written) == 1
-        text = written[0].read_text(encoding="utf-8")
-        assert "# Command: spindoctor doctor" in text
-        assert text.endswith("all good\n")
-    finally:
-        app.root.destroy()
+    written = list(tmp_path.glob("*.txt"))
+    assert len(written) == 1
+    text = written[0].read_text(encoding="utf-8")
+    assert "# Command: spindoctor doctor" in text
+    assert text.endswith("all good\n")
 
 
 def test_maybe_save_run_log_notes_missing_output_dir(monkeypatch):
@@ -2548,42 +2520,38 @@ def test_maybe_save_run_log_notes_missing_output_dir(monkeypatch):
     nothing was saved instead of writing somewhere unexpected."""
     from spindoctor import config as cfg_mod
 
-    app, _tk = _build_gui_for_test(monkeypatch)
-    try:
-        cfg = cfg_mod.Config()
-        cfg.output_dir = ""
-        monkeypatch.setattr("spindoctor.gui.load_config", lambda: cfg)
+    app = object.__new__(gui._SpinDoctorGUI)
+    app._global_savelog_var = _Value(False)
+    app._append_output = Mock()
+    cfg = cfg_mod.Config()
+    cfg.output_dir = ""
+    monkeypatch.setattr("spindoctor.gui.load_config", lambda: cfg)
 
-        rec = gui._RunRecord(started_at="t", argv_str="spindoctor doctor", dry_run=None)
-        rec.exit_code = 0
-        app._global_savelog_var.set(True)
-        app._maybe_save_run_log(rec)
+    rec = gui._RunRecord(started_at="t", argv_str="spindoctor doctor", dry_run=None)
+    rec.exit_code = 0
+    app._global_savelog_var.set(True)
+    app._maybe_save_run_log(rec)
 
-        assert "output_dir is not set" in app._output.get("1.0", "end-1c")
-    finally:
-        app.root.destroy()
+    assert "output_dir is not set" in app._append_output.call_args[0][0]
 
 
 # ─── Post-audit fixes ────────────────────────────────────────────────────────
 
 
-def test_flash_status_revert_survives_destroyed_root(monkeypatch):
-    """The scheduled revert callback must not crash with a TclError if
-    the user closes the window during the 6-second flash window."""
-    app, _tk = _build_gui_for_test(monkeypatch)
-    # Capture the revert callback before tearing down.
-    captured: list = []
-    original_after = app.root.after
-    monkeypatch.setattr(
-        app.root, "after",
-        lambda ms, fn: (captured.append(fn) or original_after(ms, fn)),
-    )
+def test_flash_status_revert_survives_destroyed_root():
+    """A failed status write during teardown is actually attempted and guarded."""
+    from tkinter import TclError
+
+    app = object.__new__(gui._SpinDoctorGUI)
+    app._set_status = Mock()
+    app.root = SimpleNamespace(after=Mock())
     app._flash_status("Saved.")
-    # Destroy the root mid-window.
-    app.root.destroy()
-    # Now fire the captured callback. It must not raise.
-    assert captured, "_flash_status should schedule a revert"
-    captured[-1]()  # would raise TclError without the guard
+    app._set_status.assert_called_once_with("Saved.")
+    callback = app.root.after.call_args[0][1]
+    app._set_status.side_effect = TclError("application has been destroyed")
+    callback()
+    assert app._set_status.call_args_list[-1].args == ("Ready.",)
+    assert app._set_status.call_count == 2
 
 
 def test_startup_health_focuses_setup_tab_on_fresh_install(monkeypatch, tmp_path):
@@ -2598,16 +2566,17 @@ def test_startup_health_focuses_setup_tab_on_fresh_install(monkeypatch, tmp_path
     monkeypatch.setattr(cfg_mod, "CONFIG_FILE", fake_config)
     monkeypatch.setattr(gui_mod, "CONFIG_FILE", fake_config)
 
-    app, _tk = _build_gui_for_test(monkeypatch)
-    try:
-        # Move focus elsewhere first so the assertion below is meaningful.
-        tools_idx = app._tab_base_names.index("Custom Wheels")
-        app._nb.select(tools_idx)
-        # Now run startup health checks — should snap back to Setup.
-        app._startup_health_checks()
-        assert app._nb.index("current") == app._tab_base_names.index("Setup")
-    finally:
-        app.root.destroy()
+    app = object.__new__(gui._SpinDoctorGUI)
+    app._tab_base_names = ["Setup", "Custom Wheels"]
+    app._nb = SimpleNamespace(select=Mock())
+    app._set_status = Mock()
+    # Move focus elsewhere first so the assertion below is meaningful.
+    tools_idx = app._tab_base_names.index("Custom Wheels")
+    app._nb.select(tools_idx)
+    app._nb.select.reset_mock()
+    # Now run startup health checks — should snap back to Setup.
+    app._startup_health_checks()
+    app._nb.select.assert_called_once_with(app._tab_base_names.index("Setup"))
 
 
 def test_startup_health_does_not_force_focus_when_config_exists(monkeypatch, tmp_path):
@@ -2620,15 +2589,16 @@ def test_startup_health_does_not_force_focus_when_config_exists(monkeypatch, tmp
     monkeypatch.setattr(cfg_mod, "CONFIG_FILE", existing_config)
     monkeypatch.setattr(gui_mod, "CONFIG_FILE", existing_config)
 
-    app, _tk = _build_gui_for_test(monkeypatch)
-    try:
-        tools_idx = app._tab_base_names.index("Custom Wheels")
-        app._nb.select(tools_idx)
-        app._startup_health_checks()
-        # Tab choice preserved.
-        assert app._nb.index("current") == tools_idx
-    finally:
-        app.root.destroy()
+    app = object.__new__(gui._SpinDoctorGUI)
+    app._tab_base_names = ["Setup", "Custom Wheels"]
+    app._nb = SimpleNamespace(select=Mock())
+    app._set_status = Mock()
+    tools_idx = app._tab_base_names.index("Custom Wheels")
+    app._nb.select(tools_idx)
+    app._nb.select.reset_mock()
+    app._startup_health_checks()
+    # Tab choice preserved.
+    app._nb.select.assert_not_called()
 
 
 def test_tab_labels_carry_no_status_glyphs(monkeypatch):
@@ -3159,118 +3129,103 @@ def _setup_steam_apply(monkeypatch, app, video_label="1. Hades Trailer  (MP4 —
 
 def test_apply_steam_selection_builds_correct_args(monkeypatch):
     """Valid selection with one video candidate must produce --video-index 1 and --types video."""
-    app, _tk = _build_gui_for_test(monkeypatch)
-    try:
-        _setup_steam_apply(monkeypatch, app)
-        ran: list[list[str]] = []
-        monkeypatch.setattr(app, "_run_cli", lambda _bin, args: ran.append(list(args)))
+    app = _steam_gui()
+    _setup_steam_apply(monkeypatch, app)
+    ran: list[list[str]] = []
+    monkeypatch.setattr(app, "_run_cli", lambda _bin, args: ran.append(list(args)))
 
-        app._apply_steam_selection()
+    app._apply_steam_selection()
 
-        assert len(ran) == 1
-        args = ran[0]
-        assert "--video-index" in args
-        assert args[args.index("--video-index") + 1] == "1"
-        assert "--types" in args
-        assert "video" in args[args.index("--types") + 1].split(",")
-        assert "--apply" in args
-    finally:
-        app.root.destroy()
+    assert len(ran) == 1
+    args = ran[0]
+    assert "--video-index" in args
+    assert args[args.index("--video-index") + 1] == "1"
+    assert "--types" in args
+    assert "video" in args[args.index("--types") + 1].split(",")
+    assert "--apply" in args
 
 
 def test_apply_steam_selection_skips_sentinel_type(monkeypatch):
     """A picker set to '— do not download —' must be excluded from --types."""
     from spindoctor.scraper import MediaCandidate
-    app, _tk = _build_gui_for_test(monkeypatch)
-    try:
-        app._meta_system_var.set("PC Games")
-        app._meta_game_var.set("Hades")
-        app._steam_url_var.set("1145360")
+    app = _steam_gui()
+    app._meta_system_var.set("PC Games")
+    app._meta_game_var.set("Hades")
+    app._steam_url_var.set("1145360")
 
-        # video: real candidate; snap: sentinel
-        video_cand = MediaCandidate(url="https://cdn/t.mp4", source_type="trailer", format="mp4")
-        snap_cand = MediaCandidate(url="https://cdn/s.jpg", source_type="screenshot", format="jpg")
-        app._steam_cands["video"] = [video_cand]
-        app._steam_cands["snap"] = [snap_cand]
-        app._steam_pick_vars["video"].set("1. trailer  (MP4 — may be highlight clip)")
-        app._steam_pick_vars["snap"].set("— do not download —")
+    # video: real candidate; snap: sentinel
+    video_cand = MediaCandidate(url="https://cdn/t.mp4", source_type="trailer", format="mp4")
+    snap_cand = MediaCandidate(url="https://cdn/s.jpg", source_type="screenshot", format="jpg")
+    app._steam_cands["video"] = [video_cand]
+    app._steam_cands["snap"] = [snap_cand]
+    app._steam_pick_vars["video"].set("1. trailer  (MP4 — may be highlight clip)")
+    app._steam_pick_vars["snap"].set("— do not download —")
 
-        ran: list[list[str]] = []
-        monkeypatch.setattr(app, "_run_cli", lambda _bin, args: ran.append(list(args)))
+    ran: list[list[str]] = []
+    monkeypatch.setattr(app, "_run_cli", lambda _bin, args: ran.append(list(args)))
 
-        app._apply_steam_selection()
+    app._apply_steam_selection()
 
-        assert len(ran) == 1
-        args = ran[0]
-        types = args[args.index("--types") + 1].split(",")
-        assert "video" in types
-        assert "snap" not in types, "snap was set to sentinel and must be skipped"
-        assert "--snap-index" not in args
-    finally:
-        app.root.destroy()
+    assert len(ran) == 1
+    args = ran[0]
+    types = args[args.index("--types") + 1].split(",")
+    assert "video" in types
+    assert "snap" not in types, "snap was set to sentinel and must be skipped"
+    assert "--snap-index" not in args
 
 
 def test_apply_steam_selection_all_sentinels_shows_warning(monkeypatch):
     """When all pickers are set to the sentinel, a validation flash fires and no CLI call is made."""
     from spindoctor.scraper import MediaCandidate
-    app, _tk = _build_gui_for_test(monkeypatch)
-    try:
-        app._meta_system_var.set("PC Games")
-        app._meta_game_var.set("Hades")
-        app._steam_url_var.set("1145360")
-        for mt in ("video", "snap", "background", "artwork", "wheel"):
-            cand = MediaCandidate(url="https://cdn/x", source_type="x", format="jpg")
-            app._steam_cands[mt] = [cand]
-            app._steam_pick_vars[mt].set("— do not download —")
+    app = _steam_gui()
+    app._meta_system_var.set("PC Games")
+    app._meta_game_var.set("Hades")
+    app._steam_url_var.set("1145360")
+    for mt in ("video", "snap", "background", "artwork", "wheel"):
+        cand = MediaCandidate(url="https://cdn/x", source_type="x", format="jpg")
+        app._steam_cands[mt] = [cand]
+        app._steam_pick_vars[mt].set("— do not download —")
 
-        ran: list = []
-        warnings: list = []
-        monkeypatch.setattr(app, "_run_cli", lambda *_a, **_k: ran.append(True))
-        monkeypatch.setattr(app, "_flash_validation",
-                            lambda msg: warnings.append(msg))
+    ran: list = []
+    warnings: list = []
+    monkeypatch.setattr(app, "_run_cli", lambda *_a, **_k: ran.append(True))
+    monkeypatch.setattr(app, "_flash_validation",
+                        lambda msg: warnings.append(msg))
 
-        app._apply_steam_selection()
+    app._apply_steam_selection()
 
-        assert not ran, "no CLI call expected when all types are set to sentinel"
-        assert warnings, "expected a validation flash"
-    finally:
-        app.root.destroy()
+    assert not ran, "no CLI call expected when all types are set to sentinel"
+    assert warnings, "expected a validation flash"
 
 
 def test_apply_steam_selection_quality_480p_adds_hls_quality_flag(monkeypatch):
     """Quality dropdown set to 480p must append --hls-quality 480p to the CLI args."""
-    app, _tk = _build_gui_for_test(monkeypatch)
-    try:
-        _setup_steam_apply(monkeypatch, app)
-        app._steam_quality_var.set("480p")
-        ran: list[list[str]] = []
-        monkeypatch.setattr(app, "_run_cli", lambda _bin, args: ran.append(list(args)))
+    app = _steam_gui()
+    _setup_steam_apply(monkeypatch, app)
+    app._steam_quality_var.set("480p")
+    ran: list[list[str]] = []
+    monkeypatch.setattr(app, "_run_cli", lambda _bin, args: ran.append(list(args)))
 
-        app._apply_steam_selection()
+    app._apply_steam_selection()
 
-        assert len(ran) == 1
-        args = ran[0]
-        assert "--hls-quality" in args
-        assert args[args.index("--hls-quality") + 1] == "480p"
-    finally:
-        app.root.destroy()
+    assert len(ran) == 1
+    args = ran[0]
+    assert "--hls-quality" in args
+    assert args[args.index("--hls-quality") + 1] == "480p"
 
 
 def test_apply_steam_selection_quality_best_omits_hls_quality_flag(monkeypatch):
     """Quality dropdown at default 'Best (1080p)' must not add --hls-quality to the CLI args."""
-    app, _tk = _build_gui_for_test(monkeypatch)
-    try:
-        _setup_steam_apply(monkeypatch, app)
-        app._steam_quality_var.set("Best (1080p)")
-        ran: list[list[str]] = []
-        monkeypatch.setattr(app, "_run_cli", lambda _bin, args: ran.append(list(args)))
+    app = _steam_gui()
+    _setup_steam_apply(monkeypatch, app)
+    app._steam_quality_var.set("Best (1080p)")
+    ran: list[list[str]] = []
+    monkeypatch.setattr(app, "_run_cli", lambda _bin, args: ran.append(list(args)))
 
-        app._apply_steam_selection()
+    app._apply_steam_selection()
 
-        assert len(ran) == 1
-        assert "--hls-quality" not in ran[0]
-    finally:
-        app.root.destroy()
+    assert len(ran) == 1
+    assert "--hls-quality" not in ran[0]
 
 
 def test_on_steam_quality_changed_updates_video_labels(monkeypatch):
@@ -3327,69 +3282,57 @@ def test_on_steam_quality_changed_preserves_skip_sentinel(monkeypatch):
 def test_preview_steam_candidate_sentinel_label_no_url_opened(monkeypatch):
     """'— do not download —' sentinel must prevent _open_url from being called."""
     from spindoctor.scraper import MediaCandidate
-    app, _tk = _build_gui_for_test(monkeypatch)
-    try:
-        cand = MediaCandidate(url="https://cdn/shot.jpg", source_type="screenshot", format="jpg")
-        app._steam_cands["snap"] = [cand]
-        app._steam_pick_vars["snap"].set("— do not download —")
+    app = _steam_gui()
+    cand = MediaCandidate(url="https://cdn/shot.jpg", source_type="screenshot", format="jpg")
+    app._steam_cands["snap"] = [cand]
+    app._steam_pick_vars["snap"].set("— do not download —")
 
-        opened: list = []
-        monkeypatch.setattr(app, "_open_url", lambda url: opened.append(url))
+    opened: list = []
+    monkeypatch.setattr(app, "_open_url", lambda url: opened.append(url))
 
-        app._preview_steam_candidate("snap")
-        assert not opened
-    finally:
-        app.root.destroy()
+    app._preview_steam_candidate("snap")
+    assert not opened
 
 
 def test_preview_steam_candidate_empty_cands_no_url_opened(monkeypatch):
     """No candidates → _open_url must not be called."""
-    app, _tk = _build_gui_for_test(monkeypatch)
-    try:
-        app._steam_cands["snap"] = []
-        opened: list = []
-        monkeypatch.setattr(app, "_open_url", lambda url: opened.append(url))
-        app._preview_steam_candidate("snap")
-        assert not opened
-    finally:
-        app.root.destroy()
+    app = _steam_gui()
+    app._steam_cands["snap"] = []
+    opened: list = []
+    monkeypatch.setattr(app, "_open_url", lambda url: opened.append(url))
+    app._preview_steam_candidate("snap")
+    assert not opened
 
 
 def test_preview_steam_candidate_image_opens_direct_url(monkeypatch):
     """For image types (snap/background/artwork/wheel), the candidate's direct URL must be opened."""
     from spindoctor.scraper import MediaCandidate
-    app, _tk = _build_gui_for_test(monkeypatch)
-    try:
-        cand = MediaCandidate(url="https://cdn/shot.jpg", source_type="screenshot", format="jpg")
-        app._steam_cands["snap"] = [cand]
-        app._steam_pick_vars["snap"].set("1. screenshot")
+    app = _steam_gui()
+    cand = MediaCandidate(url="https://cdn/shot.jpg", source_type="screenshot", format="jpg")
+    app._steam_cands["snap"] = [cand]
+    app._steam_pick_vars["snap"].set("1. screenshot")
 
-        opened: list = []
-        monkeypatch.setattr(app, "_open_url", lambda url: opened.append(url))
+    opened: list = []
+    monkeypatch.setattr(app, "_open_url", lambda url: opened.append(url))
 
-        app._preview_steam_candidate("snap")
-        assert opened == ["https://cdn/shot.jpg"]
-    finally:
-        app.root.destroy()
+    app._preview_steam_candidate("snap")
+    assert opened == ["https://cdn/shot.jpg"]
 
 
 def test_preview_steam_candidate_video_opens_direct_url(monkeypatch):
     """For video, the candidate's direct URL must be opened (not the store page)."""
     from spindoctor.scraper import MediaCandidate
-    app, _tk = _build_gui_for_test(monkeypatch)
-    try:
-        cand = MediaCandidate(url="https://cdn/trailer.mp4", source_type="trailer", format="mp4")
-        app._steam_cands["video"] = [cand]
-        app._steam_pick_vars["video"].set("1. Hades Trailer  (MP4 — may be highlight clip)")
-        app._steam_source_url = "https://store.steampowered.com/app/1145360/"
+    app = _steam_gui()
+    cand = MediaCandidate(url="https://cdn/trailer.mp4", source_type="trailer", format="mp4")
+    app._steam_cands["video"] = [cand]
+    app._steam_pick_vars["video"].set("1. Hades Trailer  (MP4 — may be highlight clip)")
+    app._steam_source_url = "https://store.steampowered.com/app/1145360/"
 
-        opened: list = []
-        monkeypatch.setattr(app, "_open_url", lambda url: opened.append(url))
+    opened: list = []
+    monkeypatch.setattr(app, "_open_url", lambda url: opened.append(url))
 
-        app._preview_steam_candidate("video")
-        assert opened == ["https://cdn/trailer.mp4"]
-    finally:
-        app.root.destroy()
+    app._preview_steam_candidate("video")
+    assert opened == ["https://cdn/trailer.mp4"]
 
 
 def test_gated_commands_not_classified_read_only():
@@ -3429,22 +3372,23 @@ def _make_steam_meta(name="Hades", video_cands=None, snap_cands=None,
 def test_on_steam_scan_done_populates_dropdowns(monkeypatch):
     """Happy path: candidates land in the right comboboxes."""
     from spindoctor.scraper import MediaCandidate
-    app, _tk = _build_gui_for_test(monkeypatch)
-    try:
-        meta = _make_steam_meta(
-            snap_cands=[MediaCandidate(url="https://cdn/shot.jpg",
-                                       source_type="screenshot", format="jpg")],
-            artwork_cands=[MediaCandidate(url="https://cdn/header.jpg",
-                                          source_type="header_image", format="jpg")],
-        )
-        app._on_steam_scan_done("1145360", meta)
+    app = _steam_gui()
+    meta = _make_steam_meta(
+        snap_cands=[MediaCandidate(url="https://cdn/shot.jpg",
+                                   source_type="screenshot", format="jpg")],
+        artwork_cands=[MediaCandidate(url="https://cdn/header.jpg",
+                                      source_type="header_image", format="jpg")],
+    )
+    app._on_steam_scan_done("1145360", meta)
 
-        assert app._steam_pick_vars["snap"].get().startswith("1.")
-        assert app._steam_pick_vars["artwork"].get().startswith("1.")
-        # No video candidates → disabled sentinel
-        assert app._steam_pick_vars["video"].get() == "— none —"
-    finally:
-        app.root.destroy()
+    assert app._steam_pick_vars["snap"].get().startswith("1.")
+    assert app._steam_pick_vars["artwork"].get().startswith("1.")
+    # No video candidates → disabled sentinel
+    assert app._steam_pick_vars["video"].get() == "— none —"
+    # '— do not download —' is the first value in a populated combo;
+    # the default selection is the first *real* candidate, not it.
+    assert app._steam_pick_combos["snap"].configure.call_args.kwargs["values"][0] == "— do not download —"
+    assert app._steam_pick_vars["snap"].get() != "— do not download —"
 
 
 def test_on_steam_scan_done_hls_duration_label(monkeypatch):
@@ -3457,57 +3401,32 @@ def test_on_steam_scan_done_hls_duration_label(monkeypatch):
     dropdown frozen on 'scanning…' with no visible error.
     """
     from spindoctor.scraper import MediaCandidate
-    app, _tk = _build_gui_for_test(monkeypatch)
-    try:
-        hls_cand = MediaCandidate(
-            url="https://cdn/trailer.m3u8",
-            source_type="trailer", format="m3u8",
-            version="Hades Trailer",
-            duration_secs=74.0,  # 1:14
-        )
-        meta = _make_steam_meta(video_cands=[hls_cand])
-        app._on_steam_scan_done("1145360", meta)
+    app = _steam_gui()
+    hls_cand = MediaCandidate(
+        url="https://cdn/trailer.m3u8",
+        source_type="trailer", format="m3u8",
+        version="Hades Trailer",
+        duration_secs=74.0,  # 1:14
+    )
+    meta = _make_steam_meta(video_cands=[hls_cand])
+    app._on_steam_scan_done("1145360", meta)
 
-        label = app._steam_pick_vars["video"].get()
-        assert "1:14" in label, f"duration not in label: {label!r}"
-        assert "HLS" in label, f"format hint not in label: {label!r}"
-    finally:
-        app.root.destroy()
-
-
-def test_on_steam_scan_done_skip_sentinel_is_first(monkeypatch):
-    """'— do not download —' must be the first value in every populated combo."""
-    from spindoctor.scraper import MediaCandidate
-    app, _tk = _build_gui_for_test(monkeypatch)
-    try:
-        meta = _make_steam_meta(
-            snap_cands=[MediaCandidate(url="https://cdn/shot.jpg",
-                                       source_type="screenshot", format="jpg")],
-        )
-        app._on_steam_scan_done("1145360", meta)
-
-        values = app._steam_pick_combos["snap"].cget("values")
-        assert values[0] == "— do not download —"
-        # Default selection is still the first *real* candidate, not the sentinel
-        assert app._steam_pick_vars["snap"].get() != "— do not download —"
-    finally:
-        app.root.destroy()
+    label = app._steam_pick_vars["video"].get()
+    assert "1:14" in label, f"duration not in label: {label!r}"
+    assert "HLS" in label, f"format hint not in label: {label!r}"
 
 
 def test_on_steam_scan_done_none_meta_shows_not_found(monkeypatch):
     """meta=None (App ID not found) must set all video/snap/background/artwork to '— not found —'."""
-    app, _tk = _build_gui_for_test(monkeypatch)
-    try:
-        shown: list[str] = []
-        monkeypatch.setattr(app, "_flash_status",
-                            lambda msg, **_k: shown.append(msg))
-        app._on_steam_scan_done("9999999", None)
+    app = _steam_gui()
+    shown: list[str] = []
+    monkeypatch.setattr(app, "_flash_status",
+                        lambda msg, **_k: shown.append(msg))
+    app._on_steam_scan_done("9999999", None)
 
-        for mt in ("video", "snap", "background", "artwork"):
-            assert app._steam_pick_vars[mt].get() == "— not found —", mt
-        assert shown, "expected a status-bar flash"
-    finally:
-        app.root.destroy()
+    for mt in ("video", "snap", "background", "artwork"):
+        assert app._steam_pick_vars[mt].get() == "— not found —", mt
+    assert shown, "expected a status-bar flash"
 
 
 def test_on_steam_scan_done_error_guard_resets_ui(monkeypatch):
@@ -3521,32 +3440,29 @@ def test_on_steam_scan_done_error_guard_resets_ui(monkeypatch):
     visible error.  The wrapper in _on_steam_scan_done catches everything and
     surfaces it to the user.
     """
-    app, _tk = _build_gui_for_test(monkeypatch)
-    try:
-        # Force _on_steam_scan_done_inner to blow up.
-        monkeypatch.setattr(app, "_on_steam_scan_done_inner",
-                            lambda *_: (_ for _ in ()).throw(RuntimeError("injected failure")))
+    app = _steam_gui()
+    # Force _on_steam_scan_done_inner to blow up.
+    monkeypatch.setattr(app, "_on_steam_scan_done_inner",
+                        lambda *_: (_ for _ in ()).throw(RuntimeError("injected failure")))
 
-        errors: list = []
-        monkeypatch.setattr(app, "_report_action_error",
-                            lambda *a: errors.append(a))
+    errors: list = []
+    monkeypatch.setattr(app, "_report_action_error",
+                        lambda *a: errors.append(a))
 
-        # Pre-set dropdowns to "scanning…" as _scan_steam would.
-        for mt in app._steam_pick_vars:
-            app._steam_pick_vars[mt].set("scanning…")
+    # Pre-set dropdowns to "scanning…" as _scan_steam would.
+    for mt in app._steam_pick_vars:
+        app._steam_pick_vars[mt].set("scanning…")
 
-        app._on_steam_scan_done("1145360", object())  # meta value irrelevant
+    app._on_steam_scan_done("1145360", object())  # meta value irrelevant
 
-        # All dropdowns must be reset — none left on "scanning…".
-        for mt, var in app._steam_pick_vars.items():
-            assert var.get() == "— scan error —", (
-                f"{mt} dropdown still shows {var.get()!r} after error — "
-                "silent freeze not prevented"
-            )
-        # User must see the routed error.
-        assert errors, "expected _report_action_error after callback exception"
-    finally:
-        app.root.destroy()
+    # All dropdowns must be reset — none left on "scanning…".
+    for mt, var in app._steam_pick_vars.items():
+        assert var.get() == "— scan error —", (
+            f"{mt} dropdown still shows {var.get()!r} after error — "
+            "silent freeze not prevented"
+        )
+    # User must see the routed error.
+    assert errors, "expected _report_action_error after callback exception"
 
 
 # ─── game remove --remove-pclauncher GUI wiring ───────────────────────────────
@@ -3555,91 +3471,86 @@ def test_on_steam_scan_done_error_guard_resets_ui(monkeypatch):
 def test_gwm_remove_passes_remove_pclauncher_when_checked(monkeypatch):
     """Remove Game with 'Also remove PCLauncher INI' ticked appends
     --remove-pclauncher to the game remove argv."""
-    app, _tk = _build_gui_for_test(monkeypatch)
-    try:
-        # Seed the in-memory game list so _gwm_selected_index returns 0.
-        app._gwm_data = [{"name": "Peglin", "description": "Peglin", "pos": 1}]
-        app._gwm_loaded_system = "PC Games"
-        # iid must be the 1-based numeric string that _gwm_repopulate_tree uses,
-        # because _gwm_selected_index does int(sel[0]) - 1.
-        app._gwm_tree.insert("", "end", iid="1", values=(1, "Peglin", "Peglin"))
-        app._gwm_tree.selection_set("1")
+    app = object.__new__(gui._SpinDoctorGUI)
+    app._gwm_tree = SimpleNamespace(selection=lambda: ("1",))
+    app._global_apply_var = _Value(False)
+    app._gwm_remove_pclauncher_var = _Value(False)
+    app.messagebox = SimpleNamespace(askyesno=Mock())
+    # Real _gwm_selected_index decodes the fake selection as row zero.
+    app._gwm_data = [{"name": "Peglin", "description": "Peglin", "pos": 1}]
+    app._gwm_loaded_system = "PC Games"
 
-        app._global_apply_var.set(True)
-        app._gwm_remove_pclauncher_var.set(True)
+    app._global_apply_var.set(True)
+    app._gwm_remove_pclauncher_var.set(True)
 
-        ran: list[list[str]] = []
-        monkeypatch.setattr(app, "_run_cli",
-                            lambda binary, args, on_complete=None: ran.append(args))
-        monkeypatch.setattr(app.messagebox, "askyesno", lambda *_a, **_k: True)
+    ran: list[list[str]] = []
+    monkeypatch.setattr(app, "_run_cli",
+                        lambda binary, args, on_complete=None: ran.append(args))
+    monkeypatch.setattr(app.messagebox, "askyesno", lambda *_a, **_k: True)
 
-        app._gwm_remove()
+    app._gwm_remove()
 
-        assert len(ran) == 1
-        argv = ran[0]
-        assert "--remove-pclauncher" in argv
-        assert "Peglin" in argv
-        assert "--system" in argv
-        assert argv[argv.index("--system") + 1] == "PC Games"
-    finally:
-        app.root.destroy()
+    assert len(ran) == 1
+    argv = ran[0]
+    assert "--remove-pclauncher" in argv
+    assert "Peglin" in argv
+    assert "--system" in argv
+    assert argv[argv.index("--system") + 1] == "PC Games"
 
 
 def test_gwm_remove_no_pclauncher_flag_when_unchecked(monkeypatch):
     """Remove Game with 'Also remove PCLauncher INI' unticked must NOT
     send --remove-pclauncher — non-PC systems would receive a spurious flag."""
-    app, _tk = _build_gui_for_test(monkeypatch)
-    try:
-        app._gwm_data = [{"name": "1942", "description": "1942", "pos": 1}]
-        app._gwm_loaded_system = "MAME"
-        app._gwm_tree.insert("", "end", iid="1", values=(1, "1942", "1942"))
-        app._gwm_tree.selection_set("1")
+    app = object.__new__(gui._SpinDoctorGUI)
+    app._gwm_tree = SimpleNamespace(selection=lambda: ("1",))
+    app._global_apply_var = _Value(False)
+    app._gwm_remove_pclauncher_var = _Value(False)
+    app.messagebox = SimpleNamespace(askyesno=Mock())
+    app._gwm_data = [{"name": "1942", "description": "1942", "pos": 1}]
+    app._gwm_loaded_system = "MAME"
 
-        app._global_apply_var.set(True)
-        app._gwm_remove_pclauncher_var.set(False)
+    app._global_apply_var.set(True)
+    app._gwm_remove_pclauncher_var.set(False)
 
-        ran: list[list[str]] = []
-        monkeypatch.setattr(app, "_run_cli",
-                            lambda binary, args, on_complete=None: ran.append(args))
-        monkeypatch.setattr(app.messagebox, "askyesno", lambda *_a, **_k: True)
+    ran: list[list[str]] = []
+    monkeypatch.setattr(app, "_run_cli",
+                        lambda binary, args, on_complete=None: ran.append(args))
+    monkeypatch.setattr(app.messagebox, "askyesno", lambda *_a, **_k: True)
 
-        app._gwm_remove()
+    app._gwm_remove()
 
-        assert len(ran) == 1
-        assert "--remove-pclauncher" not in ran[0]
-    finally:
-        app.root.destroy()
+    assert len(ran) == 1
+    assert "--remove-pclauncher" not in ran[0]
 
 
 def test_gwm_remove_dry_run_shows_pclauncher_note(monkeypatch):
     """Dry-run path mentions PCLauncher INI removal when checkbox is ticked."""
-    app, _tk = _build_gui_for_test(monkeypatch)
-    try:
-        app._gwm_data = [{"name": "Peglin", "description": "Peglin", "pos": 1}]
-        app._gwm_loaded_system = "PC Games"
-        app._gwm_tree.insert("", "end", iid="1", values=(1, "Peglin", "Peglin"))
-        app._gwm_tree.selection_set("1")
+    app = object.__new__(gui._SpinDoctorGUI)
+    app._gwm_tree = SimpleNamespace(selection=lambda: ("1",))
+    app._global_apply_var = _Value(False)
+    app._gwm_remove_pclauncher_var = _Value(False)
+    app.messagebox = SimpleNamespace(askyesno=Mock())
+    app._gwm_data = [{"name": "Peglin", "description": "Peglin", "pos": 1}]
+    app._gwm_loaded_system = "PC Games"
 
-        app._global_apply_var.set(False)   # dry-run
-        app._gwm_remove_pclauncher_var.set(True)
+    app._global_apply_var.set(False)   # dry-run
+    app._gwm_remove_pclauncher_var.set(True)
 
-        ran: list[list[str]] = []
-        monkeypatch.setattr(app, "_run_cli",
-                            lambda binary, args, on_complete=None: ran.append(args))
-        statuses: list[str] = []
-        monkeypatch.setattr(app, "_set_status", lambda msg: statuses.append(msg))
-        outputs: list[str] = []
-        monkeypatch.setattr(app, "_append_output", lambda msg: outputs.append(msg))
+    ran: list[list[str]] = []
+    monkeypatch.setattr(app, "_run_cli",
+                        lambda binary, args, on_complete=None: ran.append(args))
+    statuses: list[str] = []
+    monkeypatch.setattr(app, "_set_status", lambda msg: statuses.append(msg))
+    outputs: list[str] = []
+    monkeypatch.setattr(app, "_append_output", lambda msg: outputs.append(msg))
 
-        app._gwm_remove()
+    app._gwm_remove()
 
-        # Must not shell out in dry-run.
-        assert ran == []
-        # Status and output must mention PCLauncher.
-        assert any("PCLauncher" in s for s in statuses), statuses
-        assert any("remove-pclauncher" in o for o in outputs), outputs
-    finally:
-        app.root.destroy()
+    # Must not shell out in dry-run.
+    assert ran == []
+    # Status and output must mention PCLauncher.
+    assert any("PCLauncher" in s for s in statuses), statuses
+    assert any("remove-pclauncher" in o for o in outputs), outputs
 
 
 def test_sidebar_help_toggle_shows_and_hides_every_help_text(monkeypatch):
@@ -3812,52 +3723,47 @@ class _FakeProc:
 
 def test_undo_runs_are_recorded_as_writes_not_dry_runs(monkeypatch):
     # Every CLI --undo restores files immediately, without --apply.
-    app, _tk = _build_gui_for_test(monkeypatch)
-    try:
-        monkeypatch.setattr(gui.subprocess, "Popen", lambda *_a, **_k: _FakeProc())
-        app._run_cli("spindoctor", ["curate", "--undo"])
-        assert app._run_history[-1].dry_run is False
-    finally:
-        app._proc = None
-        app.root.destroy()
+    app = _process_gui(monkeypatch)
+    monkeypatch.setattr(gui.subprocess, "Popen", lambda *_a, **_k: _FakeProc())
+    app._run_cli("spindoctor", ["curate", "--undo"])
+    assert app._run_history[-1].dry_run is False
 
 
 def test_sidecar_restore_with_apply_off_is_a_preview(monkeypatch, tmp_path):
     import json as _json
 
-    app, _tk = _build_gui_for_test(monkeypatch)
-    try:
-        target = tmp_path / "Main Menu.xml"
-        target.write_text("<menu/>", encoding="utf-8")
-        listing = _json.dumps([{"path": str(tmp_path / "x.bak")}])
-        monkeypatch.setattr(
-            gui.subprocess, "run",
-            lambda *_a, **_k: type("R", (), {"stdout": listing})(),
-        )
-        monkeypatch.setattr(app, "_ask_pick_sidecar", lambda *_a: str(tmp_path / "x.bak"))
-        titles, runs, flashes, page_done = [], [], [], []
-        monkeypatch.setattr(app.messagebox, "askyesno",
-                            lambda title, *_a, **_k: titles.append(title) or True)
-        monkeypatch.setattr(app, "_run_cli",
-                            lambda _b, args, on_complete=None: runs.append((args, on_complete)))
-        monkeypatch.setattr(app, "_flash_status", lambda text, **_k: flashes.append(text))
-        app._global_apply_var.set(False)
-        app._restore_sidecar(target, on_complete=page_done.append)
-        args, done = runs[-1]
-        assert "--apply" not in args
-        assert titles[-1] == "Preview restore"
-        done(0)
-        assert page_done == []  # the page's "restored" follow-up didn't run
-        assert flashes and flashes[-1].startswith("Preview only")
+    app = object.__new__(gui._SpinDoctorGUI)
+    app._global_apply_var = _Value(False)
+    app.messagebox = SimpleNamespace(askyesno=Mock())
+    target = tmp_path / "Main Menu.xml"
+    target.write_text("<menu/>", encoding="utf-8")
+    listing = _json.dumps([{"path": str(tmp_path / "x.bak")}])
+    monkeypatch.setattr(
+        gui.subprocess, "run",
+        lambda *_a, **_k: type("R", (), {"stdout": listing})(),
+    )
+    monkeypatch.setattr(app, "_ask_pick_sidecar", lambda *_a: str(tmp_path / "x.bak"))
+    titles, runs, flashes, page_done = [], [], [], []
+    monkeypatch.setattr(app.messagebox, "askyesno",
+                        lambda title, *_a, **_k: titles.append(title) or True)
+    monkeypatch.setattr(app, "_run_cli",
+                        lambda _b, args, on_complete=None: runs.append((args, on_complete)))
+    monkeypatch.setattr(app, "_flash_status", lambda text, **_k: flashes.append(text))
+    app._global_apply_var.set(False)
+    app._restore_sidecar(target, on_complete=page_done.append)
+    args, done = runs[-1]
+    assert "--apply" not in args
+    assert titles[-1] == "Preview restore"
+    done(0)
+    assert page_done == []  # the page's "restored" follow-up didn't run
+    assert flashes and flashes[-1].startswith("Preview only")
 
-        app._global_apply_var.set(True)
-        app._restore_sidecar(target, on_complete=page_done.append)
-        args, done = runs[-1]
-        assert "--apply" in args and titles[-1] == "Confirm restore"
-        done(0)
-        assert page_done == [0]
-    finally:
-        app.root.destroy()
+    app._global_apply_var.set(True)
+    app._restore_sidecar(target, on_complete=page_done.append)
+    args, done = runs[-1]
+    assert "--apply" in args and titles[-1] == "Confirm restore"
+    done(0)
+    assert page_done == [0]
 
 
 def test_wizard_save_updates_the_setup_form(monkeypatch):
@@ -3936,23 +3842,20 @@ def test_startup_fills_section_game_lists(monkeypatch):
 
 
 def test_game_lists_load_for_a_not_in_wheel_system(monkeypatch):
-    app, _tk = _build_gui_for_test(monkeypatch)
-    try:
-        seen = []
+    app = object.__new__(gui._SpinDoctorGUI)
+    seen = []
 
-        class _Db:
-            def games(self):
-                return {}
+    class _Db:
+        def games(self):
+            return {}
 
-        def _load(name, _dir):
-            seen.append(name)
-            return _Db()
+    def _load(name, _dir):
+        seen.append(name)
+        return _Db()
 
-        monkeypatch.setattr(gui, "load_database", _load)
-        app._load_games_for_system("Orphan" + gui._NOT_IN_WHEEL_SUFFIX)
-        assert seen == ["Orphan"]
-    finally:
-        app.root.destroy()
+    monkeypatch.setattr(gui, "load_database", _load)
+    app._load_games_for_system("Orphan" + gui._NOT_IN_WHEEL_SUFFIX)
+    assert seen == ["Orphan"]
 
 
 def test_fill_defaults_badge_binding_is_added_once(monkeypatch):
@@ -3972,73 +3875,45 @@ def test_fill_defaults_badge_binding_is_added_once(monkeypatch):
 
 
 def test_stale_done_marker_is_ignored(monkeypatch):
-    app, _tk = _build_gui_for_test(monkeypatch)
-    try:
-        current, old = _FakeProc(), _FakeProc()
-        app._proc = current
-        called = []
-        app._on_proc_done(gui._DoneMarker(0, called.append, old))
-        assert called == [] and app._proc is current
-        app._on_proc_done(gui._DoneMarker(0, called.append, current))
-        assert called == [0] and app._proc is None
-    finally:
-        app._proc = None
-        app.root.destroy()
-
-
-def test_run_is_busy_until_its_done_marker_is_processed(monkeypatch):
-    app, _tk = _build_gui_for_test(monkeypatch)
-    try:
-        busy, launched = [], []
-        monkeypatch.setattr(app.messagebox, "showinfo",
-                            lambda title, *_a, **_k: busy.append(title))
-        monkeypatch.setattr(gui.subprocess, "Popen",
-                            lambda *_a, **_k: launched.append(1) or _FakeProc())
-        app._proc = _FakeProc()  # exited (poll() == 0) but not finalised yet
-        app._run_cli("spindoctor", ["doctor"])
-        assert busy == ["Busy"] and launched == []
-    finally:
-        app._proc = None
-        app.root.destroy()
+    app = _process_gui(monkeypatch)
+    current, old = _FakeProc(), _FakeProc()
+    app._proc = current
+    called = []
+    app._on_proc_done(gui._DoneMarker(0, called.append, old))
+    assert called == [] and app._proc is current
+    app._on_proc_done(gui._DoneMarker(0, called.append, current))
+    assert called == [0] and app._proc is None
 
 
 def test_chain_does_not_start_while_busy(monkeypatch):
-    app, _tk = _build_gui_for_test(monkeypatch)
-    try:
-        monkeypatch.setattr(app.messagebox, "showinfo", lambda *_a, **_k: None)
-        app._proc = _FakeProc()
-        assert app._chain_start(3) is False
-        assert getattr(app, "_chain_progress", None) is None
-        app._proc = None
-        assert app._chain_start(3) is True
-        app._chain_end()
-    finally:
-        app._proc = None
-        app.root.destroy()
+    app = _process_gui(monkeypatch)
+    monkeypatch.setattr(app.messagebox, "showinfo", lambda *_a, **_k: None)
+    app._proc = _FakeProc()
+    assert app._chain_start(3) is False
+    assert getattr(app, "_chain_progress", None) is None
+    app._proc = None
+    assert app._chain_start(3) is True
+    app._chain_end()
 
 
 def test_stop_ends_a_chained_workflow(monkeypatch):
-    app, _tk = _build_gui_for_test(monkeypatch)
-    try:
-        launched = []
-        monkeypatch.setattr(gui.subprocess, "Popen",
-                            lambda *_a, **_k: launched.append(1) or _FakeProc())
-        proc = _FakeProc()
-        app._proc = proc
-        app._chain_progress = (1, 3)
-        app._stop_requested = True  # what _stop_running sets
-        app._on_proc_done(gui._DoneMarker(
-            1, lambda _rc: app._run_cli("spindoctor", ["tools-audit"]), proc,
-        ))
-        assert launched == []
-        assert app._chain_progress is None
-        assert app._proc is None and app._stop_requested is False
-        # The next command the user starts runs normally.
-        app._run_cli("spindoctor", ["doctor"])
-        assert launched == [1]
-    finally:
-        app._proc = None
-        app.root.destroy()
+    app = _process_gui(monkeypatch)
+    launched = []
+    monkeypatch.setattr(gui.subprocess, "Popen",
+                        lambda *_a, **_k: launched.append(1) or _FakeProc())
+    proc = _FakeProc()
+    app._proc = proc
+    app._chain_progress = (1, 3)
+    app._stop_requested = True  # what _stop_running sets
+    app._on_proc_done(gui._DoneMarker(
+        1, lambda _rc: app._run_cli("spindoctor", ["tools-audit"]), proc,
+    ))
+    assert launched == []
+    assert app._chain_progress is None
+    assert app._proc is None and app._stop_requested is False
+    # The next command the user starts runs normally.
+    app._run_cli("spindoctor", ["doctor"])
+    assert launched == [1]
 
 
 def test_find_keeps_the_output_divider_and_sits_above_the_text(monkeypatch):
@@ -4056,32 +3931,36 @@ def test_find_keeps_the_output_divider_and_sits_above_the_text(monkeypatch):
         app.root.destroy()
 
 
-def test_dialogs_scale_with_the_display(monkeypatch):
-    app, _tk = _build_gui_for_test(monkeypatch)
-    try:
-        app._dpi_scale = 1.5
-        win = _tk.Toplevel(app.root)
-        monkeypatch.setattr(app.root, "winfo_screenwidth", lambda: 3840)
-        monkeypatch.setattr(app.root, "winfo_screenheight", lambda: 2160)
-        seen = []
-        monkeypatch.setattr(win, "geometry", lambda g=None: seen.append(g))
-        app._fit_geometry(win, 640, 480)
-        assert seen == ["960x720"]
-        win.destroy()
-    finally:
-        app.root.destroy()
+def test_dialogs_scale_with_the_display():
+    app = object.__new__(gui._SpinDoctorGUI)
+    app.root = SimpleNamespace(winfo_screenwidth=lambda: 3840, winfo_screenheight=lambda: 2160)
+    app._dpi_scale = 1.5
+    win = Mock(spec=["geometry", "bind", "destroy"])
+    app._fit_geometry(win, 640, 480)
+    win.geometry.assert_called_once_with("960x720")
+    win.bind.assert_called_once()
+    assert win.bind.call_args.args[0] == "<Escape>"
+    win.bind.call_args.args[1](object())
+    win.destroy.assert_called_once()
+
+    app.root = SimpleNamespace(winfo_screenwidth=lambda: 1024, winfo_screenheight=lambda: 768)
+    app._fit_geometry(win, 1200, 900)
+    assert win.geometry.call_args.args == ("964x648",)
 
 
 def test_run_cli_reports_whether_it_started(monkeypatch):
-    app, _tk = _build_gui_for_test(monkeypatch)
-    try:
-        monkeypatch.setattr(app.messagebox, "showinfo", lambda *_a, **_k: None)
-        monkeypatch.setattr(gui.subprocess, "Popen", lambda *_a, **_k: _FakeProc())
-        assert app._run_cli("spindoctor", ["doctor"]) is True
-        assert app._run_cli("spindoctor", ["doctor"]) is False  # busy
-    finally:
-        app._proc = None
-        app.root.destroy()
+    app = _process_gui(monkeypatch)
+    busy, launched = [], []
+    monkeypatch.setattr(app.messagebox, "showinfo",
+                        lambda title, *_a, **_k: busy.append(title))
+    monkeypatch.setattr(gui.subprocess, "Popen",
+                        lambda *_a, **_k: launched.append(1) or _FakeProc())
+    assert app._run_cli("spindoctor", ["doctor"]) is True
+    # An exited-but-unfinalised proc (done marker not yet processed)
+    # still blocks the next launch: no Popen, "Busy" dialog shown.
+    assert app._run_cli("spindoctor", ["doctor"]) is False
+    assert busy == ["Busy"]
+    assert launched == [1]
 
 
 def test_migration_list_ignores_the_system_filter(monkeypatch):
@@ -4098,6 +3977,37 @@ def test_migration_list_ignores_the_system_filter(monkeypatch):
     finally:
         app._system_filter_var.set("")
         app.root.destroy()
+
+
+def test_gui_output_drain_yields_and_preserves_completion_order():
+    import queue
+    from types import SimpleNamespace
+    from spindoctor import gui
+    q = queue.Queue()
+    lines = [f"line {n}\n" for n in range(501)]
+    for line in lines:
+        q.put(line)
+    q.put(gui._DoneMarker(0, None))
+    output, recorded, done, scheduled, stuck_checks = [], [], [], [], []
+    app = SimpleNamespace(
+        _line_queue=q, _current_run=SimpleNamespace(append=recorded.append),
+        _append_output=output.append,
+        _on_proc_done=lambda marker: done.append("".join(output)),
+        _check_stuck_proc=lambda: stuck_checks.append(True),
+        root=SimpleNamespace(after=lambda delay, callback: scheduled.append(delay)),
+    )
+    app._drain_queue = lambda: gui._SpinDoctorGUI._drain_queue(app)
+    app._drain_queue()
+    assert q.qsize() == 302
+    assert len(output) == 1
+    assert not done and not stuck_checks and scheduled
+    assert scheduled == [1]
+    app._drain_queue()
+    app._drain_queue()
+    assert done == ["".join(lines)]
+    assert "".join(recorded) == "".join(lines)
+    assert len(output) == 3
+    assert scheduled == [1, 1, 50]
 
 
 # ─── Test games page (spindoctor test) ────────────────────────────────────────

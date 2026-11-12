@@ -1,12 +1,19 @@
 """Plan / apply / restore round-trips for the backup command."""
 from __future__ import annotations
+from tests.helpers import write_bytes as _write_bytes
+
+from click.testing import CliRunner
+from spindoctor import backup
+from spindoctor.cli import cli
+from spindoctor import config
+import json
+import shutil
 
 from pathlib import Path
 
 import pytest
 
 import spindoctor.backup as backup_mod
-import spindoctor.config as config_mod
 from spindoctor.backup import (
     apply_backup, apply_restore, find_latest_backup, list_backups,
     normalize_components, plan_backup, plan_restore, read_manifest,
@@ -15,15 +22,10 @@ from spindoctor.config import Config, save_config
 
 
 @pytest.fixture
-def isolated_config(tmp_path, monkeypatch):
-    home = tmp_path / "spindoctor_home"
-    home.mkdir(parents=True, exist_ok=True)
-    monkeypatch.setattr(config_mod, "CONFIG_DIR", home)
-    monkeypatch.setattr(config_mod, "CONFIG_FILE", home / "config.json")
-    monkeypatch.setattr(backup_mod, "CONFIG_DIR", home)
-    config_mod.reset_override_cache()
-    yield home
-    config_mod.reset_override_cache()
+def isolated_config(config_home, monkeypatch):
+    config_home.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(backup_mod, "CONFIG_DIR", config_home)
+    return config_home
 
 
 def _touch(p: Path, content: str = "x") -> None:
@@ -307,3 +309,107 @@ def test_read_manifest_malformed(tmp_path):
     (tmp_path / "manifest.json").write_text("{not json", encoding="utf-8")
     with pytest.raises(ValueError):
         read_manifest(tmp_path)
+
+
+def test_restore_uses_selected_backup_not_original_location(isolated_config, tmp_path):
+    src = tmp_path / "live"
+    _write_bytes(src / "game.zip")
+    cfg = config.Config(roms_dir=str(src))
+    original = backup.apply_backup(backup.plan_backup(cfg, tmp_path / "backups", ["roms"]), cfg)
+    relocated = tmp_path / "relocated"
+    shutil.copytree(original, relocated)
+    _write_bytes(original / "Games" / "game.zip", b"stale")
+    plan = backup.plan_restore(relocated)
+    assert Path(plan.items[0].src) == relocated / "Games"
+    shutil.rmtree(src)
+    backup.apply_restore(plan)
+    assert (src / "game.zip").read_bytes() == b"original"
+
+
+def test_settings_backup_excludes_runtime_lock(isolated_config, tmp_path):
+    _write_bytes(backup.CONFIG_DIR / "gui.lock", b"locked")
+    _write_bytes(backup.CONFIG_DIR / "config.json", b"{}")
+    cfg = config.Config()
+    root = backup.apply_backup(backup.plan_backup(cfg, tmp_path / "backups", ["settings"]), cfg)
+    assert not (root / "Settings" / "gui.lock").exists()
+    assert (root / "Settings" / "config.json").exists()
+
+
+def test_settings_restore_does_not_delete_live_lock(isolated_config, tmp_path, monkeypatch):
+    source = tmp_path / "saved"
+    _write_bytes(source / "config.json", b'{"new":true}')
+    _write_bytes(source / "gui.lock", b"obsolete lock")
+    live_lock = _write_bytes(backup.CONFIG_DIR / "gui.lock", b"active lock")
+    _write_bytes(backup.CONFIG_DIR / "config.json", b"{}")
+    real_rmtree = shutil.rmtree
+
+    def guarded_rmtree(path, *args, **kwargs):
+        assert Path(path) != backup.CONFIG_DIR
+        return real_rmtree(path, *args, **kwargs)
+
+    monkeypatch.setattr(shutil, "rmtree", guarded_rmtree)
+    plan = backup.RestorePlan(str(tmp_path), [
+        backup.RestoreItem("settings", str(source), str(backup.CONFIG_DIR)),
+    ])
+    assert backup.apply_restore(plan, overwrite=True) == 1
+    assert live_lock.read_bytes() == b"active lock"
+    assert json.loads((backup.CONFIG_DIR / "config.json").read_text()) == {"new": True}
+
+
+def test_backup_apply_rejects_hand_built_nested_plan(isolated_config, tmp_path):
+    src = tmp_path / "live"
+    _write_bytes(src / "game.zip")
+    root = src / "backup"
+    plan = backup.BackupPlan(str(root), [
+        backup.BackupItem("roms", str(src), str(root / "Games")),
+    ])
+    with pytest.raises(ValueError, match="inside its source"):
+        backup.apply_backup(plan, config.Config())
+    assert not root.exists()
+
+
+def test_restore_rechecks_sources_before_removing_destination(isolated_config, tmp_path):
+    live = _write_bytes(tmp_path / "live" / "valuable", b"keep")
+    plan = backup.RestorePlan(str(tmp_path / "backup"), [
+        backup.RestoreItem("roms", str(tmp_path / "missing"), str(live.parent)),
+    ])
+    with pytest.raises(FileNotFoundError):
+        backup.apply_restore(plan, overwrite=True)
+    assert live.read_bytes() == b"keep"
+
+
+def test_old_backup_settings_locks_are_never_restored(isolated_config, tmp_path):
+    saved = tmp_path / "backup"
+    _write_bytes(saved / "config.json", b"{}")
+    _write_bytes(saved / "gui.lock")
+    live = tmp_path / "live"
+    plan = backup.RestorePlan(str(saved), [
+        backup.RestoreItem("settings", str(saved), str(live)),
+    ])
+    assert backup.apply_restore(plan) == 1
+    assert (live / "config.json").exists()
+    assert not (live / "gui.lock").exists()
+
+
+def test_latest_backup_uses_numeric_collision_counter(tmp_path):
+    names = ["spindoctor-backup-20261104_120000" + suffix for suffix in ("", "_2", "_9", "_10")]
+    for name in names:
+        root = tmp_path / name
+        root.mkdir()
+        (root / "manifest.json").write_text("{}")
+    assert [p.name for p in backup.list_backups(tmp_path)] == names
+    assert backup.find_latest_backup(tmp_path).name == names[-1]
+
+
+def test_restore_overlap_reports_a_cli_error(tmp_path, monkeypatch):
+    source = tmp_path / "saved"
+    source.mkdir()
+    plan = backup.RestorePlan(str(source), [
+        backup.RestoreItem("roms", str(source), str(source / "nested")),
+    ])
+    monkeypatch.setattr(backup, "plan_restore", lambda *args, **kwargs: plan)
+    monkeypatch.setattr(config, "load_config", lambda: config.Config())
+    result = CliRunner().invoke(cli, ["backup", "restore", "--backup", str(source), "--apply"])
+    assert result.exit_code == 1
+    assert "overlap" in result.output
+    assert "Aborted" in result.output

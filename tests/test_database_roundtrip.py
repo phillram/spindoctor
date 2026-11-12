@@ -4,6 +4,10 @@ When ``lxml`` is installed, comments and unknown attributes/elements added by
 HyperHQ or other tools must survive a save() round-trip.
 """
 from __future__ import annotations
+from tests.helpers import write_bytes as _write_bytes
+from tests.helpers import freeze_time as _freeze_time
+
+from spindoctor import database
 
 import textwrap
 from dataclasses import replace
@@ -325,3 +329,26 @@ def test_reset_games_removes_duplicates_before_full_rebuild(tmp_path, monkeypatc
     reloaded = HyperspinDatabase("Favorites", path)
     assert set(reloaded.games()) == {"fresh"}
     assert reloaded.duplicate_names == frozenset()
+
+
+def test_two_database_saves_keep_original_backup(config_home, tmp_path, monkeypatch):
+    _freeze_time(monkeypatch, database)
+    path = _write_bytes(tmp_path / "MAME.xml", b'<menu><game name="A"/></menu>')
+    original = path.read_bytes()
+    db = database.HyperspinDatabase("MAME", path)
+    db.upsert_game(database.GameEntry("B"))
+    db.save()
+    db.upsert_game(database.GameEntry("C"))
+    db.save()
+    backups = sorted(tmp_path.glob("*.bak"))
+    assert len(backups) == 2
+    assert backups[0].read_bytes() == original
+
+
+def test_atomic_write_handles_short_os_writes(config_home, tmp_path, monkeypatch):
+    import os
+    real_write = os.write
+    monkeypatch.setattr(os, "write", lambda fd, data: real_write(fd, data[:3]))
+    path = tmp_path / "data.xml"
+    database._atomic_write_bytes(path, b"complete document")
+    assert path.read_bytes() == b"complete document"

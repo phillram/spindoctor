@@ -55,23 +55,31 @@ def _ss_client() -> ScreenScraperClient:
     return ScreenScraperClient("user", "pass")
 
 
-def test_search_backfills_media_via_fetch_by_id_when_top_result_is_empty():
+def test_search_backfills_media_via_fetch_by_id_when_top_result_is_empty(monkeypatch):
     """A jeuRecherche.php hit with no `medias` array must be enriched by
     one follow-up jeuInfos.php?gameid= call instead of silently
     reporting "no URL" for every type."""
     client = _ss_client()
+    # The rate limiter is pinned in test_rate_limiter.py; neuter it here so
+    # this test doesn't pay a real 1 s sleep per API call.
+    monkeypatch.setattr(client._limiter, "wait", lambda: None)
     calls: list[str] = []
+    fetched_ids: list[str] = []
 
     def fake_get(url, params=None, timeout=None):  # noqa: ARG001
         calls.append(url)
         if "jeuRecherche" in url:
             return _FakeResp({
                 "response": {"jeux": [
+                    # Deliberately unordered: the best match is mid-list, so
+                    # match-score sorting is what picks the backfill target.
+                    {"id": "9999", "noms": [{"langue": "en", "text": "Golden Axe"}]},
                     {"id": "5775", "noms": [{"langue": "en", "text": "Golden Sun: Dark Dawn"}]},
+                    {"id": "1234", "noms": [{"langue": "en", "text": "Golden Sun"}]},
                 ]},
             })
         assert "jeuInfos" in url
-        assert params["gameid"] == "5775"
+        fetched_ids.append(params["gameid"])
         return _FakeResp({
             "response": {"jeu": {
                 "id": "5775",
@@ -86,11 +94,13 @@ def test_search_backfills_media_via_fetch_by_id_when_top_result_is_empty():
     client._session = types.SimpleNamespace(get=fake_get)
 
     results = client.search("Golden Sun - Dark Dawn (USA)", "Nintendo DS")
-    assert len(results) == 1
+    assert len(results) == 3
+    assert results[0].source_id == "5775"
     assert results[0].wheel_url == "https://ss/wheel.png"
     assert results[0].media_candidates.get("wheel")
-    # Exactly one backfill call, not one per search result.
-    assert sum(1 for u in calls if "jeuInfos" in u) == 1
+    # Exactly one backfill call, for the highest-scoring candidate only —
+    # not one per search result, and not for a lower-scoring match.
+    assert fetched_ids == ["5775"]
 
 
 def test_search_does_not_backfill_when_top_result_already_has_media():

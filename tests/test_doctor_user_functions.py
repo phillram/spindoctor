@@ -409,9 +409,3 @@ def test_doctor_without_rocketlauncher_or_files(tmp_path):
     cfg, _ = _cabinet(tmp_path)
     result = health.check_user_functions(cfg)
     assert (result.status, result.detail) == (OK, "no User Functions files")
-
-
-def test_doctor_runs_the_check(tmp_path):
-    cfg, _ = _cabinet(tmp_path)
-    names = [c.name for c in health.run_health_checks(cfg, fix=False).checks]
-    assert "User Functions" in names

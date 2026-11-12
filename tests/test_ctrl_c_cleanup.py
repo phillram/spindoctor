@@ -13,7 +13,6 @@ from pathlib import Path
 import pytest
 
 import spindoctor.backup as backup_mod
-import spindoctor.config as config_mod
 import spindoctor.migrate as migrate_mod
 from spindoctor.backup import apply_backup, plan_backup
 from spindoctor.config import Config, save_config
@@ -26,16 +25,11 @@ from spindoctor.migrate import (
 
 
 @pytest.fixture
-def isolated_config(tmp_path, monkeypatch):
-    home = tmp_path / "spindoctor_home"
-    home.mkdir(parents=True, exist_ok=True)
-    monkeypatch.setattr(config_mod, "CONFIG_DIR", home)
-    monkeypatch.setattr(config_mod, "CONFIG_FILE", home / "config.json")
-    monkeypatch.setattr(backup_mod, "CONFIG_DIR", home)
-    monkeypatch.setattr(migrate_mod, "CONFIG_DIR", home)
-    config_mod.reset_override_cache()
-    yield home
-    config_mod.reset_override_cache()
+def isolated_config(config_home, monkeypatch):
+    config_home.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(backup_mod, "CONFIG_DIR", config_home)
+    monkeypatch.setattr(migrate_mod, "CONFIG_DIR", config_home)
+    return config_home
 
 
 def _touch(p: Path, content: str = "x") -> None:

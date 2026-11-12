@@ -5,6 +5,9 @@ the scanner finds every overlay file in the right scope/bucket without
 walking off into per-game theme zips or random images.
 """
 from __future__ import annotations
+from tests.helpers import write_bytes as _write_bytes
+
+from spindoctor import config
 
 from pathlib import Path
 
@@ -359,3 +362,29 @@ def test_theme_apply_cli_dry_run_lists_plan(tmp_path, monkeypatch):
     themes_dir = home / ".spindoctor" / "themes"
     if themes_dir.exists():
         assert not any(themes_dir.iterdir())
+
+
+def test_theme_pack_roundtrip_respects_scope(config_home, tmp_path):
+    hs = tmp_path / "hs"
+    paths = {}
+    for system in ("MAME", "NES"):
+        paths[system] = _write_bytes(hs / "Media" / system / "Images" / "Special A" / "same.png",
+                              system.encode())
+    cfg = config.Config(hyperspin_dir=str(hs))
+    pack = tmp_path / "pack"
+    themes.create_pack(cfg, pack)
+    for path in paths.values():
+        path.write_bytes(b"changed")
+    plans = themes.plan_apply(cfg, pack)
+    themes.apply_plan(plans, manifest_dir=tmp_path / "undo")
+    for system, path in paths.items():
+        assert path.read_bytes() == system.encode()
+
+
+def test_community_images_special_a_pack_matches_by_filename(tmp_path):
+    cfg = config.Config(hyperspin_dir=str(tmp_path / "hs"))
+    target = _write_bytes(cfg.media_dir / "MAME" / "Images" / "Special A" / "buttons.png")
+    source = _write_bytes(tmp_path / "pack" / "Images" / "Special A" / "buttons.png", b"new art")
+    plans = themes.plan_apply(cfg, tmp_path / "pack")
+    assert len(plans) == 1
+    assert plans[0].source == source and plans[0].target == target

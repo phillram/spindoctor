@@ -1,25 +1,12 @@
 """Duplicate detection — within-system + cross-system."""
 from __future__ import annotations
 
-import pytest
 
-import spindoctor.config as config_mod
 from spindoctor.config import Config, save_config
 from spindoctor.dupes import (
     find_cross_system_duplicates,
     find_duplicates_in_system,
 )
-
-
-@pytest.fixture
-def isolated_config(tmp_path, monkeypatch):
-    monkeypatch.setattr(config_mod, "CONFIG_DIR", tmp_path / "spindoctor_home")
-    monkeypatch.setattr(
-        config_mod, "CONFIG_FILE", tmp_path / "spindoctor_home" / "config.json"
-    )
-    config_mod.reset_override_cache()
-    yield
-    config_mod.reset_override_cache()
 
 
 def _make_config(roms_dir):

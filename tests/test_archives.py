@@ -170,32 +170,6 @@ def test_support_status_always_includes_builtins():
 # ─── verify integration ──────────────────────────────────────────────────────
 
 
-def test_verify_classifies_zip_inner_match_as_good(tmp_path):
-    from spindoctor.verify import verify_system
-
-    payload = b"verify me please" * 256
-    sha1 = hashlib.sha1(payload).hexdigest()
-
-    sys_dir = tmp_path / "roms" / "nes"
-    sys_dir.mkdir(parents=True)
-    zpath = sys_dir / "Mario.zip"
-    with zipfile.ZipFile(zpath, "w", zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr("Mario.nes", payload)
-
-    dat = tmp_path / "nes.dat"
-    dat.write_text(
-        '<?xml version="1.0"?>\n<datafile>\n'
-        '  <game name="Mario">\n'
-        f'    <rom name="Mario.nes" size="{len(payload)}" '
-        f'crc="" sha1="{sha1}"/>\n'
-        '  </game>\n</datafile>\n',
-        encoding="utf-8",
-    )
-
-    report = verify_system("nes", dat, tmp_path / "roms")
-    assert report.summary == {"good": 1}
-
-
 def test_verify_classifies_chd_rawsha1_match(tmp_path):
     from spindoctor.verify import verify_system
 

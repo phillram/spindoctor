@@ -8,6 +8,7 @@ from __future__ import annotations
 import sys
 
 import pytest
+from click import unstyle
 from click.testing import CliRunner
 
 import spindoctor.config as config_mod
@@ -119,7 +120,7 @@ def test_command_takes_width_and_height_together(run_cmd):
 
 def test_command_without_a_resolution_says_so(run_cmd):
     result = run_cmd()
-    assert result.exit_code == 1 and "[Resolution]" in result.output and run_cmd.sets == []
+    assert result.exit_code == 1 and "[Resolution]" in unstyle(result.output) and run_cmd.sets == []
 
 
 def test_command_is_windows_only(monkeypatch):

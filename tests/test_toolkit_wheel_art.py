@@ -11,6 +11,7 @@ import struct
 from pathlib import Path
 
 import pytest
+from click import unstyle
 from click.testing import CliRunner
 
 import spindoctor.config as config_mod
@@ -87,7 +88,7 @@ def test_install_adds_the_logo_for_each_picked_entry(cabinet):
     assert sorted(p.name for p in cabinet.iterdir()) == ["Refresh All.png", "Shut Down Cabinet.png"]
     assert (cabinet / "Shut Down Cabinet.png").read_bytes() == \
         (ASSETS / "toolkit_shut-down-cabinet.png").read_bytes()
-    assert "added wheel art for 2 entry(ies)" in result.output
+    assert "added wheel art for 2 entry(ies)" in unstyle(result.output)
 
 
 def test_install_keeps_the_wheels_own_art(cabinet):
@@ -110,7 +111,7 @@ def test_uninstall_removes_only_spindoctors_own_logo(cabinet):
                 "--add-to-system", "Toolkit", "--apply").exit_code == 0
     (cabinet / "Exit To Windows.png").write_bytes(b"replaced by hand")
     preview = _run("uninstall-tools", "--add-to-system", "Toolkit")
-    assert "wheel art for 1 entry(ies)" in preview.output
+    assert "wheel art for 1 entry(ies)" in unstyle(preview.output)
     assert (cabinet / "Restart Cabinet.png").exists()  # a dry run removes nothing
     result = _run("uninstall-tools", "--add-to-system", "Toolkit", "--apply")
     assert result.exit_code == 0, result.output

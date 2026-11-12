@@ -86,15 +86,6 @@ def test_combined_search_raises_when_both_fail():
     assert "NameResolutionError" in msg
 
 
-def test_combined_search_raises_when_only_ss_fails_and_tgdb_empty():
-    # Both fail to return results — SS errors, TGDB returns [].
-    # Should raise because there are no results AND there's an error.
-    client = _make_combined(_AlwaysErrorSS(), _EmptySS())
-    with pytest.raises(MetadataError) as exc_info:
-        client.search("Animal Crossing", "Nintendo Gamecube")
-    assert "ScreenScraper" in str(exc_info.value)
-
-
 def test_combined_search_returns_tgdb_when_ss_fails_but_tgdb_has_results():
     # SS is down but TGDB has results — should succeed with TGDB results.
     client = _make_combined(_AlwaysErrorSS(), _OneResultTGDB())

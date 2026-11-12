@@ -1,5 +1,7 @@
 """Tests for per-game LEDBlinky profiles built from the cabinet's real keymaps."""
 from __future__ import annotations
+from spindoctor.ledblinky_profiles import ProfileBuilder
+from spindoctor._text import write_windows_text
 
 import shutil
 import xml.etree.ElementTree as ET
@@ -418,3 +420,13 @@ def test_console_fallback_colors_avoid_colors_already_used():
     colors = {c.voice: c.color for c in lp.build_console_group("DEFAULT", km, panel, old, "").controls}
     assert colors["Button B"] == "Red"
     assert colors["L Button"] not in ("Red", "Black")
+
+
+def test_profile_rewrite_keeps_comments_and_existing_line_endings(tmp_path):
+    path = tmp_path / "Controls.ini"
+    path.write_bytes(b"; caf\xe9\r\n[a]\r\n; custom note\r\nx=1\r\n\r\n; Next category\r\n[b]\r\ny=2\r\n")
+    builder = object.__new__(ProfileBuilder)
+    text = builder._rewrite_ini(path, {"a": {"x": "3"}})
+    write_windows_text(path, text)
+    assert b"; caf\xe9\r\n[a]\r\n; custom note\r\nx=3\r\n" in path.read_bytes()
+    assert b"; Next category\r\n[b]\r\ny=2\r\n" in path.read_bytes()

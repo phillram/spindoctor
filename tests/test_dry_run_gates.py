@@ -25,101 +25,43 @@ from click.testing import CliRunner
 import spindoctor.config as config_mod
 import spindoctor.edit as edit_mod
 import spindoctor.media_scan as media_scan_mod
-import spindoctor.misplaced as misplaced_mod
 from spindoctor.cli import cli
 from spindoctor.config import Config, save_config
 from spindoctor.database import GameEntry, HyperspinDatabase
+from tests.helpers import build_nes_library as _build_nes_library
 
 
 # ─── shared fixture ──────────────────────────────────────────────────────────
 
 
 @pytest.fixture
-def isolated_config(tmp_path, monkeypatch):
-    """Re-home every CONFIG_DIR / manifest dir into tmp so dry-run gate
-    tests can't accidentally write into the developer's real
-    ``~/.spindoctor/``.
-
-    Mirrors the helpers in ``test_edit.py`` / ``test_media_scan.py``
-    but covers every manifest directory that the commands-under-test
-    might touch, so a stray `os.replace` somewhere wouldn't sneak past
-    by writing into a different config root.
-    """
-    home = tmp_path / "spindoctor_home"
-    monkeypatch.setattr(config_mod, "CONFIG_DIR", home)
-    monkeypatch.setattr(config_mod, "CONFIG_FILE", home / "config.json")
-    monkeypatch.setattr(edit_mod, "EDIT_DIR", home / "edits")
-    monkeypatch.setattr(edit_mod, "RENAME_DIR", home / "renames")
-    monkeypatch.setattr(
-        media_scan_mod, "MANIFEST_DIR", home / "media_imports",
-    )
-    # `organize --restructure` writes its manifest into the system's ROM
-    # folder and `find-misplaced --apply` into roms_dir — both live under
-    # the test's tmp_path, so no extra rebinding needed.
-    _ = misplaced_mod  # touch the import so the linter doesn't strip it
-    config_mod.reset_override_cache()
-    yield home
-    config_mod.reset_override_cache()
-
-
-def _build_nes_library(tmp_path: Path) -> Config:
-    """Synthetic NES system: 3 games with ROMs + wheel + snap each."""
-    roms_dir = tmp_path / "roms"
-    hs_dir = tmp_path / "hs"
-    (roms_dir / "nes").mkdir(parents=True)
-    db_dir = hs_dir / "Databases" / "nes"
-    media_dir = hs_dir / "Media" / "nes"
-    db_dir.mkdir(parents=True)
-    media_dir.mkdir(parents=True)
-    (media_dir / "Images" / "Wheel").mkdir(parents=True)
-    (media_dir / "Images" / "Artwork3").mkdir(parents=True)
-
-    games = [
-        GameEntry(name="mario", description="Super Mario", manufacturer="Nintendo",
-                  year="1985", genre="Platformer", rating=""),
-        GameEntry(name="zelda", description="Zelda", manufacturer="Nintendo",
-                  year="1986", genre="Action", rating="5"),
-        GameEntry(name="contra", description="Contra", manufacturer="Konami",
-                  year="1988", genre="Action", rating=""),
-    ]
-    for g in games:
-        (roms_dir / "nes" / f"{g.name}.nes").write_text("rom", encoding="utf-8")
-        (media_dir / "Images" / "Wheel" / f"{g.name}.png").write_bytes(b"wheel")
-        (media_dir / "Images" / "Artwork3" / f"{g.name}.png").write_bytes(b"snap")
-
-    db = HyperspinDatabase("nes", db_dir / "nes.xml")
-    for g in games:
-        db.upsert_game(g)
-    db.save()
-
-    cfg = Config()
-    cfg.roms_dir = str(roms_dir)
-    cfg.hyperspin_dir = str(hs_dir)
-    save_config(cfg)
-    return cfg
+def isolated_config(config_home, monkeypatch):
+    """Isolate command-specific journals alongside the shared config home."""
+    monkeypatch.setattr(edit_mod, "EDIT_DIR", config_home / "edits")
+    monkeypatch.setattr(edit_mod, "RENAME_DIR", config_home / "renames")
+    monkeypatch.setattr(media_scan_mod, "MANIFEST_DIR", config_home / "media_imports")
+    return config_home
 
 
 def _snapshot(*roots: Path) -> set:
-    """Build a (path, size, content) snapshot for every file under *roots*.
-
-    Used to assert byte-identical state across a dry-run gate. We hash
-    the full bytes rather than relying on mtime because dry-run code
-    can legitimately stat files without modifying them.
-    """
+    """Snapshot root existence, directories, and file bytes (not access times)."""
     snap: set = set()
     for root in roots:
-        if not root.exists():
-            continue
+        snap.add((str(root), "exists", root.exists()))
         for p in root.rglob("*"):
-            if p.is_file():
-                snap.add((str(p), p.read_bytes()))
+            snap.add((str(p), "file" if p.is_file() else "dir",
+                      p.read_bytes() if p.is_file() else None))
     return snap
 
 
-# ─── rename ──────────────────────────────────────────────────────────────────
+# ─── rename / clone ──────────────────────────────────────────────────────────
 
 
-def test_rename_dry_run_does_not_touch_disk(tmp_path, isolated_config):
+@pytest.mark.parametrize("command,target", [
+    ("rename", "mario_v2"),
+    ("clone", "mario_clone"),
+], ids=["rename", "clone"])
+def test_rename_clone_dry_run_does_not_touch_disk(tmp_path, isolated_config, command, target):
     cfg = _build_nes_library(tmp_path)
     hs_dir = Path(cfg.hyperspin_dir)
     roms_dir = Path(cfg.roms_dir)
@@ -129,29 +71,7 @@ def test_rename_dry_run_does_not_touch_disk(tmp_path, isolated_config):
 
     runner = CliRunner()
     result = runner.invoke(
-        cli, ["rename", "--system", "nes", "--game", "mario", "--to", "mario_v2"],
-    )
-
-    assert result.exit_code == 0, result.output
-    assert _snapshot(hs_dir, roms_dir) == before
-    assert not (manifests_dir.exists() and list(manifests_dir.glob("*.json")))
-
-
-# ─── clone ───────────────────────────────────────────────────────────────────
-
-
-def test_clone_dry_run_does_not_touch_disk(tmp_path, isolated_config):
-    cfg = _build_nes_library(tmp_path)
-    hs_dir = Path(cfg.hyperspin_dir)
-    roms_dir = Path(cfg.roms_dir)
-
-    before = _snapshot(hs_dir, roms_dir)
-    manifests_dir = isolated_config / "renames"
-
-    runner = CliRunner()
-    result = runner.invoke(
-        cli,
-        ["clone", "--system", "nes", "--game", "mario", "--to", "mario_clone"],
+        cli, [command, "--system", "nes", "--game", "mario", "--to", target],
     )
 
     assert result.exit_code == 0, result.output
@@ -186,8 +106,12 @@ def test_batch_edit_dry_run_does_not_touch_disk(tmp_path, isolated_config):
 # ─── organize --restructure ──────────────────────────────────────────────────
 
 
+@pytest.mark.parametrize("system,files", [
+    ("Sony Playstation 3", ["GameA.iso"]),
+    ("Sega Saturn", ["Multi Game (Disc 1).bin", "Multi Game (Disc 2).bin"]),
+])
 def test_organize_restructure_dry_run_does_not_touch_disk(
-    tmp_path, isolated_config,
+    tmp_path, isolated_config, system, files,
 ):
     """`organize --restructure --no-sort` without --apply must not move
     any files. `--no-sort` skips the side-effect of XML sort so the
@@ -197,16 +121,30 @@ def test_organize_restructure_dry_run_does_not_touch_disk(
     cfg = _build_nes_library(tmp_path)
     hs_dir = Path(cfg.hyperspin_dir)
     roms_dir = Path(cfg.roms_dir)
+    system_dir = roms_dir / system
+    system_dir.mkdir()
+    for name in files:
+        (system_dir / name).write_bytes(b"disc data")
 
-    before = _snapshot(hs_dir, roms_dir)
+    from spindoctor.organize import plan_restructure
+
+    plan = plan_restructure(system, roms_dir)
+    assert not plan.empty
+    assert {Path(move.src).name for move in plan.moves} == set(files)
+    if system == "Sega Saturn":
+        assert len(plan.creates) == 1
+    before = _snapshot(hs_dir, roms_dir, isolated_config)
 
     runner = CliRunner()
     result = runner.invoke(
-        cli, ["organize", "nes", "--restructure", "--no-sort"],
+        cli, ["organize", system, "--restructure", "--no-sort"],
     )
 
     assert result.exit_code == 0, result.output
-    assert _snapshot(hs_dir, roms_dir) == before
+    assert "Dry-run." in result.output
+    for name in files:
+        assert name in result.output
+    assert _snapshot(hs_dir, roms_dir, isolated_config) == before
     # Restructure manifests land inside the system's ROM folder.
     assert not list(roms_dir.rglob("_spindoctor-restructure-*.json"))
 
@@ -223,17 +161,27 @@ def test_media_scan_dry_run_does_not_touch_disk(tmp_path, isolated_config):
     source = tmp_path / "incoming"
     (source / "Wheels").mkdir(parents=True)
     (source / "Wheels" / "mario.png").write_bytes(b"new wheel art")
+    target = hs_dir / "Media" / "nes" / "Images" / "Wheel" / "mario.png"
+    target.unlink()  # A missing slot is actionable without --overwrite.
+    report = media_scan_mod.match_to_database(
+        media_scan_mod.scan_local_media(source), "nes", cfg,
+    )
+    assert len(report.matched) == 1
+    assert report.matched[0].game_name == "mario"
+    assert report.matched[0].target_path == target
 
-    before = _snapshot(hs_dir, roms_dir)
+    before = _snapshot(source, hs_dir, roms_dir, isolated_config)
     manifests_dir = isolated_config / "media_imports"
 
     runner = CliRunner()
     result = runner.invoke(
-        cli, ["media-scan", str(source), "--system", "nes"],
+        cli, ["media-scan", str(source), "--system", "nes", "--detail"],
     )
 
     assert result.exit_code == 0, result.output
-    assert _snapshot(hs_dir, roms_dir) == before
+    assert "mario.png" in result.output
+    assert "--apply" in result.output
+    assert _snapshot(source, hs_dir, roms_dir, isolated_config) == before
     assert not (manifests_dir.exists() and list(manifests_dir.glob("*.json")))
 
 
