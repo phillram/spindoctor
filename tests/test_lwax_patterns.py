@@ -15,6 +15,7 @@ from spindoctor import lwax_patterns
 from spindoctor.lwax import parse_input_map
 from spindoctor.lwax_cute import CUTE_THEMES
 from spindoctor.lwax_flash import score_lwax
+from tests.lwax_reference import LIBM_VARIANTS, REFERENCE_SHA256
 
 
 @pytest.fixture(scope="module")
@@ -29,12 +30,6 @@ def generated(controllers, tmp_path_factory):
     out_dir = tmp_path_factory.mktemp("lwax-patterns")
     written, palette_used = lwax_patterns.generate_batch(controllers, out_dir)
     return out_dir, written, palette_used
-
-
-def test_generates_a_full_batch(generated):
-    _out_dir, written, _used = generated
-    # 22 families x 5 + breathe library + cycles -- comfortably over 150.
-    assert len(written) > 150
 
 
 # Families whose builders use only exact arithmetic (no sin/cos/atan2/hypot),
@@ -83,10 +78,15 @@ def test_soft_fill_and_drain_twins(generated):
 
 
 def test_batch_includes_the_cute_set(generated):
-    _out_dir, written, _used = generated
+    out_dir, written, _used = generated
     names = {f for f, _fr, _d in written}
     assert {f"{t.name}.lwax" for t in CUTE_THEMES} <= names
     assert len(written) == 169 + 8 + 60
+    # These exact bytes already receive the stricter in-memory smoothness
+    # checks in test_lwax_cute; don't parse and score all 60 files again.
+    for theme in CUTE_THEMES:
+        digest = hashlib.sha256((out_dir / f"{theme.name}.lwax").read_bytes()).hexdigest()[:16]
+        assert digest in {REFERENCE_SHA256[theme.name], *LIBM_VARIANTS.get(theme.name, ())}, theme.name
 
 
 def test_flash_scores_match_the_cabinet_report(generated, controllers):
@@ -94,12 +94,16 @@ def test_flash_scores_match_the_cabinet_report(generated, controllers):
     example cabinet's 169 installed files."""
     out_dir, written, _used = generated
     tiers = {}
+    scores = {}
     for name, _fr, _d in written:
-        tier = score_lwax(out_dir / name, controllers).tier
+        if name.startswith("cute_"):
+            continue  # Batch hashes above bridge the separately scored themes.
+        scores[name] = score_lwax(out_dir / name, controllers)
+        tier = scores[name].tier
         if _is_original(name):
             tiers[tier] = tiers.get(tier, 0) + 1
         else:
-            assert tier == "smooth", name  # every _soft twin and cute_* file
+            assert tier == "smooth", name  # every _soft twin
     assert tiers == {"strobe": 6, "blink": 5, "borderline": 22, "busy": 4, "smooth": 132}
 
     # A few rows of that report, every metric.
@@ -111,7 +115,7 @@ def test_flash_scores_match_the_cabinet_report(generated, controllers):
         "drain_amber_fast.lwax": (79, 2.37, 30, 1.27, 2.5, 2.11, 2.53, 1.27, 1.27, "borderline"),
     }
     for name, expected in rows.items():
-        s = score_lwax(out_dir / name, controllers)
+        s = scores[name]
         got = (s.frames, s.loop_sec, s.min_frame_ms, s.panel_flash_hz, s.panel_worst_1s, s.sync_blink_hz,
                s.snaps_per_led_hz, s.max_led_flicker_hz, s.mean_led_flicker_hz, s.tier)
         assert got == expected, name
