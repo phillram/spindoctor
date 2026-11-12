@@ -8,6 +8,7 @@ stays), with a backup first.  Every cabinet is built under tmp_path.
 from __future__ import annotations
 
 import pytest
+from click import unstyle
 from click.testing import CliRunner
 
 import spindoctor.config as config_mod
@@ -241,7 +242,7 @@ def test_hyperspin_running_reads_the_process_list(monkeypatch):
 def test_command_lists_the_main_menu_wheels(cabinet):
     result = _run("wheel-start")
     assert result.exit_code == 0, result.output
-    out = result.output
+    out = unstyle(result.output)
     assert NES in out and "a random game" in out
     assert "Sega Genesis" in out and "the last game it was on" in out
     assert "No Settings Wheel" in out and "no settings file" in out
