@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **`wheel-start` shows and changes where each HyperSpin wheel starts: its first game, the last game it was on, or a random game.** A wheel with `random_game=true` in the `[navigation]` section of its `Settings\<System>.ini` opens on a random game, so it lands on a different letter every time. `spindoctor wheel-start` lists where every main-menu wheel starts. `--set first|last|random` for `-s <System>` or `--all` (a dry run unless `--apply`) writes `random_game` and `use_last_game` and nothing else in the file, after a `.bak` backup that `backup sidecar` finds. It refuses to write while HyperSpin is running, because HyperSpin writes these files itself. In the GUI, **Systems** → **Where wheels start** shows the same table: selecting wheels shows their current setting in **Start on**, and **Set selected wheels** or **Set all wheels** runs the command (with `--apply` when Apply is on), then reads the table again.
+
 ## [3.2.0] - 2026-11-10
 
 ### Added
