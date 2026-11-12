@@ -92,6 +92,11 @@ def test_system_file_that_runs_lightgun_counts_as_wired(tmp_path):
     'Run("D:\\Arcade\\Utilities\\Sinden\\Lightgun.exe")',
     "run,Lightgun.exe, D:\\Arcade\\Utilities\\Sinden",
     "Run, %comspec% /c start Lightgun.exe",
+    'Run, "C:\\Program Files\\Sinden\\Lightgun.exe", C:\\Program Files\\Sinden',
+    'Run, C:\\Program Files\\DemulShooter\\DemulShooterX64.exe -target=model2',
+    'Run, *RunAs "D:\\Tools\\DemulShooter.exe" -target=model2',
+    'Run, % "D:\\Tools\\Lightgun.exe"',
+    'Run, %comspec% /c start "" "D:\\Tools\\Lightgun.exe"',
 ])
 def test_run_lines_in_any_form_count(tmp_path, line):
     cfg, uf = _cabinet(tmp_path)
@@ -470,19 +475,6 @@ def test_empty_post_launch_does_not_warn_about_replacing_the_next_key(tmp_path):
     plan = plan_wire_system("Gun Games", cfg, _install(tmp_path), target_override="mame")
     assert not plan.replace_post
     assert plan.notes == []
-
-
-@pytest.mark.parametrize("line", [
-    'Run, "C:\\Program Files\\Sinden\\Lightgun.exe", C:\\Program Files\\Sinden',
-    'Run, C:\\Program Files\\DemulShooter\\DemulShooterX64.exe -target=model2',
-    'Run, *RunAs "D:\\Tools\\DemulShooter.exe" -target=model2',
-    'Run, % "D:\\Tools\\Lightgun.exe"',
-    'Run, %comspec% /c start "" "D:\\Tools\\Lightgun.exe"',
-])
-def test_launch_target_matching_preserves_common_ahk_forms(tmp_path, line):
-    cfg, uf = _cabinet(tmp_path)
-    _write(uf / "Gun Games.ahk", _ahk(line))
-    assert audit_system_wiring("Gun Games", cfg).wired_via_user_functions
 
 
 def test_system_file_covers_unwired_emulator_overrides(tmp_path):

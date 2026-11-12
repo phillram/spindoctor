@@ -17,6 +17,13 @@ from spindoctor import __app_name__, __version__
 from spindoctor import gui
 
 
+_PAGE_ORDER = (
+    "Setup", "Diagnostics", "Systems", "Games", "Metadata & Media", "Maintenance",
+    "Custom Wheels", "Intro Video", "LEDBlinky", "Lightgun", "Test games",
+    "Backup & Restore", "Migration", "History", "Console",
+)
+
+
 def test_vertical_scrollbar_wires_widget_without_choosing_layout():
     from types import SimpleNamespace
     from unittest.mock import Mock
@@ -941,23 +948,7 @@ def test_gui_constructs_against_real_tk(monkeypatch):
         # Pin the workflow-oriented order so a drive-by reorder doesn't
         # regress UX without anyone noticing. See `_build_layout` for
         # the rationale behind the sequencing.
-        assert app._tab_base_names == [
-            "Setup",
-            "Diagnostics",
-            "Systems",
-            "Games",
-            "Metadata & Media",
-            "Maintenance",
-            "Custom Wheels",
-            "Intro Video",
-            "LEDBlinky",
-            "Lightgun",
-            "Test games",
-            "Backup & Restore",
-            "Migration",
-            "History",
-            "Console",
-        ]
+        assert app._tab_base_names == list(_PAGE_ORDER)
         # The hoisted widgets that have crashed in past releases:
         assert app._output is not None
         assert app._status_var is not None
@@ -2792,6 +2783,8 @@ def test_sidebar_system_picker_drives_every_section(monkeypatch):
         assert app._current_system_var.get() == "Nintendo 64"
         for var_attr, _refresh in gui._SYSTEM_FOLLOWERS:
             assert getattr(app, var_attr).get() == "Nintendo 64", var_attr
+        # Pin this newer follower independently of the registry under test.
+        assert app._test_system_var.get() == "Nintendo 64"
         assert calls == ["games"]
 
         app._curate_system_var.set("MAME")
@@ -4024,22 +4017,22 @@ def _test_page_app(monkeypatch, tmp_path, **cfg_values):
     return app, cfg
 
 
-def test_test_games_page_sits_after_lightgun_and_keeps_ctrl_numbers(monkeypatch, tmp_path):
-    app, _cfg = _test_page_app(monkeypatch, tmp_path)
-    try:
-        names = app._tab_base_names
-        assert names.index("Test games") == names.index("Lightgun") + 1
-        assert names[:9] == list(gui._PAGES_BEFORE_TEST_GAMES[:9])  # Ctrl+1..9 unchanged
-        assert ("Wheels & cabinet", ("Custom Wheels", "Intro Video", "LEDBlinky", "Lightgun",
-                                     "Test games")) in gui._SIDEBAR_GROUPS
-        assert "Nothing on this page changes files" not in gui._PAGE_SUMMARIES["Test games"]
-    finally:
-        app.root.destroy()
+def test_test_games_sidebar_group_and_writing_summary():
+    # The construction smoke already pins the actual 15-page order.
+    assert gui._PAGES_BEFORE_TEST_GAMES == tuple(page for page in _PAGE_ORDER if page != "Test games")
+    assert ("Wheels & cabinet", ("Custom Wheels", "Intro Video", "LEDBlinky", "Lightgun",
+                                 "Test games")) in gui._SIDEBAR_GROUPS
+    assert "Nothing on this page changes files" not in gui._PAGE_SUMMARIES["Test games"]
 
 
 def test_test_games_run_button_follows_the_apply_switch(monkeypatch, tmp_path):
-    app, _cfg = _test_page_app(monkeypatch, tmp_path)
+    app, _cfg = _test_page_app(monkeypatch, tmp_path, test_per_system=5,
+                              test_game_seconds=11, test_cleanup="remove")
     try:
+        app._test_system_var.set("Nintendo 64")
+        assert app._test_args() == [
+            "test", "--system", "Nintendo 64", "--per-system", "5",
+            "--seconds", "11", "--cleanup", "remove"]
         assert app._test_run_btn.cget("text") == "Show games"
         app._global_apply_var.set(True)
         assert app._test_run_btn.cget("text") == "Launch games"
@@ -4047,92 +4040,101 @@ def test_test_games_run_button_follows_the_apply_switch(monkeypatch, tmp_path):
         app.root.destroy()
 
 
-def test_test_games_args_from_the_page(monkeypatch, tmp_path):
-    app, _cfg = _test_page_app(monkeypatch, tmp_path)
-    try:
-        app._current_system_var.set("Nintendo 64")
-        app._push_current_system()
-        assert app._test_system_var.get() == "Nintendo 64"
-        assert app._test_args() == ["test", "--system", "Nintendo 64", "--per-system", "3",
-                                    "--seconds", "20", "--cleanup", "report"]
-        app._test_all_var.set(True)
-        app._test_genre_var.set("Shoot*")
-        app._test_games_var.set("Galaga | Pac*")
-        app._test_pick_var.set("count")
-        app._test_n_var.set("8")
-        app._test_hs_var.set(True)
-        app._test_skipped_var.set(True)
-        app._test_cleanup_var.set("remove")
-        assert app._test_args() == [
-            "test", "--all-systems", "--genre", "Shoot*", "--game", "Galaga", "--game", "Pac*",
-            "--count", "8", "--seconds", "20", "--with-hyperspin", "--include-skipped",
-            "--cleanup", "remove"]
-        app._test_pick_var.set("all")
-        assert "--all" in app._test_args()
-        app._test_seconds_var.set("0")
-        assert app._test_args() is None
-    finally:
-        app.root.destroy()
+def _test_logic_app(monkeypatch):
+    """Test-games handlers, without Tk traces or background workers."""
+    from spindoctor.config import Config
+
+    app = _process_gui(monkeypatch)
+    cfg = Config()
+    values = {
+        "system": "", "genre": "", "games": "", "all": False, "pick": "per",
+        "n": str(cfg.test_per_system), "seconds": str(cfg.test_game_seconds),
+        "hs": False, "skipped": False, "cleanup": cfg.test_cleanup or "report",
+    }
+    for name, value in values.items():
+        setattr(app, "_test_" + name + "_var", _Value(value))
+    app._global_apply_var = _Value(False)
+    app._global_verbose_var = _Value(False)
+    app._flash_validation = Mock()
+    app._refresh_test_results = Mock()
+    return app
 
 
-def test_test_games_needs_a_system_or_a_pattern(monkeypatch, tmp_path):
-    app, _cfg = _test_page_app(monkeypatch, tmp_path)
-    try:
-        app._test_system_var.set("")
-        assert app._test_args() is None
-        app._test_genre_var.set("Shooter")
-        assert app._test_args()[:3] == ["test", "--genre", "Shooter"]
-    finally:
-        app.root.destroy()
+def test_test_games_args_from_the_page(monkeypatch):
+    app = _test_logic_app(monkeypatch)
+    app._test_system_var.set("Nintendo 64")
+    assert app._test_args() == ["test", "--system", "Nintendo 64", "--per-system", "3",
+                                "--seconds", "20", "--cleanup", "report"]
+    app._test_all_var.set(True)
+    app._test_genre_var.set("Shoot*")
+    app._test_games_var.set("Galaga | Pac*")
+    app._test_pick_var.set("count")
+    app._test_n_var.set("8")
+    app._test_hs_var.set(True)
+    app._test_skipped_var.set(True)
+    app._test_cleanup_var.set("remove")
+    assert app._test_args() == [
+        "test", "--all-systems", "--genre", "Shoot*", "--game", "Galaga", "--game", "Pac*",
+        "--count", "8", "--seconds", "20", "--with-hyperspin", "--include-skipped",
+        "--cleanup", "remove"]
+    app._test_pick_var.set("all")
+    assert "--all" in app._test_args()
+    app._test_seconds_var.set("0")
+    assert app._test_args() is None
+    app._flash_validation.assert_called_once()
 
 
-def test_test_games_launch_adds_apply_and_marks_the_run(monkeypatch, tmp_path):
-    app, _cfg = _test_page_app(monkeypatch, tmp_path)
-    calls = []
-    monkeypatch.setattr(app, "_run_cli", lambda binary, args, on_complete=None: calls.append(list(args)) or True)
-    try:
-        app._test_launch(["test", "--resume"])
-        assert calls[-1] == ["test", "--resume"] and not app._test_run_active
-        app._global_apply_var.set(True)
-        app._test_launch(["test", "--resume"])
-        assert calls[-1] == ["test", "--resume", "--apply"] and app._test_run_active
-        app._test_done(0)
-        assert not app._test_run_active
-    finally:
-        app.root.destroy()
+def test_test_games_needs_a_system_or_a_pattern(monkeypatch):
+    app = _test_logic_app(monkeypatch)
+    assert app._test_args() is None
+    app._flash_validation.assert_called_once()
+    app._test_genre_var.set("Shooter")
+    assert app._test_args()[:3] == ["test", "--genre", "Shooter"]
 
 
-def test_stop_asks_a_test_run_to_stop_before_ending_it(monkeypatch, tmp_path):
+def test_test_games_launch_adds_apply_and_marks_the_run(monkeypatch):
+    app = _test_logic_app(monkeypatch)
+    app._run_cli = Mock(return_value=True)
+    args = ["test", "--resume"]
+    app._test_launch(args)
+    app._run_cli.assert_called_once_with("spindoctor", args, on_complete=app._test_done)
+    assert not app._test_run_active
+    app._global_apply_var.set(True)
+    app._test_launch(args)
+    app._run_cli.assert_called_with("spindoctor", args + ["--apply"], on_complete=app._test_done)
+    assert app._test_run_active and args == ["test", "--resume"]
+    app._test_done(0)
+    assert not app._test_run_active
+    app._refresh_test_results.assert_called_once()
+
+
+def test_stop_asks_a_test_run_to_stop_before_ending_it(monkeypatch, tmp_path, config_home):
     from spindoctor import _testrun
+    from spindoctor.config import Config
 
-    app, _cfg = _test_page_app(monkeypatch, tmp_path)
+    app = _test_logic_app(monkeypatch)
+    cfg = Config(test_close_timeout=7)
+    monkeypatch.setattr(gui, "load_config", lambda: cfg)
     run_dir = tmp_path / "runs" / "r1"
     run_dir.mkdir(parents=True)
     _testrun.set_active(run_dir, {"pid": 1})
-    killed, waited = [], []
-
-    class Proc:
-        def poll(self):
-            return None
-
-        def wait(self, timeout=None):
-            waited.append(timeout)
-            return 0
-
-    monkeypatch.setattr(gui, "stop_worker", lambda proc, timeout=5.0: killed.append(proc))
-    try:
-        app._proc = Proc()
-        app._test_run_active = True
-        app._stop_running()
-        for _ in range(200):  # the wait runs on a background thread
-            if waited:
-                break
-            gui.time.sleep(0.01)
-        assert (run_dir / "stop-request").exists()
-        assert waited and waited[0] >= 30 and killed == []
-    finally:
-        app._proc = None
-        app.root.destroy()
+    proc = Mock()
+    proc.poll.return_value = None
+    app._proc = proc
+    app._test_run_active = True
+    killed = Mock()
+    monkeypatch.setattr(gui, "stop_worker", killed)
+    app._stop_running()
+    assert (run_dir / "stop-request").exists()
+    thread = gui.threading.Thread
+    thread.assert_called_once_with(target=app._stop_test_worker, args=(proc,), daemon=True)
+    thread.return_value.start.assert_called_once()
+    # Exercise the scheduled worker without a racing daemon or a polling sleep.
+    app._stop_test_worker(proc)
+    proc.wait.assert_called_once_with(timeout=37)
+    killed.assert_not_called()
+    assert app._stop_requested
+    app._stop_btn.configure.assert_called_once_with(state="disabled")
 
 
 def test_test_games_shows_the_last_run_and_the_recover_banner(monkeypatch, tmp_path):
