@@ -195,6 +195,7 @@ _SYSTEM_FOLLOWERS: tuple[tuple[str, str], ...] = (
     ("_ignore_system_var", "_refresh_ignore_games"),
     ("_repath_system_var", ""),
     ("_lg_system_var", ""),
+    ("_test_system_var", "_refresh_test_genres"),
 )
 # One-line description shown under each page's title.
 _PAGE_SUMMARIES = {
@@ -208,20 +209,29 @@ _PAGE_SUMMARIES = {
     "Intro Video": "Choose which intro videos HyperSpin plays at startup.",
     "LEDBlinky": "Set up LEDBlinky and manage button colors, brightness and animations.",
     "Lightgun": "Find your lightgun software and set up systems to use it.",
+    "Test games": "Launch games through RocketLauncher, one after another, and see which ones break.",
     "Backup & Restore": "Back up your setup, or restore it from an earlier backup.",
     "Migration": "Move your library to a new drive. Work through the steps in order.",
     "Console": "Run any SpinDoctor command by typing it.",
     "History": "Every command run this session, with its full output.",
 }
 
-# Sidebar pages follow notebook order, so Ctrl+1..9 and the saved
-# gui_last_active_tab index keep pointing at the same pages.
+# Sidebar pages follow notebook order, so Ctrl+1..9 keep pointing at the
+# same pages.  The last page is saved by name (gui_last_active_page).
 _SIDEBAR_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("Get started", ("Setup", "Diagnostics")),
     ("Library", ("Systems", "Games", "Metadata & Media", "Maintenance")),
-    ("Wheels & cabinet", ("Custom Wheels", "Intro Video", "LEDBlinky", "Lightgun")),
+    ("Wheels & cabinet", ("Custom Wheels", "Intro Video", "LEDBlinky", "Lightgun", "Test games")),
     ("Backup & move", ("Backup & Restore", "Migration")),
     ("Advanced", ("History", "Console")),
+)
+
+# Page order before "Test games" was added, for reading a gui_last_active_tab
+# index that an older version saved.
+_PAGES_BEFORE_TEST_GAMES = (
+    "Setup", "Diagnostics", "Systems", "Games", "Metadata & Media", "Maintenance",
+    "Custom Wheels", "Intro Video", "LEDBlinky", "Lightgun", "Backup & Restore",
+    "Migration", "History", "Console",
 )
 
 
@@ -778,10 +788,12 @@ _READ_ONLY_COMMANDS: frozenset[str] = frozenset({
     "ignore list", "match list",
     "fav list", "recent list",
     "mainmenu show", "mainmenu edit",
+    "test --list-runs",
     "ledblinky audit", "ledblinky check", "ledblinky inspect-rom",
     "ledblinky colors list",
     "lightgun audit", "lightgun detect",
     "doctor",
+    "toolkit",  # cabinet actions (shutdown, …): no --apply, a countdown instead
     "config show", "config init", "config set", "config system",
     "config verify-credentials",
     "backup list", "backup info", "backup sidecar list",
@@ -1171,8 +1183,10 @@ _CUSTOM_COMMAND_PRESETS: tuple[str, ...] = (
     # ── Tools ─────────────────────────────────────────────────────────────────
     "─── Tools ───",
     "install-tools",
-    "install-tools --add-to-system <SYSTEM>",
+    "install-tools --tool <NAME>",
+    "install-tools --tool <NAME> --add-to-system <SYSTEM>",
     "uninstall-tools --apply",
+    "uninstall-tools --tool <NAME> --apply",
     # ── Config ────────────────────────────────────────────────────────────────
     "─── Config ───",
     "config init",
@@ -1377,9 +1391,14 @@ class _SpinDoctorGUI:
         # un-maximizing later snaps back to the saved window size.
         if getattr(_bootstrap_cfg, "gui_window_maximized", False):
             self.root.after_idle(lambda: _set_maximized(self.root))
-        # Stash the persisted last-active tab for _build_layout to read
-        # after the notebook is built.
-        self._restore_tab_idx = int(getattr(_bootstrap_cfg, "gui_last_active_tab", -1))
+        # Stash the persisted last-active page for _build_layout to read
+        # after the notebook is built: by name, or an older version's index
+        # (which always counts pages in the order before "Test games").
+        self._restore_page = str(getattr(_bootstrap_cfg, "gui_last_active_page", "") or "")
+        if not self._restore_page:
+            idx = int(getattr(_bootstrap_cfg, "gui_last_active_tab", -1))
+            if 0 <= idx < len(_PAGES_BEFORE_TEST_GAMES):
+                self._restore_page = _PAGES_BEFORE_TEST_GAMES[idx]
 
         # Window icon — cosmetic, must never block startup.
         self._load_window_icon()
@@ -2694,6 +2713,7 @@ class _SpinDoctorGUI:
         self._add_scrollable_tab(nb, self._build_introvideo_tab,   "Intro Video")
         self._add_scrollable_tab(nb, self._build_ledblinky_tab,    "LEDBlinky")
         self._add_scrollable_tab(nb, self._build_lightgun_tab,     "Lightgun")
+        self._add_scrollable_tab(nb, self._build_test_games_tab,   "Test games")
         self._add_scrollable_tab(nb, self._build_backup_tab,       "Backup & Restore")
         self._add_scrollable_tab(nb, self._build_migrate_tab,      "Migration")
         # History tab is the only one that intentionally fills its own
@@ -2861,9 +2881,9 @@ class _SpinDoctorGUI:
         # (touching a not-yet-built tab is fine — the notebook can
         # select an unrealised pane — but the user-visible result is
         # cleaner when we restore after all pages exist).
-        if 0 <= self._restore_tab_idx < len(self._tab_base_names):
+        if self._restore_page in self._tab_base_names:
             try:
-                self._nb.select(self._restore_tab_idx)
+                self._nb.select(self._tab_base_names.index(self._restore_page))
             except Exception:  # noqa: BLE001 - guard against teardown races
                 pass
 
@@ -12306,6 +12326,305 @@ class _SpinDoctorGUI:
             args.append("--verbose")
         self._run_cli("spindoctor", args)
 
+    # ── Test games page (spindoctor test) ─────────────────────────────────────
+
+    def _build_test_games_tab(self, parent):
+        cfg = load_config()
+        frame = self.ttk.Frame(parent, padding=12)
+        self._help_text(
+            frame,
+            text=("Launches each picked game through RocketLauncher, the way HyperSpin does, lets it "
+                  "run, and judges it: it didn't start or closed by itself, an error pop-up, a Windows "
+                  "crash report, not responding, errors in RocketLauncher's log, or a black screen. "
+                  "With Apply changes off, Show games lists the picked games with their file check "
+                  "and doctor notes and launches nothing."),
+        ).pack(fill="x", pady=(0, 4))
+        self._test_warning = self.ttk.Label(
+            frame, style="Warn.TLabel", justify="left", wraplength=self._px(860),
+            text=("Games open full screen: leave the cabinet alone while a test runs. "
+                  "RocketLauncher's play statistics are put back after every game, so test "
+                  "launches stay out of Recently Played and Most Played. Stop after this game "
+                  "ends a run cleanly; Stop ends it within a minute either way."),
+        )
+        self._test_warning.pack(anchor="w", pady=(0, 8))
+
+        # A run the Stop button or a crash ended before it could tidy up.
+        self._test_banner = self.ttk.Frame(frame)
+        self._test_banner_label = self.ttk.Label(
+            self._test_banner, style="Warn.TLabel", justify="left", wraplength=self._px(700),
+            text=("A test run was interrupted. Its game may still be open, and RocketLauncher's "
+                  "play statistics may still hold test launches."),
+        )
+        self._test_banner_label.pack(side="left")
+        self.ttk.Button(self._test_banner, text="Recover now",
+                        command=self._test_recover).pack(side="left", padx=8)
+
+        pick = self.ttk.LabelFrame(frame, text="Games to test")
+        pick.pack(fill="x", pady=(0, 8))
+        sys_row = self.ttk.Frame(pick)
+        sys_row.pack(fill="x", padx=6, pady=(4, 4))
+        self._test_system_var = self.tk.StringVar()
+        self._test_all_var = self.tk.BooleanVar(value=False)
+        self._sidebar_system_row(sys_row, self._test_system_var,
+                                 all_var=self._test_all_var).pack(side="left")
+        self.ttk.Checkbutton(sys_row, text="All systems", variable=self._test_all_var).pack(
+            side="left", padx=6)
+
+        grid = self.ttk.Frame(pick)
+        grid.pack(fill="x", padx=6, pady=(0, 4))
+        self.ttk.Label(grid, text="Genre").grid(row=0, column=0, sticky="w", pady=2)
+        self._test_genre_var = self.tk.StringVar()
+        self._test_genre_combo = self.ttk.Combobox(grid, textvariable=self._test_genre_var, width=32)
+        self._test_genre_combo.grid(row=0, column=1, sticky="w", padx=6, pady=2)
+        self.ttk.Label(grid, text="Game names").grid(row=1, column=0, sticky="w", pady=2)
+        self._test_games_var = self.tk.StringVar()
+        self.ttk.Entry(grid, textvariable=self._test_games_var, width=48).grid(
+            row=1, column=1, sticky="w", padx=6, pady=2)
+        self._help_text(
+            grid, text="Genre and names take * and ? wildcards; separate several names with |.",
+        ).grid(row=2, column=1, sticky="ew", padx=6)
+
+        count_row = self.ttk.Frame(pick)
+        count_row.pack(fill="x", padx=6, pady=(0, 4))
+        self._test_pick_var = self.tk.StringVar(value="per")
+        self._test_n_var = self.tk.StringVar(value=str(cfg.test_per_system))
+        for value, label in (("per", "Random, per system:"), ("count", "Random, in total:"),
+                             ("all", "Every game")):
+            self.ttk.Radiobutton(count_row, text=label, value=value,
+                                 variable=self._test_pick_var).pack(side="left", padx=(0, 6))
+        self.ttk.Spinbox(count_row, from_=1, to=100000, width=6,
+                         textvariable=self._test_n_var).pack(side="left", padx=(0, 12))
+        self.ttk.Label(count_row, text="Seconds per game").pack(side="left")
+        self._test_seconds_var = self.tk.StringVar(value=str(cfg.test_game_seconds))
+        self.ttk.Spinbox(count_row, from_=1, to=3600, width=5,
+                         textvariable=self._test_seconds_var).pack(side="left", padx=6)
+
+        opt_row = self.ttk.Frame(pick)
+        opt_row.pack(fill="x", padx=6, pady=(0, 6))
+        self._test_hs_var = self.tk.BooleanVar(value=False)
+        self._test_skipped_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(opt_row, text="Open HyperSpin first",
+                             variable=self._test_hs_var).pack(side="left")
+        self.ttk.Checkbutton(opt_row, text="Include skipped wheels and PCLauncher games",
+                             variable=self._test_skipped_var).pack(side="left", padx=12)
+        self.ttk.Label(opt_row, text="Files the games create").pack(side="left")
+        self._test_cleanup_var = self.tk.StringVar(value=cfg.test_cleanup or "report")
+        self.ttk.Combobox(opt_row, textvariable=self._test_cleanup_var, state="readonly", width=8,
+                          values=("report", "remove", "off")).pack(side="left", padx=6)
+
+        btn_row = self.ttk.Frame(frame)
+        btn_row.pack(fill="x", pady=(0, 8))
+        self._test_run_btn = self.ttk.Button(btn_row, width=16, command=self._test_run)
+        self._test_run_btn.pack(side="left")
+        self.ttk.Button(btn_row, text="Resume last run",
+                        command=lambda: self._test_launch(["test", "--resume"])).pack(side="left", padx=6)
+        self.ttk.Button(btn_row, text="Re-test failed",
+                        command=lambda: self._test_launch(["test", "--only-failed"])).pack(side="left")
+        self.ttk.Button(btn_row, text="Stop after this game",
+                        command=self._test_stop_after_game).pack(side="left", padx=6)
+        self._global_apply_var.trace_add("write", lambda *_a: self._label_test_run_btn())
+        self._label_test_run_btn()
+
+        last = self.ttk.LabelFrame(frame, text="Last run")
+        last.pack(fill="both", expand=True)
+        head = self.ttk.Frame(last)
+        head.pack(fill="x", padx=6, pady=(4, 4))
+        self._test_run_label = self.ttk.Label(head, text="", foreground=_FG_DIM)
+        self._test_run_label.pack(side="left")
+        self.ttk.Button(head, text="Open report", command=self._test_open_report).pack(side="right")
+        self.ttk.Button(head, text="Open run folder",
+                        command=self._test_open_folder).pack(side="right", padx=6)
+        tree_frame = self.ttk.Frame(last)
+        tree_frame.pack(fill="both", expand=True, padx=6, pady=(0, 6))
+        tree_frame.columnconfigure(0, weight=1)
+        self._test_tree = self.ttk.Treeview(
+            tree_frame, columns=("status", "system", "game", "reason", "seconds"),
+            show="headings", selectmode="browse", height=10)
+        for col, text, width, stretch in (("status", "Result", 70, False), ("system", "System", 170, False),
+                                          ("game", "Game", 240, False), ("reason", "Why", 380, True),
+                                          ("seconds", "s", 40, False)):
+            self._test_tree.heading(col, text=text, anchor="w")
+            self._test_tree.column(col, width=self._px(width), stretch=stretch, anchor="w")
+        self._test_tree.tag_configure("FAIL", foreground="#d04040")
+        self._test_tree.tag_configure("WARN", foreground="#c07000")
+        self._test_tree.tag_configure("SKIPPED", foreground=_FG_DIMMER)
+        vsb = self._vertical_scrollbar(tree_frame, self._test_tree)
+        self._test_tree.grid(row=0, column=0, sticky="nsew")
+        vsb.grid(row=0, column=1, sticky="ns")
+        self._test_tree.bind("<Double-Button-1>", self._test_open_screenshot)
+        self._test_tree.bind("<Return>", self._test_open_screenshot)
+        self._test_rows: dict[str, dict] = {}
+        self._test_last_run: Optional[Path] = None
+
+        self._refresh_test_genres()
+        self._refresh_test_results()
+        return frame
+
+    def _label_test_run_btn(self) -> None:
+        apply = bool(self._global_apply_var.get())
+        self._test_run_btn.configure(text="Launch games" if apply else "Show games")
+
+    def _refresh_test_genres(self) -> None:
+        """Fill the genre list from the sidebar system's database."""
+        genres: set[str] = set()
+        system = self._test_system_var.get().strip()
+        if system:
+            try:
+                db = load_database(system, load_config().databases_dir)
+                genres = {g.genre.strip() for g in db.games().values() if (g.genre or "").strip()}
+            except Exception:  # noqa: BLE001 - a missing database just means no suggestions
+                genres = set()
+        self._test_genre_combo.configure(values=[""] + sorted(genres, key=str.lower))
+
+    def _test_args(self) -> Optional[list[str]]:
+        """``spindoctor test`` arguments for the page's choices (without --apply)."""
+        args = ["test"]
+        system = self._test_system_var.get().strip()
+        genre = self._test_genre_var.get().strip()
+        names = [n.strip() for n in self._test_games_var.get().split("|") if n.strip()]
+        if self._test_all_var.get():
+            args.append("--all-systems")
+        elif system:
+            args += ["--system", system]
+        elif not (genre or names):
+            self._flash_validation("Pick a system in the sidebar or check All systems.")
+            return None
+        if genre:
+            args += ["--genre", genre]
+        for name in names:
+            args += ["--game", name]
+        pick = self._test_pick_var.get()
+        if pick == "all":
+            args.append("--all")
+        else:
+            n = self._test_n_var.get().strip()
+            if not n.isdigit() or int(n) < 1:
+                self._flash_validation("The number of games must be a whole number, 1 or more.")
+                return None
+            args += ["--count" if pick == "count" else "--per-system", n]
+        seconds = self._test_seconds_var.get().strip()
+        if not seconds.isdigit() or not 1 <= int(seconds) <= 3600:
+            self._flash_validation("Seconds per game must be a whole number from 1 to 3600.")
+            return None
+        args += ["--seconds", seconds]
+        if self._test_hs_var.get():
+            args.append("--with-hyperspin")
+        if self._test_skipped_var.get():
+            args.append("--include-skipped")
+        args += ["--cleanup", self._test_cleanup_var.get() or "report"]
+        return args
+
+    def _test_run(self) -> None:
+        args = self._test_args()
+        if args is not None:
+            self._test_launch(args)
+
+    def _test_launch(self, args: list[str]) -> None:
+        args = list(args)
+        apply = bool(self._global_apply_var.get())
+        if apply:
+            args.append("--apply")
+        if self._global_verbose_var is not None and self._global_verbose_var.get():
+            args.append("--verbose")
+        self._test_run_active = apply
+        if not self._run_cli("spindoctor", args, on_complete=self._test_done):
+            self._test_run_active = False
+
+    def _test_done(self, _rc: int) -> None:
+        self._test_run_active = False
+        self._refresh_test_results()
+
+    def _test_recover(self) -> None:
+        self._run_cli("spindoctor", ["test", "--recover"], on_complete=self._test_done)
+
+    def _test_request_stop(self) -> bool:
+        """Ask the running test to stop after closing its game; False when
+        there's no run to ask."""
+        from ._testrun import active_run
+
+        run = active_run()
+        if not run or not run.get("run_dir"):
+            return False
+        try:
+            (Path(run["run_dir"]) / "stop-request").write_text("", encoding="utf-8")
+        except OSError:
+            return False
+        return True
+
+    def _test_stop_after_game(self) -> None:
+        if getattr(self, "_test_run_active", False) and self._test_request_stop():
+            self._set_status("Stopping after this game")
+        else:
+            self._flash_validation("No test run is launching games.")
+
+    def _stop_test_worker(self, proc) -> None:
+        """Give a stopping test run time to close its game, then end it."""
+        try:
+            grace = load_config().test_close_timeout + 30
+        except Exception:  # noqa: BLE001
+            grace = 60
+        try:
+            proc.wait(timeout=grace)
+        except subprocess.TimeoutExpired:
+            stop_worker(proc)
+
+    def _refresh_test_results(self) -> None:
+        """Show the newest run's results, and the banner when a run is unfinished."""
+        from . import _testrun, gametest
+
+        cfg = load_config()
+        running = bool(getattr(self, "_test_run_active", False))
+        if _testrun.active_run() is not None and not running:
+            self._test_banner.pack(fill="x", pady=(0, 8), after=self._test_warning)
+        else:
+            self._test_banner.pack_forget()
+        self._test_tree.delete(*self._test_tree.get_children())
+        self._test_rows = {}
+        runs = gametest.list_runs(_testrun.tests_dir(cfg))
+        if not runs:
+            self._test_last_run = None
+            self._test_run_label.configure(text="No test runs yet.")
+            return
+        run_dir, info = runs[0]
+        self._test_last_run = run_dir
+        rows = gametest.read_csv(run_dir / "results.csv")
+        order = {"FAIL": 0, "WARN": 1, "PASS": 2, "SKIPPED": 3}
+        rows.sort(key=lambda r: (order.get(r.get("Status", ""), 4), r.get("System", ""), r.get("Game", "")))
+        for i, r in enumerate(rows):
+            iid = str(i)
+            self._test_rows[iid] = r
+            self._test_tree.insert("", "end", iid=iid, tags=(r.get("Status", ""),), values=(
+                r.get("Status", ""), r.get("System", ""), r.get("Game", ""), r.get("Reason", ""),
+                r.get("Seconds", "")))
+        tally: dict[str, int] = {}
+        for r in rows:
+            tally[r.get("Status", "")] = tally.get(r.get("Status", ""), 0) + 1
+        state = "finished" if info.get("finished") else "not finished"
+        counts = ", ".join(f"{n} {s.lower()}" for s, n in sorted(tally.items()))
+        self._test_run_label.configure(text=f"{run_dir.name} ({state}): {counts or 'no games'}")
+
+    def _test_open_screenshot(self, _event=None) -> None:
+        sel = self._test_tree.selection()
+        row = self._test_rows.get(sel[0]) if sel else None
+        if row is None or self._test_last_run is None:
+            return
+        if row.get("Screenshot"):
+            self._open_path(self._test_last_run / row["Screenshot"], missing_label="The screenshot")
+        else:
+            self._flash_validation(f"No screenshot for {row.get('Game', 'this game')}.")
+
+    def _test_open_report(self) -> None:
+        if self._test_last_run is None:
+            self._flash_validation("No test runs yet.")
+            return
+        self._open_path(self._test_last_run / "report.html", missing_label="The report")
+
+    def _test_open_folder(self) -> None:
+        if self._test_last_run is None:
+            self._flash_validation("No test runs yet.")
+            return
+        self._open_path(self._test_last_run, missing_label="The run folder")
+
     # ── Tools tab (Custom wheels + Install wheel helpers) ─────────────────────
 
     def _build_tools_tab(self, parent):
@@ -12436,9 +12755,20 @@ class _SpinDoctorGUI:
 
         self._help_text(
             helpers_lf,
-            text="Create Refresh Favorites, Refresh Recently Played, Refresh Most Played and Refresh All batch shortcuts. Use them from HyperHQ Tools or an existing maintenance wheel.",
+            text="Tick the helpers you want, then install them for HyperHQ Tools or into an existing maintenance wheel. Helpers you leave unticked are not touched; Uninstall from wheel removes only the ticked ones.",
         ).pack(fill="x", padx=6, pady=(4, 6))
 
+        from .toolkit_helpers import HELPERS as _TOOL_HELPERS
+
+        pick_frame = self.ttk.Frame(helpers_lf)
+        pick_frame.pack(fill="x", padx=6, pady=(0, 6))
+        self._tools_pick_vars = {}
+        for i, helper in enumerate(_TOOL_HELPERS):
+            var = self.tk.BooleanVar(value=False)
+            self._tools_pick_vars[helper.key] = var
+            box = self.ttk.Checkbutton(pick_frame, text=helper.name, variable=var)
+            box.grid(row=i // 2, column=i % 2, sticky="w", padx=(0, 24), pady=1)
+            _attach_tooltip(box, helper.summary[:1].upper() + helper.summary[1:] + ".", self.tk)
 
         # HyperHQ → Tools install (default)
         hhq_frame = self.ttk.LabelFrame(
@@ -12447,7 +12777,7 @@ class _SpinDoctorGUI:
         hhq_frame.pack(fill="x", padx=6, pady=(2, 8))
         self._help_text(
             hhq_frame,
-            text="Blank output directory uses <rocketlauncher_dir>/Modules/HyperLaunch/Tools/spindoctor. To use HyperSpin's Tools menu, register the generated shortcuts in HyperHQ > Tools.",
+            text="Blank output directory uses <rocketlauncher_dir>/Modules/HyperLaunch/Tools/spindoctor. To use HyperSpin's Tools menu, register the generated shortcuts in HyperHQ > Tools. Idle Tour starts with HyperSpin instead: with Apply ticked it is added to HyperSpin's Startup Script.",
         ).pack(fill="x", padx=6, pady=(2, 4))
 
         out_row = self.ttk.Frame(hhq_frame)
@@ -12467,6 +12797,9 @@ class _SpinDoctorGUI:
             command=self._run_install_tools,
         ).pack(anchor="w", padx=6, pady=(4, 6))
 
+        # The Idle Tour's own settings file, as a form.
+        self._build_idle_tour_settings(helpers_lf)
+
         # Wheel-integration mode (e.g. user's 'Toolkit' wheel)
         wheel_frame = self.ttk.LabelFrame(
             helpers_lf, text="Install into an existing wheel system",
@@ -12474,7 +12807,7 @@ class _SpinDoctorGUI:
         wheel_frame.pack(fill="x", padx=6, pady=(2, 8))
         self._help_text(
             wheel_frame,
-            text="Add refresh entries and PCLauncher INIs to an existing maintenance wheel, such as Toolkit. The target system must already exist and use PCLauncher.",
+            text="Add the ticked helpers as entries, with PCLauncher INIs, to an existing maintenance wheel, such as Toolkit. The target system must already exist and use PCLauncher.",
         ).pack(fill="x", padx=6, pady=(2, 4))
 
         sys_row = self.ttk.Frame(wheel_frame)
@@ -12673,11 +13006,192 @@ class _SpinDoctorGUI:
         self._refresh_autorefresh_status()
         return frame
 
+    # ── Idle Tour settings ────────────────────────────────────────────────────
+
+    #: (Settings field, CLI option, what the status bar calls it, the CLI's
+    #: top value, whole numbers only) per number box.
+    _IDLE_TOUR_NUMBERS = (
+        ("games_per_console", "--games-per-console", "Games in a console", 9999, True),
+        ("console_minutes", "--console-minutes", "Minutes in a console", 1440, False),
+        ("consoles_on_main_menu", "--consoles-on-main-menu", "Consoles on the main menu", 9999, True),
+        ("main_menu_minutes", "--main-menu-minutes", "Minutes on the main menu", 1440, False),
+        ("tour_max_minutes", "--tour-max-minutes", "Tour limit", 1440, False),
+        ("no_video_seconds", "--no-video-seconds", "Seconds on an item with no video", 3600, False),
+    )
+
+    def _build_idle_tour_settings(self, parent) -> None:
+        """Idle Tour's settings file as a form. Load reads it here; Save runs
+        `toolkit idle-tour-settings`, which changes only those keys."""
+        lf = self.ttk.LabelFrame(parent, text="Idle Tour settings")
+        lf.pack(fill="x", padx=6, pady=(2, 8))
+        self._help_text(
+            lf,
+            text="While HyperSpin's own idle mode runs, Idle Tour changes wheels as a video ends: back to the main menu after the games or minutes in a console, and into the console just shown after the consoles or minutes on the main menu, whichever comes first (0 switches one off). On a game or console with no video, where HyperSpin would wait its whole idle time, it presses Down after the seconds set (0 = wait). Ticked consoles are never opened. It keeps touring for as long as HyperSpin runs; its key presses count as input to Windows, so to let Windows turn the screen off, set Stop touring after to a number of minutes. Save writes these values to Idle Tour settings.ini at once and leaves the rest of the file as it is; the tour reads them when HyperSpin starts.",
+        ).pack(fill="x", padx=6, pady=(2, 4))
+        self._idle_tour_file_label = self.ttk.Label(lf, text="", foreground=_FG_DIM)
+        self._idle_tour_file_label.pack(anchor="w", padx=6, pady=(0, 2))
+
+        form = self.ttk.Frame(lf)
+        form.pack(fill="x", padx=6, pady=2)
+        self._idle_tour_enabled_var = self.tk.BooleanVar(value=True)
+        self.ttk.Checkbutton(
+            form, text="Enabled", variable=self._idle_tour_enabled_var,
+        ).grid(row=0, column=0, columnspan=5, sticky="w", pady=2)
+        self._idle_tour_vars = {n[0]: self.tk.StringVar() for n in self._IDLE_TOUR_NUMBERS}
+        layout = (
+            ("In a console", (("games_per_console", "games"), ("console_minutes", "minutes"))),
+            ("On the main menu", (("consoles_on_main_menu", "consoles"), ("main_menu_minutes", "minutes"))),
+            ("Stop touring after", (("tour_max_minutes", "minutes (0 = never)"),)),
+            ("No video: Down after", (("no_video_seconds", "seconds (0 = wait for HyperSpin)"),)),
+        )
+        tops = {n[0]: n[3] for n in self._IDLE_TOUR_NUMBERS}
+        for row, (label, boxes) in enumerate(layout, start=1):
+            self.ttk.Label(form, text=label).grid(row=row, column=0, sticky="w", padx=(0, 8), pady=2)
+            for col, (field, unit) in enumerate(boxes):
+                self.ttk.Spinbox(
+                    form, from_=0, to=tops[field], textvariable=self._idle_tour_vars[field], width=6,
+                ).grid(row=row, column=1 + 2 * col, sticky="w", pady=2)
+                self.ttk.Label(form, text=unit).grid(
+                    row=row, column=2 + 2 * col, sticky="w", padx=(4, 16), pady=2,
+                )
+
+        self.ttk.Label(lf, text="Never open these consoles:").pack(anchor="w", padx=6, pady=(4, 0))
+        skip_frame = self.ttk.Frame(lf)
+        skip_frame.pack(fill="x", padx=6, pady=(2, 2))
+        skip_frame.columnconfigure(0, weight=1)
+        self._idle_tour_skip_lb = self.tk.Listbox(
+            skip_frame, selectmode=self.tk.MULTIPLE, height=6, exportselection=False,
+        )
+        skip_vsb = self._vertical_scrollbar(skip_frame, self._idle_tour_skip_lb)
+        self._idle_tour_skip_lb.grid(row=0, column=0, sticky="ew")
+        skip_vsb.grid(row=0, column=1, sticky="ns")
+        self._help_text(
+            lf,
+            text="The list is HyperSpin's main menu; names on the skip list that aren't on it stay at the end. Wheels with no database are never opened either.",
+        ).pack(fill="x", padx=6, pady=(0, 2))
+
+        btns = self.ttk.Frame(lf)
+        btns.pack(anchor="w", padx=6, pady=(4, 6))
+        self.ttk.Button(
+            btns, text="Load current settings",
+            command=self._load_idle_tour_settings,
+        ).pack(side="left")
+        self.ttk.Button(
+            btns, text="Save settings",
+            command=self._save_idle_tour_settings,
+        ).pack(side="left", padx=6)
+        self._load_idle_tour_settings(announce=False)
+
+    def _idle_tour_settings_path(self) -> Optional[Path]:
+        from .idle_tour import settings_location
+
+        try:
+            return settings_location(load_config())
+        except Exception:  # noqa: BLE001 — an unreadable Startup Script reads as "not installed"
+            return None
+
+    def _load_idle_tour_settings(self, announce: bool = True) -> None:
+        """Fill the form from the settings file (the defaults while there is
+        none yet) and the skip list from Main Menu.xml."""
+        from . import idle_tour as it
+
+        path = self._idle_tour_settings_path()
+        exists = path is not None and path.is_file()
+        settings = it.read_settings(path if exists else None)
+        kinds = {e.field: e.kind for e in it.EDITABLE}
+        self._idle_tour_enabled_var.set(settings.enabled)
+        for field, var in self._idle_tour_vars.items():
+            var.set(it.setting_text(kinds[field], getattr(settings, field)))
+
+        cfg = load_config()
+        on_menu: list = []
+        if (cfg.hyperspin_dir or "").strip():
+            try:
+                from . import mainmenu as _mm_mod
+                on_menu = [e.system for e in _mm_mod.load_main_menu(cfg).entries]
+            except Exception:  # noqa: BLE001 — no Main Menu.xml: only the skip list
+                on_menu = []
+        names: list = []
+        known: set = set()
+        for name in on_menu + list(settings.skip):   # each once, ignoring case
+            if name.casefold() not in known:
+                known.add(name.casefold())
+                names.append(name)
+        lb = self._idle_tour_skip_lb
+        lb.delete(0, "end")
+        for i, name in enumerate(names):
+            lb.insert("end", name)
+            if settings.skips(name):
+                lb.selection_set(i)
+
+        if exists:
+            text = f"File: {path}"
+        elif path is not None:
+            text = (f"Not installed yet ({path}): install Idle Tour above first; "
+                    "until then these are the defaults.")
+        else:
+            text = "Set the HyperSpin and RocketLauncher folders on the Setup tab first."
+        self._idle_tour_file_label.configure(text=text)
+        if announce:
+            self._set_status("Idle Tour settings loaded." if exists else text)
+
+    def _save_idle_tour_settings(self) -> None:
+        path = self._idle_tour_settings_path()
+        if path is None or not path.is_file():
+            self._flash_validation(
+                "Install Idle Tour first (tick it, then Install Tools-menu helpers): "
+                "that writes its settings file."
+            )
+            return
+        args = ["toolkit", "idle-tour-settings", "--settings", str(path),
+                "--enabled" if self._idle_tour_enabled_var.get() else "--disabled"]
+        for field, option, label, top, whole in self._IDLE_TOUR_NUMBERS:
+            raw = self._idle_tour_vars[field].get().strip()
+            try:
+                value = int(raw) if whole else float(raw)
+            except ValueError:
+                value = -1
+            if not 0 <= value <= top:          # also refuses nan
+                self._flash_validation(
+                    f"{label} must be {'a whole number' if whole else 'a number'} "
+                    f"from 0 to {top} (0 switches it off); got {raw!r}."
+                )
+                return
+            args += [option, raw]
+        lb = self._idle_tour_skip_lb
+        args += ["--skip", "|".join(lb.get(i) for i in lb.curselection())]
+        self._run_cli(
+            "spindoctor", args,
+            on_complete=lambda _rc: self._load_idle_tour_settings(announce=False),
+        )
+
+    def _ticked_tool_helpers(self, button: str):
+        """The helpers ticked in the checklist, or None (after a status-bar
+        prompt) when none are."""
+        from .toolkit_helpers import HELPERS
+
+        picked = [h for h in HELPERS if self._tools_pick_vars[h.key].get()]
+        if not picked:
+            self._flash_validation(f"Tick at least one helper before clicking {button}.")
+            return None
+        return picked
+
+    @staticmethod
+    def _tool_args(picked) -> "list[str]":
+        return ["--tool", ",".join(h.key for h in picked)]
+
     def _run_install_tools(self) -> None:
-        args = ["install-tools"]
+        picked = self._ticked_tool_helpers("Install Tools-menu helpers")
+        if picked is None:
+            return
+        args = ["install-tools"] + self._tool_args(picked)
         outdir = self._tools_outdir_var.get().strip()
         if outdir:
             args += ["--output-dir", outdir]
+        # Only the Idle Tour's Startup Script entry waits for --apply here.
+        apply_var = self._global_apply_var
+        if any(h.startup for h in picked) and apply_var is not None and apply_var.get():
+            args.append("--apply")
         self._run_cli("spindoctor", args)
 
     def _run_install_tools_into_wheel(self) -> None:
@@ -12688,8 +13202,20 @@ class _SpinDoctorGUI:
                 "(e.g. 'Toolkit') before clicking Install into wheel."
             )
             return
+        picked = self._ticked_tool_helpers("Install into wheel")
+        if picked is None:
+            return
+        # Idle Tour starts with HyperSpin and is never a wheel entry.
+        picked = [h for h in picked if not h.startup]
+        if not picked:
+            self._flash_validation(
+                "Idle Tour starts with HyperSpin, not from a wheel: use "
+                "Install Tools-menu helpers for it."
+            )
+            return
         self._run_cli(
-            "spindoctor", ["install-tools", "--add-to-system", wheel],
+            "spindoctor",
+            ["install-tools"] + self._tool_args(picked) + ["--add-to-system", wheel],
         )
 
     def _run_uninstall_tools_from_wheel(self) -> None:
@@ -12700,17 +13226,20 @@ class _SpinDoctorGUI:
                 "(e.g. 'Toolkit') before clicking Uninstall from wheel."
             )
             return
+        picked = self._ticked_tool_helpers("Uninstall from wheel")
+        if picked is None:
+            return
         if not self.messagebox.askyesno(
             "Confirm uninstall",
-            f"Remove all SpinDoctor helper files and database entries "
-            f"from the '{wheel}' wheel?\n\n"
-            "This deletes the .bat and .ini files from the PCLauncher "
-            "folder and removes the matching <game> entries from "
+            f"Remove these SpinDoctor helpers from the '{wheel}' wheel?\n\n"
+            + "\n".join(f"  • {h.name}" for h in picked) + "\n\n"
+            "This deletes their .bat and .ini files from the PCLauncher "
+            "folder and removes their <game> entries from "
             f"{wheel}.xml. This cannot be undone (except by re-running "
             "'Install into wheel').",
         ):
             return
-        args = ["uninstall-tools", "--add-to-system", wheel]
+        args = ["uninstall-tools"] + self._tool_args(picked) + ["--add-to-system", wheel]
         if self._global_apply_var.get():
             args.append("--apply")
         self._run_cli("spindoctor", args)
@@ -13432,10 +13961,12 @@ class _SpinDoctorGUI:
         # --undo restores files immediately in every CLI command that has
         # it (curate, media-scan, theme-apply, migrate, batch-edit,
         # rename, organize); none of them wait for --apply.
+        # `test --recover` puts a stopped test run's files back right away too.
         if (
             "--apply" in args
             or "--undo" in args
             or (args and args[0] == "self-doctor" and "--fix" in args)
+            or (args and args[0] == "test" and "--recover" in args)
         ):
             is_dry_run: Optional[bool] = False
         elif _is_read_only_invocation(tuple(args)):
@@ -13716,6 +14247,13 @@ class _SpinDoctorGUI:
         # still in flight is dropped.
         proc = getattr(self, "_proc", None)
         if proc is not None and proc.poll() is None:
+            # A game test gets a few seconds to close its game and put the
+            # play statistics back; `spindoctor test --recover` does the rest.
+            if getattr(self, "_test_run_active", False) and self._test_request_stop():
+                try:
+                    proc.wait(timeout=10)
+                except (subprocess.TimeoutExpired, OSError, AttributeError):
+                    pass
             try:
                 stop_worker(proc, timeout=3.0)
             except (OSError, AttributeError):
@@ -13745,21 +14283,26 @@ class _SpinDoctorGUI:
         else:
             geom = getattr(load_config(), "gui_window_geometry", "") or ""
         try:
-            tab_idx = int(self._nb.index("current"))
+            page = self._tab_base_names[int(self._nb.index("current"))]
         except Exception:  # noqa: BLE001
-            tab_idx = -1
+            page = ""
+        # The index keeps counting pages as older versions do, so going back
+        # to one still opens the right page (or the default for a new one).
+        tab_idx = _PAGES_BEFORE_TEST_GAMES.index(page) if page in _PAGES_BEFORE_TEST_GAMES else -1
         cfg = load_config()
         dpi = round(getattr(self, "_dpi_scale", 1.0), 3)
         if (
             getattr(cfg, "gui_window_geometry", "") == geom
             and getattr(cfg, "gui_window_maximized", False) == maximized
             and getattr(cfg, "gui_last_active_tab", -1) == tab_idx
+            and getattr(cfg, "gui_last_active_page", "") == page
             and getattr(cfg, "gui_window_dpi_scale", 1.0) == dpi
         ):
             return
         cfg.gui_window_geometry = geom
         cfg.gui_window_maximized = maximized
         cfg.gui_last_active_tab = tab_idx
+        cfg.gui_last_active_page = page
         cfg.gui_window_dpi_scale = dpi
         save_config(cfg)
 
@@ -13919,8 +14462,13 @@ class _SpinDoctorGUI:
         if self._proc is None or self._proc.poll() is not None:
             return
         # Off the Tk thread: stop_worker waits briefly for a one-file
-        # launcher to clean up after its worker is ended.
-        threading.Thread(target=stop_worker, args=(self._proc,), daemon=True).start()
+        # launcher to clean up after its worker is ended.  A game test asks
+        # the run to stop first (it closes the game and puts RocketLauncher's
+        # statistics back), and is only ended if it doesn't in time.
+        if getattr(self, "_test_run_active", False) and self._test_request_stop():
+            threading.Thread(target=self._stop_test_worker, args=(self._proc,), daemon=True).start()
+        else:
+            threading.Thread(target=stop_worker, args=(self._proc,), daemon=True).start()
         # Chained workflows (Preflight, Full metadata refresh, wheel
         # refreshes) start their next step from the done callback; this
         # makes that start end the chain instead.

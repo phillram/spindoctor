@@ -276,6 +276,27 @@ def config_set(key: str, value: str):
       mame_executable           Path to MAME binary (used for -listxml)
       metadata_cache_ttl_days   Days to keep cached API responses (default 30)
       metadata_cache_enabled    true | false (default true)
+      test_skip_systems         Wheels `spindoctor test` never launches unless named
+      test_skip_pclauncher      true | false (default true): skip PCLauncher games
+      test_skip_custom_wheels   true | false (default true): skip SpinDoctor's
+                                Favorites / Recently Played / Most Played
+      test_helper_processes     Programs RocketLauncher starts that aren't the game,
+                                added to the built-in list; !name removes one
+      test_ignore_log_errors    Harmless RocketLauncher log errors (substrings)
+      test_error_window_words   Regex for pop-up titles that mean trouble
+      test_game_seconds         Seconds a game runs before it is judged (default 20)
+      test_launch_timeout       Seconds to wait for a game window (default 90)
+      test_close_timeout        Seconds to wait after the exit key (default 25)
+      test_cooldown             Seconds between games (default 3)
+      test_per_system           Games per wheel when no count is given (default 3)
+      test_screenshot_width     Screenshot width in pixels (default 480)
+      test_results_dir          Where test runs go (blank = ~/.spindoctor/tests)
+      test_hyperspin_timeout    Seconds to wait for HyperSpin's Main Menu (default 180)
+      test_ignore_hyperspin_log Harmless HyperSpin log.txt lines (substrings)
+      test_skip_intro_video     true | false (default true): skip HyperSpin's intro
+      test_cleanup              report | remove | off (default report): files the
+                                test's games create
+      test_cleanup_skip         Folders the cleanup leaves alone (relative to hyperspin_dir)
     """
     config = _cfg()
     if not hasattr(config, key) or key in (
@@ -292,6 +313,13 @@ def config_set(key: str, value: str):
         "max_concurrent_downloads": (1, 64),
         "metadata_cache_ttl_days": (0, 3650),
         "ui_scale": (0.6, 2.0),
+        "test_game_seconds": (1, 3600),
+        "test_launch_timeout": (5, 3600),
+        "test_close_timeout": (1, 600),
+        "test_cooldown": (0, 600),
+        "test_per_system": (1, 100000),
+        "test_screenshot_width": (64, 3840),
+        "test_hyperspin_timeout": (10, 3600),
     }
     current = getattr(config, key)
     _metadata_sources = ("auto", "screenscraper", "thegamesdb", "both")
@@ -301,6 +329,14 @@ def config_set(key: str, value: str):
             err_console.print(
                 f"[red]Invalid value for[/red] {key}: {value!r} "
                 f"(expected one of: {', '.join(_metadata_sources)})"
+            )
+            sys.exit(1)
+    if key == "test_cleanup":
+        from .gametest_cleanup import MODES
+        value = value.strip().lower()
+        if value not in MODES:
+            err_console.print(
+                f"[red]Invalid value for[/red] {key}: {value!r} (expected one of: {', '.join(MODES)})"
             )
             sys.exit(1)
     if isinstance(current, dict):
@@ -2589,15 +2625,20 @@ def recent_rebuild(limit, target_system, media_mode, apply_changes, verbose):
             "[yellow bold][DRY RUN][/yellow bold] No files will be written. "
             "Re-run with [cyan]--apply[/cyan] to commit."
         )
-    summary = rebuild(
-        config,
-        target_system=target_system,
-        limit=limit,
-        media_mode=mode,
-        skip_media=skip_media,
-        dry_run=not apply_changes,
-        verbose=verbose,
-    )
+    from ._testrun import ActiveRunError
+    try:
+        summary = rebuild(
+            config,
+            target_system=target_system,
+            limit=limit,
+            media_mode=mode,
+            skip_media=skip_media,
+            dry_run=not apply_changes,
+            verbose=verbose,
+        )
+    except ActiveRunError as exc:
+        err_console.print(f"[red]{escape(str(exc))}[/red]")
+        sys.exit(1)
     _print_synth_summary("Recently Played", summary)
     if apply_changes:
         _sync_ledblinky_collection(config, target_system, apply_changes)
@@ -3342,15 +3383,20 @@ def stats_report_build_wheel(limit, target_system, media_mode,
         _warn_rocketlauncher_dir(config)
     skip_media = media_mode == "none"
     mode = LinkMode.AUTO if skip_media else LinkMode(media_mode)
-    summary = build_most_played_wheel(
-        config,
-        target_system=target_system,
-        limit=limit,
-        media_mode=mode,
-        skip_media=skip_media,
-        skip_launchers=staging,
-        verbose=verbose,
-    )
+    from ._testrun import ActiveRunError
+    try:
+        summary = build_most_played_wheel(
+            config,
+            target_system=target_system,
+            limit=limit,
+            media_mode=mode,
+            skip_media=skip_media,
+            skip_launchers=staging,
+            verbose=verbose,
+        )
+    except ActiveRunError as exc:
+        err_console.print(f"[red]{escape(str(exc))}[/red]")
+        sys.exit(1)
     if staging:
         console.print(
             "[dim]Staging to --output-dir: wrote database + media only; "
@@ -3395,33 +3441,11 @@ def stats_report_clear_wheel(target_system, apply_changes):
 
 
 def _collect_stat_files(rl: Path) -> list[Path]:
-    """Return all RocketLauncher Statistics.ini paths across every known layout.
+    """Return all RocketLauncher Statistics.ini paths across every known layout
+    (:func:`spindoctor.playtime.stat_files`)."""
+    from .playtime import stat_files
 
-    Three layouts are scanned (a cabinet may use more than one):
-    - Classic  : ``Settings/Global Statistics/<System>.ini``
-    - Legacy   : ``Settings/<System>/Statistics.ini``
-    - Newer    : ``Data/Statistics/<System>.ini`` (including the aggregate
-                 ``Global Statistics.ini`` — RL regenerates it on next launch)
-    """
-    stat_files: list[Path] = []
-
-    global_dir = rl / "Settings" / "Global Statistics"
-    if global_dir.is_dir():
-        stat_files.extend(global_dir.glob("*.ini"))
-
-    settings_dir = rl / "Settings"
-    if settings_dir.is_dir():
-        for sys_dir in settings_dir.iterdir():
-            if sys_dir.is_dir():
-                s = sys_dir / "Statistics.ini"
-                if s.is_file():
-                    stat_files.append(s)
-
-    data_stats_dir = rl / "Data" / "Statistics"
-    if data_stats_dir.is_dir():
-        stat_files.extend(data_stats_dir.glob("*.ini"))
-
-    return stat_files
+    return stat_files(rl)
 
 
 def _scrub_backup(
@@ -3780,49 +3804,45 @@ def _sibling_exe(name: str) -> str:
     return tool_command_text(name)
 
 
-def _make_install_tools_bats() -> "dict[str, str]":
-    """Build .bat files that wait for this executable's embedded workers.
+def _make_install_tools_bats(helpers=None) -> "dict[str, str]":
+    """``{"<name>.bat": body}`` for *helpers* (default: every helper).
 
-    Called at write time (not at module import) so that ``sys.executable``
-    resolves to the frozen GUI or CLI that the user actually ran.
+    The bodies run this executable's embedded workers.  Called at write time
+    (not at module import) so that ``sys.executable`` resolves to the frozen
+    GUI or CLI that the user actually ran.
     """
-    fav    = _sibling_exe("spindoctor-fav")
-    recent = _sibling_exe("spindoctor-recent")
-    stats  = _sibling_exe("spindoctor-stats")
-    return {
-        "Refresh Favorites.bat": (
-            "@echo off\r\n"
-            "REM Regenerates the cross-system HyperSpin Favorites wheel.\r\n"
-            f'start "" /B /WAIT {fav} rebuild --apply\r\n'
-            "if errorlevel 1 pause\r\n"
-            "exit\r\n"
-        ),
-        "Refresh Recently Played.bat": (
-            "@echo off\r\n"
-            "REM Regenerates the Recently Played wheel from RocketLauncher stats.\r\n"
-            f'start "" /B /WAIT {recent} rebuild --apply\r\n'
-            "if errorlevel 1 pause\r\n"
-            "exit\r\n"
-        ),
-        "Refresh Most Played.bat": (
-            "@echo off\r\n"
-            "REM Regenerates the Most Played wheel from RocketLauncher playtime.\r\n"
-            f'start "" /B /WAIT {stats} build-wheel --apply\r\n'
-            "if errorlevel 1 pause\r\n"
-            "exit\r\n"
-        ),
-        "Refresh All.bat": (
-            "@echo off\r\n"
-            "REM Refresh all three wheels. Pause on ANY step's failure so a\r\n"
-            "REM silent fail-and-close doesn't hide which wheel didn't rebuild.\r\n"
-            f'start "" /B /WAIT {fav} rebuild --apply\r\n'
-            "if errorlevel 1 (echo. & echo Favorites step failed. & pause & exit /b 1)\r\n"
-            f'start "" /B /WAIT {recent} rebuild --apply\r\n'
-            "if errorlevel 1 (echo. & echo Recently Played step failed. & pause & exit /b 1)\r\n"
-            f'start "" /B /WAIT {stats} build-wheel --apply\r\n'
-            "if errorlevel 1 (echo. & echo Most Played step failed. & pause & exit /b 1)\r\n"
-        ),
-    }
+    from .toolkit_helpers import HELPERS
+
+    return {f"{h.name}.bat": h.body() for h in (HELPERS if helpers is None else helpers)}
+
+
+def _picked_helpers(tools, *, required: bool):
+    """The helpers ``--tool`` names; exits 2 on an unknown name, or when
+    *required* and nothing is picked (after listing what can be)."""
+    from . import toolkit_helpers as th
+
+    try:
+        picked = th.pick(tools)
+    except ValueError as exc:
+        err_console.print(
+            f"[red]Unknown helper(s):[/red] {exc}. Choose from: "
+            + ", ".join(h.key for h in th.HELPERS)
+        )
+        sys.exit(2)
+    if picked or not required:
+        return picked
+    console.print(
+        "Pick the helpers to write with [cyan]--tool[/cyan] "
+        "(repeat it, or separate names with commas):"
+    )
+    width = max(len(h.key) for h in th.HELPERS)
+    for h in th.HELPERS:
+        console.print(f"  [cyan]{h.key.ljust(width)}[/cyan]  {h.name}: {h.summary}")
+    console.print(
+        "Example: [cyan]spindoctor install-tools --tool "
+        "refresh-favorites,refresh-recently-played[/cyan]"
+    )
+    sys.exit(2)
 
 
 def _install_tools_pclauncher_ini(bat_path: Path) -> str:
@@ -3836,6 +3856,131 @@ def _install_tools_pclauncher_ini(bat_path: Path) -> str:
     """
     from .rocketlauncher import pclauncher_settings_text
     return pclauncher_settings_text(bat_path)
+
+
+def _install_startup_helpers(config, out: Path, helpers, apply_changes: bool) -> None:
+    """Start each of *helpers* (already written to *out*) with HyperSpin.
+
+    Writes the idle tour's settings file when there is none, warns about the
+    HyperSpin settings the tour needs, and adds the ``.bat`` to the
+    ``[Startup]`` list of HyperSpin's Startup Script (only with --apply,
+    after a backup).  Exits 1 when --apply can't add it, or the list can't
+    be changed safely.
+    """
+    from . import startup_script as ss
+    from ._text import read_windows_text_with_encoding
+    from ._utils import atomic_write_bytes
+    from .idle_tour import (DEFAULT_SETTINGS_TEXT, SETTINGS_FILE, hyperspin_setting,
+                            other_tours, single_mode)
+
+    # The Startup Script runs it from this folder, so never a relative one.
+    out = out.resolve()
+    settings = out / SETTINGS_FILE
+    if settings.is_file():
+        console.print(f"[dim]kept the settings already there: {escape(str(settings))}[/dim]")
+    else:
+        atomic_write_bytes(settings, DEFAULT_SETTINGS_TEXT.encode("utf-8"))
+        console.print(f"[green]+[/green] wrote [cyan]{escape(str(settings))}[/cyan]")
+    for section, why in (
+        ("AttractMode", "the tour only changes wheels while HyperSpin's own idle mode runs"),
+        ("LEDBlinky", "the tour reads every selection and idle spin from HyperSpin's "
+                      "LEDBlinky calls in its log.txt"),
+    ):
+        value = hyperspin_setting(config.hyperspin_dir, section, "Active")
+        if value.strip().lower() != "true":
+            err_console.print(
+                f"[yellow]warning:[/yellow] HyperSpin's Settings\\Settings.ini has "
+                f"[{section}] Active={escape(value) or '(not set)'}: {why}. Set it to true "
+                "with HyperSpin closed (HyperSpin rewrites the file when it exits).",
+                highlight=False,
+            )
+    single = single_mode(config.hyperspin_dir)
+    if single:
+        err_console.print(f"[yellow]warning:[/yellow] {escape(single)}, so the tour presses "
+                          "nothing.", highlight=False)
+    script = ss.find(config.hyperspin_dir)
+    for helper in helpers:
+        bat = out / f"{helper.name}.bat"
+        if script.path is None:
+            err_console.print(
+                f"[yellow]{helper.name} isn't started with HyperSpin yet:[/yellow] "
+                f"{escape(script.problem)}. Have your startup program run {escape(str(bat))} "
+                "(hidden) each time HyperSpin starts.", highlight=False,
+            )
+            if apply_changes:
+                sys.exit(1)
+            continue
+        where = escape(str(script.path))
+        current, encoding = read_windows_text_with_encoding(script.path)
+        if encoding in ("utf-8", "cp1252") and not str(out).isascii():
+            # No BOM: the Startup Script reads it as ANSI, so a UTF-8 path would arrive garbled.
+            err_console.print(
+                f"[red]Not added to {where}:[/red] the folder {escape(str(out))} has characters "
+                "the Startup Script would read wrongly. Use --output-dir with a folder whose "
+                "path is plain ASCII.", highlight=False)
+            sys.exit(1)
+        items = ss.entries(current.lstrip("﻿"))
+        for other in other_tours(items, bat.name):
+            err_console.print(
+                f"[yellow]warning:[/yellow] {where} also starts {escape(other)}, another idle "
+                "tour: two tours press keys over each other. Take one of them out.",
+                highlight=False)
+        try:
+            text, number, action = ss.add(current.lstrip("﻿"), bat.name, str(out))
+        except ss.StartupScriptError as exc:
+            err_console.print(f"[red]Not added to {where}:[/red] {escape(str(exc))}", highlight=False)
+            sys.exit(1)
+        keys = escape(f"Program_To_Run_Target_{number}={bat.name}, "
+                      f"Program_To_Run_Working_Dir_{number}={out}, "
+                      f"Program_To_Run_MaxMinHide_{number}=Hide")
+        if action == "unchanged":
+            console.print(f"[dim]{escape(script.path.name)} already starts {bat.name} "
+                          f"([Startup] entry {number}).[/dim]", highlight=False)
+            continue
+        if not apply_changes:
+            console.print(
+                f"[yellow bold][DRY RUN][/yellow bold] Would "
+                f"{'add' if action == 'added' else 'update'} [Startup] entry "
+                f"{number} in {where}: {keys}. Re-run with [cyan]--apply[/cyan] to change it.",
+                highlight=False,
+            )
+            continue
+        saved = ss.backup(script.path, config)
+        ss.write(script.path, text)
+        console.print(
+            f"[green]+[/green] {action} [Startup] entry {number} in {where}: {keys}"
+            + (f" (backup: {escape(saved.name)})" if saved else ""), highlight=False,
+        )
+        console.print(
+            f"[dim]{helper.name} starts the next time HyperSpin does. It needs no [Exit] "
+            "entry: it quits by itself once HyperSpin has closed.[/dim]"
+        )
+
+
+def _uninstall_startup_helpers(config, helpers, apply_changes: bool) -> None:
+    """Take *helpers* out of the Startup Script's ``[Startup]`` list; the later
+    entries are numbered down so the list keeps no gap."""
+    from . import startup_script as ss
+
+    script = ss.find(config.hyperspin_dir)
+    if script.path is None:
+        return
+    for helper in helpers:
+        text, removed = ss.remove(read_editable_text(script.path), f"{helper.name}.bat")
+        if not removed:
+            continue
+        numbers = ", ".join(str(n) for n in removed)
+        where = escape(str(script.path))
+        if not apply_changes:
+            console.print(f"[yellow]?[/yellow] would remove [Startup] entry {numbers} "
+                          f"({helper.name}.bat) from {where}, numbering the later "
+                          "entries down", highlight=False)
+            continue
+        saved = ss.backup(script.path, config)
+        ss.write(script.path, text)
+        console.print(f"[green]–[/green] removed [Startup] entry {numbers} ({helper.name}.bat) "
+                      f"from {where}" + (f" (backup: {escape(saved.name)})" if saved else ""),
+                      highlight=False)
 
 
 @cli.command("theme-scan")
@@ -4417,6 +4562,11 @@ def _resolve_tools_output_dir(add_to_system: str, rl_dir: "Path") -> "Path":
 
 
 @cli.command("install-tools")
+@click.option("--tool", "tools", multiple=True, metavar="NAME",
+              help="Helper to write, by name (e.g. refresh-all or "
+                   "\"Refresh All\"). Repeat it, or separate names with "
+                   "commas. Required: run without it to see the list. "
+                   "Helpers you don't pick are left as they are.")
 @click.option("--output-dir", type=click.Path(), default=None,
               help="Directory to write .bat helpers. Defaults to "
                    "<rocketlauncher_dir>/Modules/HyperLaunch/Tools/spindoctor "
@@ -4432,23 +4582,38 @@ def _resolve_tools_output_dir(add_to_system: str, rl_dir: "Path") -> "Path":
                    "system's database XML must already exist; existing "
                    "entries with the same name are overwritten.")
 @click.option("--apply", "apply_changes", is_flag=True,
-              help="Commit database changes (default: dry-run preview). "
-                   "Required when --add-to-system is set.")
-def install_tools(output_dir, add_to_system, apply_changes):
-    """Install HyperSpin Tools menu wrappers for fav/recent rebuilds.
+              help="Commit database changes, and for idle-tour the Startup "
+                   "Script entry (default: dry-run preview). Required when "
+                   "--add-to-system is set.")
+def install_tools(tools, output_dir, add_to_system, apply_changes):
+    """Install the HyperSpin helpers you pick with --tool, one by one.
 
     \b
-    Writes .bat files that HyperSpin's Tools menu can call directly:
+    Each helper is a .bat file that HyperSpin's Tools menu can call:
 
       \b
-      • Refresh Favorites.bat       → spindoctor-fav rebuild --apply
-      • Refresh Recently Played.bat → spindoctor-recent rebuild --apply
-      • Refresh Most Played.bat     → spindoctor-stats build-wheel --apply
-      • Refresh All.bat             → fav + recent + most-played
+      • refresh-favorites       → spindoctor-fav rebuild --apply
+      • refresh-recently-played → spindoctor-recent rebuild --apply
+      • refresh-most-played     → spindoctor-stats build-wheel --apply
+      • refresh-all             → fav + recent + most-played
+      • shut-down-cabinet       → spindoctor toolkit shutdown
+      • restart-cabinet         → spindoctor toolkit restart
+      • exit-to-windows         → spindoctor toolkit exit-to-windows
+      • reset-button-lights     → spindoctor toolkit reset-button-lights
+      • set-windows-resolution  → spindoctor toolkit set-resolution
+      • idle-tour               → spindoctor toolkit idle-tour (starts with HyperSpin)
+
+    \b
+    idle-tour isn't for a menu or a wheel: it runs beside HyperSpin. With
+    --apply it is added to the [Startup] list of HyperSpin's Startup Script
+    (the Startup Program HyperSpin's Settings.ini names), after a backup,
+    and its settings file is written next to it if there is none.
 
     Drop them into HyperSpin's Tools folder (or point HyperSpin at the
     output directory) so users can refresh the wheels from the cabinet
-    without dropping to a console.
+    without dropping to a console. Only the helpers you pick are written;
+    ones an earlier run installed stay as they are (remove them with
+    uninstall-tools --tool).
 
     \b
     With --add-to-system, also adds matching <game> entries to the named
@@ -4456,7 +4621,26 @@ def install_tools(output_dir, add_to_system, apply_changes):
     the bats. The system shows up on a wheel inside HyperSpin (commonly
     a 'Toolkit' or 'Tools' wheel) and each helper appears as a 'game'
     you can launch like any other.
+
+    \b
+    Examples:
+      spindoctor install-tools --tool refresh-all
+      spindoctor install-tools --tool refresh-favorites,refresh-recently-played
+      spindoctor install-tools --tool refresh-all --add-to-system Toolkit --apply
+      spindoctor install-tools --tool idle-tour --apply
     """
+    from . import toolkit_helpers as th
+    from ._utils import atomic_write_bytes
+
+    picked = _picked_helpers(tools, required=True)
+    startup = [h for h in picked if h.startup]
+    if add_to_system and startup:
+        err_console.print(
+            f"[red]{', '.join(h.name for h in startup)} can't be a wheel entry:[/red] it runs "
+            "beside HyperSpin, started with it by the Startup Script. Install it without "
+            "--add-to-system (add --apply to add it to the Startup Script)."
+        )
+        sys.exit(2)
     config = _cfg()
 
     if add_to_system:
@@ -4496,23 +4680,23 @@ def install_tools(output_dir, add_to_system, apply_changes):
     out.mkdir(parents=True, exist_ok=True)
 
     written_bats: list[Path] = []
-    for name, body in _make_install_tools_bats().items():
+    for name, body in _make_install_tools_bats(picked).items():
         path = out / name
-        path.write_text(body, encoding="utf-8")
+        # The bodies already end lines with \r\n: write bytes, so Windows
+        # text mode doesn't turn them into \r\r\n.
+        atomic_write_bytes(path, body.encode("utf-8"))
         written_bats.append(path)
     console.print(
         f"[green]+[/green] wrote {len(written_bats)} helper(s) to "
-        f"[cyan]{out}[/cyan]"
+        f"[cyan]{out}[/cyan]: " + ", ".join(p.name for p in written_bats)
     )
 
     # Remove stale files from tools that have been renamed or removed in
     # this version.  "Refresh Both" was renamed to "Refresh All" in v2.4.27;
     # without this cleanup the old bat stays on disk and appears as a
-    # confusing duplicate in the HyperSpin Tools menu.
-    _current_stems = {p.stem for p in written_bats}
-    for _stale_stem in _INSTALL_TOOLS_STEMS:
-        if _stale_stem in _current_stems:
-            continue
+    # confusing duplicate in the HyperSpin Tools menu.  Current helpers that
+    # weren't picked this time are left alone.
+    for _stale_stem in th.LEGACY_NAMES:
         for _suffix in (".bat", ".ini"):
             _stale_path = out / f"{_stale_stem}{_suffix}"
             if _stale_path.is_file():
@@ -4528,17 +4712,21 @@ def install_tools(output_dir, add_to_system, apply_changes):
                     )
 
     if not add_to_system:
-        console.print(
-            "[dim]Add[/dim] [cyan]" + str(out) + "[/cyan] [dim]to "
-            "HyperSpin's Tools folder, or register the .bat files in "
-            "HyperHQ → Tools.[/dim]"
-        )
-        console.print(
-            "[dim]Run on boot:[/dim] use the GUI's Custom Wheels tab → "
-            "Auto-refresh on cabinet startup → Enable auto-run, or schedule "
-            "the generated [cyan]Refresh All.bat[/cyan] via Windows Task "
-            "Scheduler (trigger: 'At log on')."
-        )
+        if len(startup) < len(picked):
+            console.print(
+                "[dim]Add[/dim] [cyan]" + str(out) + "[/cyan] [dim]to "
+                "HyperSpin's Tools folder, or register the .bat files in "
+                "HyperHQ → Tools.[/dim]"
+            )
+        if any(p.stem == "Refresh All" for p in written_bats):
+            console.print(
+                "[dim]Run on boot:[/dim] use the GUI's Custom Wheels tab → "
+                "Auto-refresh on cabinet startup → Enable auto-run, or schedule "
+                "the generated [cyan]Refresh All.bat[/cyan] via Windows Task "
+                "Scheduler (trigger: 'At log on')."
+            )
+        if startup:
+            _install_startup_helpers(config, out, startup, apply_changes)
         return
 
     # ── --add-to-system path: also add wheel entries + per-game INIs ─────────
@@ -4560,6 +4748,7 @@ def install_tools(output_dir, add_to_system, apply_changes):
             f"Would add {len(written_bats)} entry(ies) to "
             f"[cyan]{db_path.name}[/cyan]: "
             + ", ".join(f"[bold]{p.stem}[/bold]" for p in written_bats)
+            + ", with wheel art where the wheel has none"
         )
         return
 
@@ -4595,9 +4784,7 @@ def install_tools(output_dir, add_to_system, apply_changes):
     # "Refresh Both" was renamed to "Refresh All" in v2.4.27; purge the old
     # entry so it doesn't remain visible in the HyperSpin wheel.
     removed_db: list[str] = []
-    for _stale_stem in _INSTALL_TOOLS_STEMS:
-        if _stale_stem in _current_stems:
-            continue
+    for _stale_stem in th.LEGACY_NAMES:
         if _stale_stem in db.games():
             db.remove_game(_stale_stem)
             removed_db.append(_stale_stem)
@@ -4611,6 +4798,23 @@ def install_tools(output_dir, add_to_system, apply_changes):
     )
     for _stale in removed_db:
         console.print(f"[yellow]-[/yellow] removed stale DB entry [bold]{_stale!r}[/bold]")
+
+    # Wheel art for the entries, from SpinDoctor's bundled logos; art that's
+    # already there (the wheel's own) is kept.
+    from .rocketlauncher import install_toolkit_wheel_art
+    art = [install_toolkit_wheel_art(Path(config.hyperspin_dir), add_to_system, h) for h in picked]
+    new_art = [p for p, status in art if status == "installed"]
+    kept_art = [p for p, status in art if status == "skipped"]
+    if new_art:
+        console.print(
+            f"[green]+[/green] added wheel art for {len(new_art)} entry(ies) → "
+            f"[cyan]{new_art[0].parent}[/cyan]"
+        )
+    if kept_art:
+        console.print(
+            f"[dim]kept the wheel art already there for {len(kept_art)} entry(ies): "
+            + ", ".join(p.stem for p in kept_art) + "[/dim]"
+        )
 
     # Write the PCLauncher module INI (Modules/PCLauncher/<system>.ini).
     # PCLauncher.ahk reads *this* file to look up [<game>] sections containing
@@ -4664,20 +4868,12 @@ def install_tools(output_dir, add_to_system, apply_changes):
 
 # ─── uninstall-tools ──────────────────────────────────────────────────────────
 
-#: Stems of every file that install-tools can write, covering both the current
-#: All stems ever written by install-tools (current + legacy) so that both
-#: install-tools (cleans up stale files on re-run) and uninstall-tools (full
-#: removal) cover every variant regardless of which version wrote the files.
-_INSTALL_TOOLS_STEMS: tuple[str, ...] = (
-    "Refresh Favorites",
-    "Refresh Recently Played",
-    "Refresh Most Played",
-    "Refresh All",    # current name (renamed from "Refresh Both" in v2.4.27)
-    "Refresh Both",   # legacy name — no longer written; kept for cleanup only
-)
-
-
 @cli.command("uninstall-tools")
+@click.option("--tool", "tools", multiple=True, metavar="NAME",
+              help="Remove only this helper (same names as install-tools "
+                   "--tool; repeat it or separate names with commas). "
+                   "Without it, every SpinDoctor helper is removed, "
+                   "including names older versions wrote.")
 @click.option("--add-to-system", "add_to_system", default=None,
               help="HyperSpin system whose PCLauncher folder and database "
                    "XML should be cleaned. Mirrors the --add-to-system flag "
@@ -4689,18 +4885,21 @@ _INSTALL_TOOLS_STEMS: tuple[str, ...] = (
               help="Actually remove the files and database entries. "
                    "Without this flag the command shows a dry-run preview "
                    "of what would be removed.")
-def uninstall_tools(add_to_system, apply_changes):
+def uninstall_tools(tools, add_to_system, apply_changes):
     """Remove SpinDoctor tool helpers installed by install-tools.
 
     \b
     Reverses `spindoctor install-tools [--add-to-system <NAME>]`.
-    Dry-run by default — pass --apply to actually delete.
+    Dry-run by default — pass --apply to actually delete. With --tool,
+    only those helpers are removed and the others stay.
 
     \b
     Without --add-to-system:
       Shows (or removes with --apply) every SpinDoctor-written .bat from
       the default output directory
-      (<rocketlauncher_dir>/Modules/HyperLaunch/Tools/spindoctor).
+      (<rocketlauncher_dir>/Modules/HyperLaunch/Tools/spindoctor). For
+      idle-tour, also its settings file and its [Startup] entry in
+      HyperSpin's Startup Script (later entries are numbered down).
 
     \b
     With --add-to-system <SYSTEM>:
@@ -4721,8 +4920,16 @@ def uninstall_tools(add_to_system, apply_changes):
     Examples:
       spindoctor uninstall-tools --add-to-system Toolkit
       spindoctor uninstall-tools --add-to-system Toolkit --apply
+      spindoctor uninstall-tools --tool refresh-most-played --apply
       spindoctor uninstall-tools --apply
     """
+    from . import toolkit_helpers as th
+
+    picked = _picked_helpers(tools, required=False)
+    # Stems to remove, in a stable order: the picked helpers, or every name
+    # install-tools has ever written.
+    stems = ([h.name for h in picked] if picked
+             else [h.name for h in th.HELPERS] + list(th.LEGACY_NAMES))
     config = _cfg()
     verb = "removed" if apply_changes else "would remove"
 
@@ -4755,7 +4962,7 @@ def uninstall_tools(add_to_system, apply_changes):
         # ── Collect candidate files; delete only when --apply ─────────────────
         pending_files: list[Path] = []
         for search_dir in search_dirs:
-            for stem in _INSTALL_TOOLS_STEMS:
+            for stem in stems:
                 for suffix in (".bat", ".ini"):
                     p = search_dir / (stem + suffix)
                     if p.exists():
@@ -4780,31 +4987,21 @@ def uninstall_tools(add_to_system, apply_changes):
             )
 
         # ── Clean up PCLauncher module INI sections ───────────────────────────
-        from .rocketlauncher import _TOOLKIT_TOOL_NAMES
+        from .rocketlauncher import strip_toolkit_sections
         module_ini = rl_dir / "Modules" / "PCLauncher" / f"{add_to_system}.ini"
         if module_ini.exists():
-            existing = read_editable_text(module_ini)
-            preserved_lines: list[str] = []
-            in_sd_section = False
-            found_sd_sections = False
-            for line in existing.splitlines(keepends=True):
-                stripped = line.strip()
-                if stripped.startswith("[") and stripped.endswith("]"):
-                    section_name = stripped[1:-1]
-                    in_sd_section = section_name in _TOOLKIT_TOOL_NAMES
-                    if in_sd_section:
-                        found_sd_sections = True
-                if not in_sd_section:
-                    preserved_lines.append(line)
-            if found_sd_sections:
+            content, found_sections = strip_toolkit_sections(
+                read_editable_text(module_ini), stems,
+            )
+            if found_sections:
                 console.print(
                     f"[{'green' if apply_changes else 'yellow'}]"
                     f"{'–' if apply_changes else '?'}[/{'green' if apply_changes else 'yellow'}] "
                     f"{verb} SpinDoctor sections from PCLauncher module INI "
-                    f"[cyan]{module_ini}[/cyan]"
+                    f"[cyan]{module_ini}[/cyan]: "
+                    + ", ".join(f"[bold]{n}[/bold]" for n in found_sections)
                 )
                 if apply_changes:
-                    content = "".join(preserved_lines)
                     if content.strip():
                         write_windows_text(module_ini, content)
                     else:
@@ -4825,7 +5022,7 @@ def uninstall_tools(add_to_system, apply_changes):
         else:
             db = HyperspinDatabase(add_to_system, db_path)
             db.load()
-            present_entries = [s for s in _INSTALL_TOOLS_STEMS if db.get(s)]
+            present_entries = [s for s in stems if db.get(s)]
             if present_entries:
                 console.print(
                     f"[{'green' if apply_changes else 'yellow'}]"
@@ -4841,6 +5038,19 @@ def uninstall_tools(add_to_system, apply_changes):
                                 if getattr(config, "backup_dir", "") else None)
                     db.save(backup_dir=_bak_dir,
                             tmp_dir=config.effective_atomic_tmp_dir)
+                # Their wheel art, if it's still SpinDoctor's own logo.
+                from .rocketlauncher import remove_toolkit_wheel_art
+                art = [remove_toolkit_wheel_art(Path(config.hyperspin_dir), add_to_system, h,
+                                                apply=apply_changes)
+                       for h in (th.find(s) for s in present_entries) if h is not None]
+                art = [p for p in art if p is not None]
+                if art:
+                    console.print(
+                        f"[{'green' if apply_changes else 'yellow'}]"
+                        f"{'–' if apply_changes else '?'}[/{'green' if apply_changes else 'yellow'}] "
+                        f"{verb} SpinDoctor's wheel art for {len(art)} entry(ies) from "
+                        f"[cyan]{art[0].parent}[/cyan]"
+                    )
             else:
                 console.print(
                     f"[dim]No SpinDoctor entries found in[/dim] "
@@ -4862,7 +5072,7 @@ def uninstall_tools(add_to_system, apply_changes):
 
         pending_files = [
             out / (stem + ".bat")
-            for stem in _INSTALL_TOOLS_STEMS
+            for stem in stems
             if (out / (stem + ".bat")).exists()
         ]
 
@@ -4883,11 +5093,309 @@ def uninstall_tools(add_to_system, apply_changes):
                 f"[cyan]{out}[/cyan] — nothing to delete."
             )
 
+        # The idle tour also has a settings file and a Startup Script entry.
+        startup = [h for h in th.STARTUP_HELPERS if h.name in stems]
+        if startup:
+            from .idle_tour import SETTINGS_FILE
+
+            settings = out / SETTINGS_FILE
+            if settings.is_file():
+                console.print(
+                    f"[{'green' if apply_changes else 'yellow'}]"
+                    f"{'–' if apply_changes else '?'}[/{'green' if apply_changes else 'yellow'}] "
+                    f"{verb} [dim]{settings.name}[/dim]"
+                )
+                if apply_changes:
+                    settings.unlink()
+            _uninstall_startup_helpers(config, startup, apply_changes)
+
     if not apply_changes:
         console.print(
             "\n[dim]Dry-run — nothing was removed. "
             "Re-run with [cyan]--apply[/cyan] to delete.[/dim]"
         )
+
+
+# ─── toolkit ──────────────────────────────────────────────────────────────────
+
+@cli.group("toolkit")
+def toolkit_group():
+    """Cabinet helpers for a Toolkit wheel or HyperSpin's Tools menu.
+
+    \b
+    These are what the helpers `install-tools --tool` writes run; for example
+      spindoctor install-tools --tool shut-down-cabinet --add-to-system Toolkit --apply
+    puts Shut Down Cabinet on a Toolkit wheel, and
+      spindoctor install-tools --tool idle-tour --apply
+    starts the idle tour with HyperSpin. Windows only. Each run is logged to
+    ~/.spindoctor/toolkit.log.
+    """
+
+
+_COUNTDOWN_OPTION = click.option(
+    "--seconds", type=click.IntRange(0, 60), default=5, show_default=True,
+    help="Length of the countdown Esc cancels; 0 skips it.",
+)
+
+
+def _run_toolkit_power(mode: str, seconds: int) -> None:
+    if sys.platform != "win32":
+        err_console.print(f"[red]spindoctor toolkit {mode} runs on Windows only.[/red]")
+        sys.exit(1)
+    from . import cabinet_power
+
+    sys.exit(cabinet_power.run(mode, _cfg(), seconds=seconds))
+
+
+@toolkit_group.command("shutdown")
+@_COUNTDOWN_OPTION
+def toolkit_shutdown(seconds):
+    """Close HyperSpin, then shut Windows down, after a countdown.
+
+    \b
+    1. A full-screen "Shutting down in 5 … Press Esc to cancel". Esc (the
+       panel's Exit button on most cabinets) cancels and HyperSpin comes back.
+    2. HyperSpin is closed the polite way (WM_CLOSE), so it saves its settings
+       and runs its exit programs; forced after 3 s.
+    3. LEDBlinky is sent its quit (HyperSpin sends it only on its own exit);
+       nothing waits for its quit animation.
+    4. shutdown /s /f /t 0 at once. If Windows refuses, HyperSpin is started
+       again.
+    """
+    _run_toolkit_power("shutdown", seconds)
+
+
+@toolkit_group.command("restart")
+@_COUNTDOWN_OPTION
+def toolkit_restart(seconds):
+    """Close HyperSpin, then restart Windows, after a countdown.
+
+    The same sequence as `toolkit shutdown` ("Restarting in 5 … Press Esc to
+    cancel", then HyperSpin closes the polite way), ending in
+    shutdown /r /f /t 0. If Windows refuses, HyperSpin is started again.
+    """
+    _run_toolkit_power("restart", seconds)
+
+
+@toolkit_group.command("exit-to-windows")
+@_COUNTDOWN_OPTION
+def toolkit_exit_to_windows(seconds):
+    """Close HyperSpin and go to the Windows desktop, after a countdown.
+
+    The same countdown and polite close as `toolkit shutdown`, then Explorer
+    is restarted: HyperSpin hides the taskbar and shows it again only on its
+    own exit, so after an outside close a fresh Explorer brings it back.
+    Explorer windows that were open close. Only the countdown takes time:
+    LEDBlinky's quit animation finishes while you're on the desktop.
+    """
+    _run_toolkit_power("exit-to-windows", seconds)
+
+
+@toolkit_group.command("reset-button-lights")
+@click.option("--dll", "dll_path", type=click.Path(dir_okay=False), default=None,
+              help="PacDrive32.dll to use. Default: the one in ledblinky_dir.")
+@click.option("--no-note", is_flag=True,
+              help="Don't show the 3-second note at the top of the screen.")
+def toolkit_reset_button_lights(dll_path, no_note):
+    """Stop Ultimarc PAC-LED64 boards flashing on their own.
+
+    \b
+    Sets every port's flash speed to 0 on every PAC-LED64 board, through
+    Ultimarc's PacDrive32.dll (32-bit PowerShell runs it). After a USB
+    dropout a board can keep some buttons blinking whatever LEDBlinky plays,
+    and LEDBlinky never resets this. Colours and which buttons are lit stay
+    with LEDBlinky, which can keep running. Shows a short note at the top of
+    the screen without taking the focus from HyperSpin.
+    """
+    if sys.platform != "win32":
+        err_console.print("[red]spindoctor toolkit reset-button-lights runs on Windows only.[/red]")
+        sys.exit(1)
+    from . import button_lights, cabinet_power
+
+    config = _cfg()
+    dll = button_lights.find_dll(config, dll_path)
+    if dll is None:
+        where = dll_path or (
+            f"{config.ledblinky_dir}\\{button_lights.DLL_NAME}" if config.ledblinky_dir
+            else "ledblinky_dir (not set)")
+        result = button_lights.Result(error=f"{button_lights.DLL_NAME} not found: {where}")
+    else:
+        result = button_lights.reset(dll)
+    for line in result.lines():
+        cabinet_power.log_to_file(line)
+        (err_console if result.error else console).print(line, markup=False, highlight=False)
+    if not no_note:
+        from .toolkit_screen import note
+
+        note(result.note)
+    sys.exit(1 if result.error else 0)
+
+
+@toolkit_group.command("set-resolution")
+@click.option("--width", type=click.IntRange(320, 16384), default=None,
+              help="Width to set. Default: HyperSpin's [Resolution] Width.")
+@click.option("--height", type=click.IntRange(200, 16384), default=None,
+              help="Height to set. Default: HyperSpin's [Resolution] Height.")
+@click.option("--no-note", is_flag=True,
+              help="Don't show the 3-second note at the top of the screen.")
+def toolkit_set_resolution(width, height, no_note):
+    """Put Windows back to HyperSpin's resolution.
+
+    \b
+    A game that crashes, or an emulator that doesn't restore the display,
+    can leave Windows at its own resolution, and HyperSpin then starts
+    stretched or in a corner. This sets the primary display to HyperSpin's
+    Settings\\Settings.ini [Resolution] Width x Height (or --width/--height),
+    after testing that the display supports it, and saves it so it sticks
+    after a restart. Colour depth and refresh rate are left to Windows.
+    """
+    if sys.platform != "win32":
+        err_console.print("[red]spindoctor toolkit set-resolution runs on Windows only.[/red]")
+        sys.exit(1)
+    from . import cabinet_power, display_mode
+
+    if (width is None) != (height is None):
+        err_console.print("[red]Pass both --width and --height, or neither.[/red]")
+        sys.exit(2)
+    if width is None:
+        size = display_mode.hyperspin_resolution(_cfg())
+        if size is None:
+            err_console.print(
+                "[red]No resolution to set:[/red] HyperSpin's Settings\\Settings.ini has no "
+                "[Resolution] Width and Height (is hyperspin_dir set?). "
+                "Pass --width and --height."
+            )
+            sys.exit(1)
+        width, height = size
+    outcome = display_mode.set_resolution(width, height)
+    cabinet_power.log_to_file(outcome.line())
+    (console if outcome.code == 0 else err_console).print(outcome.line(), markup=False, highlight=False)
+    if not no_note:
+        from .toolkit_screen import note
+
+        note(outcome.note)
+    sys.exit(0 if outcome.code == 0 else 1)
+
+
+@toolkit_group.command("idle-tour")
+@click.option("--settings", "settings_path", type=click.Path(dir_okay=False), default=None,
+              help="The tour's settings file (install-tools writes \"Idle Tour "
+                   "settings.ini\" beside Idle Tour.bat). Default: the built-in settings.")
+@click.option("--self-test", is_flag=True,
+              help="Show what the tour sees now (HyperSpin's folder, settings and log) "
+                   "and press nothing.")
+def toolkit_idle_tour(settings_path, self_test):
+    """Make HyperSpin's idle mode visit random consoles.
+
+    \b
+    Runs beside HyperSpin until it closes; HyperSpin's Startup Script starts
+    it (spindoctor install-tools --tool idle-tour --apply). HyperSpin's own
+    idle mode (Settings.ini [AttractMode] Active=true) spins only the wheel
+    you are on. While it runs, the tour changes wheels (default settings):
+      • after 5 games or 5 minutes in a console, whichever first (the first
+        game after it opened the console counts), it presses Exit, back to
+        the main menu, as the last game's video ends;
+      • after 5 consoles or 5 minutes on the main menu it presses Start on
+        the console whose video just played, as that video ends (skipped
+        consoles count but are never opened).
+    Video lengths come from the .mp4 and .flv files; when one can't be read it
+    changes right after the next idle spin lands. On a game or console with
+    no video, where HyperSpin would wait its whole idle Time, it presses Down
+    after 8 seconds (NoVideoSeconds). It knows where HyperSpin is from HyperSpin's
+    log.txt, which shows the selections and idle spins only while [LEDBlinky]
+    Active=true. It presses only while a video plays with nothing logged since
+    it began, or right after an idle spin lands, never presses Exit on the
+    main menu (that opens HyperSpin's exit menu), and does nothing while a
+    game runs, while HyperSpin isn't in front, or once someone uses a control.
+    When HyperSpin reads a joystick itself ([P1 Joystick] Enabled=true), which
+    Windows doesn't see, it changes wheels only right after an idle spin lands,
+    and presses no Down.
+    Change the settings with `spindoctor toolkit idle-tour-settings` or the
+    GUI's Custom Wheels tab. Logged to ~/.spindoctor/toolkit.log.
+    """
+    if sys.platform != "win32":
+        err_console.print("[red]spindoctor toolkit idle-tour runs on Windows only.[/red]")
+        sys.exit(1)
+    from . import idle_tour
+
+    sys.exit(idle_tour.run(
+        _cfg(), Path(settings_path) if settings_path else None, self_test=self_test,
+        echo=lambda line: console.print(line, markup=False, highlight=False),
+    ))
+
+
+@toolkit_group.command("idle-tour-settings")
+@click.option("--settings", "settings_path", type=click.Path(dir_okay=False), default=None,
+              help="The settings file. Default: \"Idle Tour settings.ini\" beside the Idle "
+                   "Tour.bat HyperSpin's Startup Script starts, else in install-tools' folder.")
+@click.option("--enabled/--disabled", default=None, help="Switch the tour on or off (Enabled=1 / 0).")
+@click.option("--games-per-console", type=click.IntRange(0, 9999), default=None,
+              help="Games shown in a console before it goes back to the main menu (0 = no count).")
+@click.option("--console-minutes", type=click.FloatRange(0, 1440), default=None,
+              help="Minutes in a console before it goes back (0 = no time limit).")
+@click.option("--consoles-on-main-menu", type=click.IntRange(0, 9999), default=None,
+              help="Consoles shown on the main menu before it opens one (0 = no count).")
+@click.option("--main-menu-minutes", type=click.FloatRange(0, 1440), default=None,
+              help="Minutes on the main menu before it opens a console (0 = no time limit).")
+@click.option("--tour-max-minutes", type=click.FloatRange(0, 1440), default=None,
+              help="Tour limit: minutes after which it stops on the main menu, so Windows can turn "
+                   "the screen off (0 = never stop, the default).")
+@click.option("--no-video-seconds", type=click.FloatRange(0, 3600), default=None,
+              help="Seconds on a game or console with no video before it presses Down to the "
+                   "next one (0 = wait for HyperSpin's idle Time).")
+@click.option("--skip", default=None,
+              help='Main-menu consoles it never opens, separated by | ("" for none).')
+def toolkit_idle_tour_settings(settings_path, enabled, games_per_console, console_minutes,
+                               consoles_on_main_menu, main_menu_minutes, tour_max_minutes,
+                               no_video_seconds, skip):
+    """Show or change the idle tour's settings.
+
+    \b
+    With no option it shows them. Each option sets one key of the tour's
+    settings file ("Idle Tour settings.ini", which install-tools writes beside
+    Idle Tour.bat); every other byte of the file stays as it is (comments,
+    other keys, encoding and line ends), and a value the file already has
+    isn't rewritten. The tour reads them when it starts, which is when
+    HyperSpin starts. Whichever comes first changes wheels; 0 switches a
+    limit off. For example, one console on the main menu, then 10 games:
+      spindoctor toolkit idle-tour-settings --consoles-on-main-menu 1 --games-per-console 10
+    """
+    from . import idle_tour
+
+    path = Path(settings_path) if settings_path else idle_tour.settings_location(_cfg())
+    if path is None:
+        err_console.print("[red]No idle tour settings to show:[/red] hyperspin_dir and "
+                          "rocketlauncher_dir are not set. Pass --settings.")
+        sys.exit(1)
+    if not path.is_file():
+        err_console.print(
+            f"[red]No idle tour settings at[/red] {escape(str(path))}. Install the tour first "
+            "(spindoctor install-tools --tool idle-tour), or pass --settings.", highlight=False)
+        sys.exit(1)
+    changes = {name: value for name, value in (
+        ("enabled", enabled), ("games_per_console", games_per_console),
+        ("console_minutes", console_minutes), ("consoles_on_main_menu", consoles_on_main_menu),
+        ("main_menu_minutes", main_menu_minutes), ("tour_max_minutes", tour_max_minutes),
+        ("no_video_seconds", no_video_seconds), ("skip", skip)) if value is not None}
+    console.print(f"Idle tour settings: [cyan]{escape(str(path))}[/cyan]", highlight=False)
+    if changes:
+        try:
+            made = idle_tour.change_settings(path, **changes)
+        except (OSError, ValueError) as exc:   # UnicodeEncodeError is a ValueError
+            err_console.print(f"[red]Not changed:[/red] {escape(str(exc))}", highlight=False)
+            sys.exit(1)
+        for change in made:
+            console.print(f"[green]~[/green] {change.key}: {escape(change.old or '(empty)')} → "
+                          f"{escape(change.new or '(empty)')}", highlight=False)
+        if made:
+            console.print("[dim]The tour reads them the next time HyperSpin starts.[/dim]")
+        else:
+            console.print("[dim]Nothing to change: the file already has these values.[/dim]")
+        return
+    settings = idle_tour.read_settings(path)
+    for e in idle_tour.EDITABLE:
+        value = idle_tour.setting_text(e.kind, getattr(settings, e.field))
+        console.print(f"  {e.key:<20} {escape(value) or '(empty)'}", highlight=False)
 
 
 # ─── ignore ───────────────────────────────────────────────────────────────────
@@ -7648,6 +8156,310 @@ def self_doctor(fix):
     report = run_self_checks(config, fix=fix)
     render_report(report, console)
     if report.overall() == _S.FAIL:
+        sys.exit(2)
+
+
+# ─── test ─────────────────────────────────────────────────────────────────────
+
+_TEST_STYLE = {"PASS": "green", "WARN": "yellow", "FAIL": "red", "SKIPPED": "dim"}
+
+
+def _print_test_plan(plan, verbose: bool) -> None:
+    """The picked games, each with its file check.  Long plans list only the
+    games that won't launch, plus a count per wheel."""
+    for system, why in plan.skipped_systems:
+        console.print(f"[dim]Skipping wheel {escape(system)}: {escape(why)}[/dim]")
+    if not plan.games:
+        return
+    show = plan.games if verbose or len(plan.games) <= 60 else [g for g in plan.games if not g.launch]
+    # One line per game, not a table: reasons are long and must not wrap.
+    for g in show:
+        if g.launch:
+            console.print(f"  [green]ready[/green]  {escape(g.system)} > {escape(g.game)}")
+        else:
+            console.print(f"  [dim]skip[/dim]   {escape(g.system)} > {escape(g.game)}: {escape(g.reason)}")
+            if verbose and g.fix:
+                console.print(f"         [dim]fix:[/dim] {escape(g.fix)}")
+        for note in filter(None, g.doctor.split("; ")):
+            console.print(f"         [yellow]doctor:[/yellow] {escape(note)}")
+    if len(show) < len(plan.games):
+        per: dict[str, list[int]] = {}
+        for g in plan.games:
+            counts = per.setdefault(g.system, [0, 0])
+            counts[0 if g.launch else 1] += 1
+        for system, (ready, skip) in per.items():
+            console.print(f"  {escape(system)}: {ready} ready, {skip} skipped")
+        console.print("[dim]Add --verbose to list every game.[/dim]")
+
+
+def _print_test_recovery(report, out=None) -> None:
+    out = out or console
+    out.print(f"[yellow]Finished an interrupted test run:[/yellow] {escape(str(report.run_dir))}")
+    if report.closed:
+        out.print(f"  Closed: {escape(', '.join(report.closed))}")
+    for msg in report.messages:
+        out.print(f"  {escape(msg)}")
+
+
+@cli.command("test")
+@click.option("--system", "-s", "systems", multiple=True,
+              help="Wheel to test (repeatable). Naming a skipped wheel launches it anyway.")
+@click.option("--all-systems", is_flag=True, help="Every Main Menu wheel except skipped ones.")
+@click.option("--genre", "genres", multiple=True,
+              help="Only games of this genre: the whole genre, ignoring case; * and ? "
+                   "wildcards (e.g. \"Shoot*\"). Repeatable. Without --system, searches every wheel.")
+@click.option("--game", "-g", "games", multiple=True,
+              help="Only these games (* and ? wildcards). Repeatable.")
+@click.option("--all", "all_games", is_flag=True, help="Every matching game of the picked wheels.")
+@click.option("--count", type=click.IntRange(1), default=None, help="N random games in total.")
+@click.option("--per-system", type=click.IntRange(1), default=None,
+              help="N random games per wheel (default: test_per_system, 3).")
+@click.option("--seed", type=int, default=None, help="Seed for the random picks, to repeat them.")
+@click.option("--include-skipped", is_flag=True,
+              help="Also launch skipped wheels and PCLauncher games.")
+@click.option("--seconds", type=click.IntRange(1, 3600), default=None,
+              help="How long each game runs before it is judged (default: test_game_seconds, 20).")
+@click.option("--resume", is_flag=True, help="Carry on the newest run that didn't finish.")
+@click.option("--only-failed", is_flag=True,
+              help="Launch again the games that failed in the newest run with results.")
+@click.option("--recover", "recover_only", is_flag=True,
+              help="Finish a run that was stopped or killed: close what it left open and put "
+                   "the play statistics back. Runs right away, even without --apply.")
+@click.option("--list-runs", is_flag=True, help="List past runs, newest first.")
+@click.option("--json", "as_json", is_flag=True, help="Print the plan or the results as JSON.")
+@click.option("--verbose", "-v", is_flag=True, help="List every picked game.")
+@click.option("--with-hyperspin", is_flag=True,
+              help="Open HyperSpin first and judge its startup; close it at the end.")
+@click.option("--play-intro", is_flag=True,
+              help="With --with-hyperspin: let HyperSpin's intro video play instead of skipping it.")
+@click.option("--leave-hyperspin-open", is_flag=True,
+              help="With --with-hyperspin: don't close HyperSpin when the run ends.")
+@click.option("--cleanup", "cleanup_mode", type=click.Choice(["report", "remove", "off"]), default=None,
+              help="Files the games create: list them (report), back them up and delete "
+                   "them (remove), or don't look (off). Default: test_cleanup (report).")
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Launch the games. Without it, only list them with their file check.")
+def game_test_cmd(systems, all_systems, genres, games, all_games, count, per_system, seed,
+                  include_skipped, seconds, resume, only_failed, recover_only, list_runs,
+                  as_json, verbose, with_hyperspin, play_intro, leave_hyperspin_open, cleanup_mode,
+                  apply_changes):
+    """Launch games through RocketLauncher, the way HyperSpin does, and judge them.
+
+    Each game runs for --seconds, then SpinDoctor looks for what went wrong:
+    the game didn't start or closed by itself, an error pop-up, a Windows
+    crash report, "not responding", errors in RocketLauncher's log, or a
+    black screen. It takes a screenshot, closes the game with the system's
+    exit key and moves on. RocketLauncher's play statistics are put back
+    after every game, so test launches stay out of Recently Played and
+    Most Played.
+
+    Without --apply nothing is launched: the picked games are listed with
+    the same file check `doctor` does. Windows only for --apply.
+
+    \b
+    Examples:
+      spindoctor test --system "Nintendo Entertainment System" --all
+      spindoctor test --genre Shooter --count 8 --apply
+      spindoctor test --all-systems --per-system 3 --apply
+      spindoctor test --all-systems --per-system 3 --with-hyperspin --apply
+      spindoctor test --resume --apply
+
+    Each run folder has a report.html; --with-hyperspin opens HyperSpin first
+    and judges its startup.
+    """
+    from . import _testrun, gametest
+    from .playtime import format_duration
+
+    config = _cfg()
+    root = _testrun.tests_dir(config)
+    if list_runs:
+        runs = gametest.list_runs(root)
+        if as_json:
+            click.echo(json.dumps([{"run_dir": str(d), **info} for d, info in runs], indent=2))
+            return
+        if not runs:
+            console.print(f"No test runs in {escape(str(root))}.")
+            return
+        table = Table(box=box.SIMPLE)
+        for col in ("Run", "Started", "State", "Results"):
+            table.add_column(col)
+        for d, info in runs:
+            rows = gametest.read_csv(d / "results.csv")
+            tally = {}
+            for r in rows:
+                tally[r.get("Status", "")] = tally.get(r.get("Status", ""), 0) + 1
+            state = ("finished" if info.get("finished") else
+                     "interrupted" if info.get("interrupted") else "not finished")
+            table.add_row(escape(d.name), escape(str(info.get("started", ""))), state,
+                          ", ".join(f"{v} {k.lower()}" for k, v in sorted(tally.items())))
+        console.print(table)
+        console.print(f"[dim]{escape(str(root))}[/dim]")
+        return
+    if not config.hyperspin_dir or not config.rocketlauncher_dir:
+        err_console.print("[red]Set hyperspin_dir and rocketlauncher_dir first[/red] "
+                          "([cyan]spindoctor config set[/cyan]).")
+        sys.exit(1)
+    windows = sys.platform == "win32"
+    platform = gametest.WindowsPlatform() if windows and (apply_changes or recover_only) else None
+
+    if recover_only:
+        try:
+            report = gametest.recover(config, platform)
+        except _testrun.ActiveRunError as exc:
+            err_console.print(f"[red]{escape(str(exc))}[/red]")
+            sys.exit(1)
+        if report is None:
+            console.print("No interrupted test run to finish.")
+        else:
+            _print_test_recovery(report)
+        return
+
+    run_dir = None
+    selection = {"systems": list(systems), "all_systems": all_systems, "genres": list(genres),
+                 "games": list(games), "all": all_games, "count": count,
+                 "per_system": per_system, "seed": seed, "include_skipped": include_skipped}
+    if resume:
+        unfinished = [(d, info) for d, info in gametest.list_runs(root) if not info.get("finished")]
+        if not unfinished:
+            console.print("There's no unfinished test run to resume.")
+            return
+        run_dir, info = unfinished[0]
+        plan = gametest.plan_from_rows(gametest.read_csv(run_dir / "plan.csv"))
+        seconds = seconds or info.get("seconds")
+        console.print(f"Resuming test run {escape(run_dir.name)}.")
+    elif only_failed:
+        # The newest run that launched anything, as the PowerShell tester did.
+        latest = None
+        for d, _info in gametest.list_runs(root):
+            rows = gametest.read_csv(d / "results.csv")
+            if any(r.get("Status") != gametest.SKIPPED for r in rows):
+                latest = (d, rows)
+                break
+        if latest is None:
+            console.print("No earlier test run launched any games.")
+            return
+        failed = [(r["System"], r["Game"]) for r in latest[1] if r.get("Status") == gametest.FAIL]
+        if not failed:
+            console.print(f"Nothing failed in the newest run ({escape(latest[0].name)}).")
+            return
+        console.print(f"Re-testing {len(failed)} games that failed in run {escape(latest[0].name)}.")
+        plan = gametest.recheck(config, failed)
+        selection = {"only_failed": latest[0].name}
+    else:
+        try:
+            plan = gametest.pick_games(
+                config, systems=list(systems), all_systems=all_systems, genres=list(genres),
+                games=list(games), all_games=all_games, count=count, per_system=per_system,
+                seed=seed, include_skipped=include_skipped)
+        except gametest.PlanError as exc:
+            err_console.print(f"[red]{escape(str(exc))}[/red]")
+            sys.exit(1)
+
+    if not apply_changes:
+        if as_json:
+            click.echo(json.dumps({
+                "games": gametest.plan_rows(plan),
+                "skipped_systems": [{"system": s, "reason": r} for s, r in plan.skipped_systems],
+            }, indent=2))
+            return
+        _print_test_plan(plan, verbose)
+        console.print(
+            f"\n[yellow bold][DRY RUN][/yellow bold] Nothing was launched: {len(plan.to_launch)} "
+            f"of {len(plan.games)} picked games are ready. Re-run with [cyan]--apply[/cyan] to launch them."
+        )
+        return
+
+    if not windows:
+        err_console.print("[red]Launch tests need Windows: RocketLauncher only runs there.[/red]")
+        sys.exit(1)
+    rl_exe = Path(config.rocketlauncher_dir) / "RocketLauncher.exe"
+    if not rl_exe.is_file():
+        err_console.print(f"[red]RocketLauncher.exe not found:[/red] {escape(str(rl_exe))}")
+        sys.exit(1)
+    try:
+        report = gametest.recover(config, platform)
+    except _testrun.ActiveRunError as exc:
+        err_console.print(f"[red]{escape(str(exc))}[/red]")
+        sys.exit(1)
+    if report is not None:
+        _print_test_recovery(report, err_console if as_json else console)
+    if gametest.rocketlauncher_running(platform):
+        err_console.print("[red]RocketLauncher is already running (a game is open).[/red] "
+                          "Close it and run the test again.")
+        sys.exit(1)
+    if not as_json:
+        _print_test_plan(plan, verbose)
+    if not plan.to_launch:
+        console.print("Nothing to launch: no games matched, or none of them can launch.")
+        return
+    settings = gametest.settings_from_config(config, seconds)
+    if not as_json:
+        console.print(
+            f"\n{len(plan.to_launch)} games to launch, about "
+            f"{format_duration(len(plan.to_launch) * (settings.game_seconds + 15))}. "
+            "Games open full screen, so leave the cabinet alone while this runs.\n"
+            "To stop: Ctrl+C here, or create a file named stop-request in the run folder. "
+            "[cyan]spindoctor test --resume --apply[/cyan] carries on."
+        )
+
+    def show(number, total, item, result, left):
+        if as_json:
+            return
+        style = _TEST_STYLE.get(result.status, "")
+        console.print(
+            f"[{number:>5}/{total}] {escape(item.system)} > {escape(item.game)}  "
+            f"[{style}]{result.status}[/{style}]  {escape(result.reason)}  "
+            f"[dim]({result.seconds}s, {format_duration(int(left))} left)[/dim]"
+        )
+
+    def show_hyperspin(hs):
+        if as_json:
+            return
+        style = _TEST_STYLE.get(hs["status"], "")
+        console.print(f"HyperSpin: [{style}]{hs['status']}[/{style}]  {escape(hs['reason'])}")
+        for line in hs["details"][:5]:
+            console.print(f"  [dim]log:[/dim] {escape(line)}")
+
+    try:
+        summary = gametest.run_plan(config, plan, settings, platform, run_dir=run_dir,
+                                    selection=selection, on_result=show,
+                                    with_hyperspin=with_hyperspin, play_intro=play_intro,
+                                    leave_hyperspin_open=leave_hyperspin_open,
+                                    on_hyperspin=show_hyperspin, cleanup=cleanup_mode)
+    except KeyboardInterrupt:
+        err_console.print("\n[yellow]Stopped.[/yellow] The play statistics are back; "
+                          "[cyan]spindoctor test --resume --apply[/cyan] carries on.")
+        sys.exit(130)
+    if as_json:
+        click.echo(json.dumps({
+            "run_dir": str(summary.run_dir), "finished": summary.finished,
+            "counts": summary.counts,
+            "results": gametest.read_csv(summary.run_dir / "results.csv"),
+        }, indent=2))
+    else:
+        c = summary.counts
+        console.print(
+            f"\nLaunched {summary.launched}: [green]{c.get('PASS', 0)} passed[/green], "
+            f"[yellow]{c.get('WARN', 0)} warnings[/yellow], [red]{c.get('FAIL', 0)} failed[/red]"
+            f"{', ' + str(c.get('SKIPPED', 0)) + ' skipped' if c.get('SKIPPED') else ''}."
+        )
+        if not summary.finished:
+            console.print("The run stopped early. [cyan]spindoctor test --resume --apply[/cyan] carries on.")
+        console.print(f"Results: {escape(str(summary.run_dir))}")
+        clean = gametest.read_run(summary.run_dir).get("cleanup")
+        if clean:
+            if not clean["found"]:
+                console.print("The games created no new files.")
+            elif clean["mode"] == "remove":
+                console.print(f"Removed {clean['removed']} new file(s) and folder(s) the games created "
+                              f"(backed up to {escape(clean['backup_dir'])}).")
+            else:
+                console.print(f"The games created {clean['found']} new file(s) and folder(s), left in place "
+                              "(see cleanup.csv; --cleanup remove backs them up and deletes them).")
+            if clean["left"]:
+                console.print(f"[yellow]{clean['left']} could not be removed; see cleanup.csv.[/yellow]")
+        console.print(f"Report:  {escape(str(summary.run_dir / 'report.html'))}")
+    if summary.counts.get("FAIL"):
         sys.exit(2)
 
 

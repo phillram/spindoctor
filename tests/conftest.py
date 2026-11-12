@@ -107,3 +107,9 @@ def config_home(tmp_path, config_home_factory):
 @pytest.fixture
 def isolated_config(config_home):
     """Legacy no-return-value adapter for tests that only need isolation."""
+
+
+@pytest.fixture
+def home(tmp_path, config_home_factory):
+    """Config home used by the game-launch test command fixtures."""
+    return config_home_factory(tmp_path / "home")

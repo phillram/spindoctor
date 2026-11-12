@@ -21,6 +21,7 @@ explorer %USERPROFILE%\.spindoctor
 %USERPROFILE%\.spindoctor\scraper.log
 %USERPROFILE%\.spindoctor\scraper.log.1
 %USERPROFILE%\.spindoctor\scraper.log.2
+%USERPROFILE%\.spindoctor\toolkit.log
 %USERPROFILE%\.spindoctor\metadata_cache\
 %USERPROFILE%\.spindoctor\match_cache\
 %USERPROFILE%\.spindoctor\mame_listxml_cache\
@@ -128,6 +129,20 @@ Log prefixes by call site:
 
 **When to check this file:** any time `fetch-meta`, `fetch-media`, or a credential test returns unexpected results. See [Troubleshooting → Metadata / scraping](troubleshooting.md#metadata--scraping).
 
+### `toolkit.log`
+
+**One line per step of the [`toolkit`](commands.md#toolkit) cabinet actions** (Shut Down Cabinet and the other helpers that leave HyperSpin), which run without a console: when the countdown started or was cancelled, whether HyperSpin closed by itself or was forced, whether LEDBlinky was told to quit and how long it took, the `shutdown.exe` command and its exit code. The [idle tour](idle-tour.md) (`toolkit idle-tour`) logs here too, in `idle-tour:` lines: when it starts, when HyperSpin's idle mode is running in a wheel, each wheel it changes and why it paused. Created on first use. When it passes 256 KB it is renamed `toolkit.log.1` (replacing the previous one) and a new file starts. It holds program paths, so check it before sharing.
+
+```
+2026-11-06 21:10:02  shutdown: countdown started (5 s)
+2026-11-06 21:10:07  shutdown: closing HyperSpin
+2026-11-06 21:10:08    HyperSpin closed
+2026-11-06 21:10:08    sent LEDBlinky its quit (LEDBlinky.exe 2)
+2026-11-06 21:10:18    LEDBlinky quit (waited 10.1 s)
+2026-11-06 21:10:18  shutdown: running shutdown.exe /s /f /t 0
+2026-11-06 21:10:18  shutdown: Windows accepted it
+```
+
 ### `metadata_cache\`
 
 **Disk cache of scraped game metadata.** Avoids re-querying ScreenScraper / TheGamesDB on every `fetch-meta` run and protects your monthly TheGamesDB quota.
@@ -220,6 +235,10 @@ Both are also covered by `spindoctor cleanup run` (categories `media-pick-cache`
 ### `gui.lock`
 
 **The GUI's single-instance lock.** Taken on `spindoctor-gui` startup so two windows can't write the same HyperSpin XML simultaneously; released automatically when the process exits, including after a crash. See [Troubleshooting → Install / startup](troubleshooting.md#install--startup).
+
+### `tests\`
+
+**Game launch test runs** from `spindoctor test --apply`, one folder per run named by its start time (`test_results_dir` moves them elsewhere). Each holds `report.html` (open this), `results.csv` / `results.json`, `plan.csv`, `run.json`, `HyperSpin log.txt` with `--with-hyperspin`, RocketLauncher's log per launch under `logs\`, a screenshot per game under `screenshots\`, `stats-backup\` (RocketLauncher's play statistics from before the run, with a `scrub`-style `manifest.json`), `cleanup.csv` and `baseline.bin` (what the games created, and hashes of every path that existed before the run; `cleanup-backup\` holds removed files when `backup_dir` isn't set) and `journal.json` (what the run was doing, for `spindoctor test --recover`). `tests\active.json` exists only while a run is unfinished; don't delete it by hand, run `spindoctor test --recover`. Old run folders are safe to delete. Screenshots show the whole monitor and logs contain paths, so check them before sharing. See [Command reference → test](commands.md#test).
 
 ### Undo manifest directories
 
@@ -350,6 +369,7 @@ C:\Users\<YourWindowsUsername>\.spindoctor\    ← SpinDoctor app data (always h
 ├── scraper.log                         ← API request log (current)
 ├── scraper.log.1                       ← API request log (previous rotation)
 ├── scraper.log.2                       ← API request log (oldest rotation)
+├── toolkit.log                         ← cabinet actions (toolkit shutdown, …)
 ├── metadata_cache\                     ← scraped metadata cache (30-day TTL)
 │   ├── screenscraper\<System>\*.json
 │   ├── thegamesdb\<System>\*.json

@@ -14,7 +14,8 @@ Most destructive commands write a manifest under `~/.spindoctor/<category>/` and
 - [Editing](#editing) — `batch-edit`, `rename`, `clone`, `game`
 - [Library generation](#library-generation) — `generate-config`, `mainmenu`, `organize`, `add-system`, `add-pc-system`, `pc-rename`, `pc-fix-exe`, `migrate`, `backup`
 - [Health & integrity](#health--integrity) — `find-dupes`, `find-misplaced`, `curate`, `find-orphan-media`, `check-discs`, `check-archive-ext`, `verify`, `stats`, `preview`
-- [Custom wheels](#custom-wheels) — `fav`, `recent`, `install-tools`, `uninstall-tools`
+- [Launch tests](#launch-tests) — `test`
+- [Custom wheels](#custom-wheels) — `fav`, `recent`, `install-tools`, `uninstall-tools`, `toolkit`
 - [Intro Video Randomizer](#intro-video-randomizer) — `introvideo`
 - [Playtime stats](#playtime-stats) — `stats-report`
 - [Resetting cabinet data](#resetting-cabinet-data) — `scrub`
@@ -57,6 +58,8 @@ When `rocketlauncher_dir` is set, ROMs are found where RocketLauncher looks for 
 ### `inspect`
 
 Per-file deep-dive for a single game or every game with issues in a system. Shows the ROM file, every media slot, image dimensions, video length, and modification times.
+
+Video lengths (here and in `audit --detailed`) come from `ffprobe` when it's installed. Without it, SpinDoctor reads the movie header of `.mp4` / `.m4v` / `.mov` files itself, wherever it sits in the file, reading only box headers. Other formats (`.flv`, `.avi`, …) show `—` unless `ffprobe` is installed.
 
 > **GUI alternative:** the **Diagnostics** and **Metadata & Media** tabs both expose an Inspect form. Select a system to auto-populate the ROM dropdown from that system's database; leave blank (first item) to run `--all`. Click **↻** to refresh the game list. See [GUI walkthrough](gui.md).
 
@@ -304,7 +307,7 @@ Three commands for editing game metadata and identity without ever opening Hyper
 
 ### `batch-edit`
 
-Set, clear, or append metadata across many games. Filter games out of one system's database, then mutate one or more fields in lockstep. Filters: `name=*Mario*`, `genre=Action`, `year=1980-1989`, `manufacturer=Capcom`, `missing=rating`. Mutations: `--set field=value`, `--clear field`, `--append field=value`, `--prepend field=value`.
+Set, clear, or append metadata across many games. Filter games out of one system's database, then mutate one or more fields in lockstep. Filters: `name=*Mario*`, `genre=Action` (the whole genre, ignoring case; `genre=Shoot*` for wildcards), `year=1980-1989`, `manufacturer=Capcom`, `missing=rating`. Mutations: `--set field=value`, `--clear field`, `--append field=value`, `--prepend field=value`.
 
 ```bat
 :: Tag every Capcom game from the 80s as Action
@@ -912,6 +915,73 @@ PNG mode is gated on `pip install -e .[preview]` (Pillow). When Pillow isn't ins
 
 ---
 
+## Launch tests
+
+### `test`
+
+Launches games through RocketLauncher the way HyperSpin does (`RocketLauncher.exe "<System>" "<Game>"`), lets each one run, and judges it. In the GUI it's the [Test games](gui.md#test-games) page. Without `--apply` nothing is launched: the picked games are listed, each with its file check. `--apply` needs Windows. Games open full screen, so leave the cabinet alone while a run goes.
+
+```bat
+spindoctor test --system "Nintendo Entertainment System" --all          :: list only
+spindoctor test --system "Nintendo Entertainment System" --all --apply  :: launch every game
+spindoctor test --genre Shooter --count 8 --apply                       :: 8 random Shooter games, any wheel
+spindoctor test --system MAME --game galaga --game "pac*" --apply
+spindoctor test --all-systems --per-system 3 --apply                    :: 3 random games from every wheel
+spindoctor test --all-systems --per-system 3 --with-hyperspin --apply   :: the same, opening HyperSpin first
+spindoctor test --resume --apply                                        :: carry on the last unfinished run
+spindoctor test --only-failed --apply                                   :: launch the last run's failures again
+spindoctor test --recover                                               :: finish a run that was stopped or killed
+spindoctor test --list-runs
+```
+
+**Picking games.** `--system` (repeatable) or `--all-systems` picks the wheels from HyperSpin's Main Menu. `--genre` keeps games whose `<genre>` is the whole genre given, ignoring case, with `*` and `?` wildcards (`--genre "Shoot*"`, the same rule as `batch-edit --filter genre=`). `--game` takes names with wildcards. A genre or game pattern without `--system` searches every wheel. `--all` takes every match, `--count N` N random matches in total, `--per-system N` N per wheel; with none of these and no `--game`, it picks `test_per_system` (3) per wheel. Random picks only draw from games that can launch, and `--seed N` repeats them. Disabled games (`<enabled>No</enabled>`) are left out.
+
+**Skipped wheels.** Wheels HyperSpin starts itself (`[exe info] hyperlaunch=false` in `<hyperspin_dir>\Settings\<System>.ini`) and wheels with no RocketLauncher settings are never launched. SpinDoctor's own Favorites, Recently Played and Most Played wheels (`test_skip_custom_wheels`), wheels on `test_skip_systems`, and wheels or games that use PCLauncher (`test_skip_pclauncher`; PC games often need a manual exit) are skipped unless you name the wheel with `--system` or pass `--include-skipped`.
+
+**File check.** Each picked game is checked with RocketLauncher's own rules, the ones `doctor`'s ROM paths check uses: the system's settings, `Games.ini` `Emulator=` and `System=` overrides, the emulator's `Emu_Path` program and its module (`Module=`, or `Modules\Game Modules\<game>\<game>.ahk`), `Skipchecks`, and the game file in `Rom_Path`. A game that fails is listed as skipped with the reason and not launched. The whole-library version of this check is `spindoctor audit --all` plus `spindoctor doctor`.
+
+**Judging.** Each game runs for `--seconds` (`test_game_seconds`, 20) after its window appears:
+
+| Result | When |
+|---|---|
+| FAIL "Game didn't start" | Nothing opened within `test_launch_timeout` (90 s; longer while 7-Zip is still unpacking), or RocketLauncher quit first. RocketLauncher's first log error is added. |
+| FAIL "Game closed by itself" | RocketLauncher quit after the game window appeared |
+| FAIL "Pop-up window appeared" | A dialog (`#32770`), or a smaller window with an error word in its title (`test_error_window_words`), from the game, RocketLauncher or a Windows crash report. The game's own name is ignored ("Crash Bandicoot") |
+| FAIL "The emulator crashed" | A Windows crash report (WerFault) for one of the game's programs |
+| FAIL "… stopped responding" | Windows marks the game window "Not Responding" |
+| WARN "RocketLauncher logged an error" | An `ERROR` line in `RocketLauncher.log` not on `test_ignore_log_errors` |
+| WARN "Screen looked black" | The middle of the game window is black in the screenshot |
+| WARN "The game window was not in front", "… had to force-close …" | |
+| SKIPPED | The file check ruled it out |
+
+Programs RocketLauncher starts that aren't the game (AutoHotkey, 7-Zip, DAEMON Tools, keymappers, DemulShooter, LEDBlinky, Steam…) are ignored; add your own with `test_helper_processes`. A big new window from another program (a game Steam started) counts as the game.
+
+**`doctor` notes.** Each picked game also gets the findings `doctor` has for it, shown under the game in the list, in `results.csv` (`Doctor` column) and in the report: a Coin or Start binding of its own that no key can press (MAME, Supermodel), a problem in a User Functions file RocketLauncher runs for it (its own, its system's, its emulator's or `Global.ahk`), HyperSpin's ROMs-only filter hiding it, or a name with spaces at the start or end. A game can pass the launch test and still be unplayable or invisible in HyperSpin.
+
+**HyperSpin.** With `--with-hyperspin`, HyperSpin is opened first and its startup judged: it must log `wheel loaded successfully` in `<hyperspin_dir>\log.txt` within `test_hyperspin_timeout` (180 s), show no error dialog and not close. The intro video is skipped the way a player would, with a Space key press while HyperSpin's log says `Playing intro video` (it needs `[IntroVideo] Stop_On_Keypress=true` in HyperSpin's `Settings.ini`); `--play-intro` or `test_skip_intro_video false` lets it play. Lines in `log.txt` that look like errors make it a WARN, apart from `test_ignore_hyperspin_log`. Games are then launched as usual, with HyperSpin behind them. At the end SpinDoctor leaves HyperSpin through its exit menu (Esc, then Enter), or closes or ends it and tells LEDBlinky the frontend quit, unless `--leave-hyperspin-open`. A HyperSpin that was already open is left alone. A killed run's recovery closes the HyperSpin it opened.
+
+**Closing.** SpinDoctor presses the system's exit key from RocketLauncher's settings (`[Exit] Exit_Emulator_Key`, including `H500:` holds and `&` combinations), never into HyperSpin itself. If the game is still open after `test_close_timeout` (25 s), it ends the game's programs, then RocketLauncher.
+
+**Play statistics.** RocketLauncher records every launch in its statistics, which Recently Played and Most Played are built from. A run backs up every statistics file (all three layouts `scrub --stats` knows) before the first launch and puts them back after every game. While a run is going on, or after one was killed, `recent rebuild --apply` and `stats-report build-wheel` refuse to run until `spindoctor test --recover` has put the statistics back.
+
+**Files the games create.** Emulators write save files, configs and folders when a game runs (a MAME `cfg\<game>.cfg`, a RetroArch `.srm`, RocketLauncher's own `Settings\<System>\<game>\Bezel.ini`). `--cleanup` (default `test_cleanup`) decides what happens to them:
+
+| Mode | What it does |
+|---|---|
+| `report` (default) | Lists them in `cleanup.csv` and the report, and leaves them. |
+| `remove` | Copies each new file to `<backup_dir>\test-cleanup\<run>\` (or the run folder's `cleanup-backup\` when `backup_dir` isn't set), then deletes it; new folders go once they're empty. |
+| `off` | Doesn't look. |
+
+Nothing that existed when the run started is ever touched: before the first launch every path under `hyperspin_dir` (and `rocketlauncher_dir` and `emulators_dir` when they are elsewhere) is recorded in the run folder's `baseline.bin`, a folder that can't be read is protected whole, and a file also needs a creation time inside the run. Left alone too: `test_cleanup_skip` (by default `cache` and `RocketLauncher\Data\Statistics`, relative to `hyperspin_dir`), RocketLauncher's statistics and 7-Zip extract folder (`[7z] 7z_Extract_Path`), and the folders of programs that were already running from a watched folder (DS4Windows, LEDBlinky). Windows' folder notifications name what appeared after each game; if they overflow, and at the end of the run, every watched folder is listed again. A killed run's recovery does the same listing against the saved baseline.
+
+**Results.** Each run gets a folder under `~/.spindoctor/tests/` (or `test_results_dir`): `report.html` (open this: summary, HyperSpin's startup, a tile per game with its screenshot, filters, a table per system and the skipped games), `results.csv` and `results.json` (one row per game, skipped ones too), `plan.csv`, `run.json`, `HyperSpin log.txt` with `--with-hyperspin`, `logs\<System>\<Game>.log` (RocketLauncher's log for each launch), `screenshots\<System>\<Game>.jpg` (`.png` without Pillow), `stats-backup\`, and with the cleanup on `cleanup.csv` and `baseline.bin`. Screenshots show the whole monitor; check them before sharing (see [Privacy](privacy.md)).
+
+**Stopping.** Ctrl+C closes the current game, puts the statistics back and stops. A file named `stop-request` in the run folder does the same within a second. `--resume --apply` carries on, starting with the game that was cut off. If the run is killed instead (the GUI's Stop, a crash, a power cut), the next `spindoctor test --apply`, or `spindoctor test --recover` on its own, finishes it: it closes the game the run left open (only programs whose process ID, name and start time match the run's journal) and puts the statistics back.
+
+Exit code: 0 when nothing failed, 2 when a game failed, 1 for errors.
+
+---
+
 ## Custom wheels
 
 Two synthetic HyperSpin systems — **Favorites** and **Recently Played** — and a third (**Most Played**) generated from playtime stats. Each pulls entries from any number of source systems into a single wheel, routes through RocketLauncher so the original emulator config is reused, and is idempotent — safe to run on every boot.
@@ -986,37 +1056,58 @@ Sorted by `last_played` desc — newest game first, deduped on `(system, rom)`. 
 
 ### `install-tools`
 
-Writes `.bat` wrappers HyperSpin's Tools menu can invoke directly — so cabinet end-users can refresh wheels from the UI without a console.
+Writes `.bat` wrappers HyperSpin's Tools menu can invoke directly — so cabinet end-users can refresh wheels from the UI without a console. Pick each helper you want with `--tool`: repeat it, or separate names with commas. Each helper takes its key or its name (`refresh-all` or `"Refresh All"`).
 
 ```bat
-spindoctor install-tools                                    :: write to RocketLauncher Tools dir (HyperHQ → Tools)
-spindoctor install-tools --output-dir D:\Tools              :: write somewhere else
-spindoctor install-tools --add-to-system Toolkit            :: dry-run — preview XML entries that would be added
-spindoctor install-tools --add-to-system Toolkit --apply    :: install as games inside an existing wheel
+spindoctor install-tools                                                  :: list the helpers (writes nothing)
+spindoctor install-tools --tool refresh-all                               :: write to RocketLauncher Tools dir (HyperHQ → Tools)
+spindoctor install-tools --tool refresh-favorites,refresh-recently-played --output-dir D:\Tools
+spindoctor install-tools --tool refresh-all --add-to-system Toolkit         :: dry-run — preview XML entries that would be added
+spindoctor install-tools --tool refresh-all --add-to-system Toolkit --apply :: install as games inside an existing wheel
+spindoctor install-tools --tool idle-tour --apply                         :: start the idle tour with HyperSpin (Startup Script)
 ```
 
-Four files are produced (Refresh Favorites, Refresh Recently Played, Refresh Most Played, Refresh All). See [Standalone tools → Tools menu](standalone-tools.md#wiring-into-hyperspin-tools-menu).
+| `--tool` | File / wheel entry | What it runs |
+|---|---|---|
+| `refresh-favorites` | `Refresh Favorites` | `spindoctor-fav rebuild --apply` |
+| `refresh-recently-played` | `Refresh Recently Played` | `spindoctor-recent rebuild --apply` |
+| `refresh-most-played` | `Refresh Most Played` | `spindoctor-stats build-wheel --apply` |
+| `refresh-all` | `Refresh All` | all three, stopping at the first that fails |
+| `shut-down-cabinet` | `Shut Down Cabinet` | [`toolkit shutdown`](#toolkit): countdown, close HyperSpin, shut Windows down |
+| `restart-cabinet` | `Restart Cabinet` | [`toolkit restart`](#toolkit): countdown, close HyperSpin, restart Windows |
+| `exit-to-windows` | `Exit To Windows` | [`toolkit exit-to-windows`](#toolkit): countdown, close HyperSpin, bring the taskbar back |
+| `reset-button-lights` | `Reset Button Lights` | [`toolkit reset-button-lights`](#toolkit): stop PAC-LED64 boards flashing on their own |
+| `set-windows-resolution` | `Set Windows Resolution` | [`toolkit set-resolution`](#toolkit): put Windows back to HyperSpin's resolution |
+| `idle-tour` | `Idle Tour` | [`toolkit idle-tour`](#toolkit): while HyperSpin's idle mode runs, open random consoles and go back to the main menu; starts with HyperSpin (below) |
+
+**`idle-tour` isn't a Tools-menu or wheel helper:** it runs beside HyperSpin for as long as HyperSpin is open (see [Idle tour](idle-tour.md)). With `--apply`, `install-tools` adds `Idle Tour.bat` to the `[Startup]` list of HyperSpin's Startup Script, the Startup Program HyperSpin's `Settings\Settings.ini` `[Startup Program]` names, at the next free number, after a `.bak` backup and keeping every other byte of the file; without `--apply` it shows the entry it would add. It refuses when entries sit after a gap in that list (the script stops at the first missing number). It also writes `Idle Tour settings.ini` beside the `.bat` when there is none, and warns when HyperSpin's `[AttractMode] Active` or `[LEDBlinky] Active` isn't `true`, when HyperSpin is in single mode, and when the Startup Script already starts another idle tour. With `--apply`, exit code 1 when no Startup Script was found or the entry couldn't be added. It adds no `[Exit]` entry: the tour quits by itself once HyperSpin has closed, and closing SpinDoctor's EXE by name would also close the SpinDoctor GUI. `--add-to-system` refuses it (exit code 2).
+
+Only the helpers you pick are written. Helpers an earlier run installed stay as they are, so you can add one later without touching the others; remove one with `uninstall-tools --tool`. Without `--tool`, `install-tools` lists the helpers and exits with code 2, writing nothing. (Before this release it always wrote the four Refresh helpers: add `--tool refresh-favorites,refresh-recently-played,refresh-most-played,refresh-all` to scripts that relied on that.) See [Standalone tools → Tools menu](standalone-tools.md#wiring-into-hyperspin-tools-menu).
 
 `--add-to-system <NAME>` is a second integration pattern for cabinets that already have a "Toolkit" or "Tools" wheel (a HyperSpin system whose "games" are maintenance tasks). Instead of writing the bats under `Modules\HyperLaunch\Tools\spindoctor\`, this mode:
 
 1. Writes the `.bat` helpers and per-game placeholder INIs to the system's `Rom_Path` (reads from the existing `Settings\<NAME>\Emulators.ini`) — or `Modules\PCLauncher\<NAME>\` for new systems.
-2. Writes or updates `Modules\PCLauncher\<NAME>.ini` (the PCLauncher module INI) with `[<tool name>]` sections containing `Application=<bat>` and `WorkingFolder=`. **This file is required** — PCLauncher.ahk reads game settings from it; without it every launch shows *"You have not set up \<tool\> in RocketLauncherUI yet, so PCLauncher does not know what exe, FadeTitle, and/or SteamID to watch for."* Existing user-configured sections in this file are preserved.
+2. Writes or updates `Modules\PCLauncher\<NAME>.ini` (the PCLauncher module INI) with `[<tool name>]` sections containing `Application=<bat>` and `WorkingFolder=`. **This file is required** — PCLauncher.ahk reads game settings from it; without it every launch shows *"You have not set up \<tool\> in RocketLauncherUI yet, so PCLauncher does not know what exe, FadeTitle, and/or SteamID to watch for."* Only the picked helpers' sections are replaced (matched ignoring case, as RocketLauncher does); every other line, including user-configured sections, stays byte for byte, in the file's own encoding and newlines.
 3. Adds matching `<game>` entries to `<HyperSpin>\Databases\<NAME>\<NAME>.xml`, with `genre=Tools` and `manufacturer=SpinDoctor` so they display correctly on the wheel.
+4. Copies each entry's wheel logo, bundled with SpinDoctor, to `<HyperSpin>\Media\<NAME>\Images\Wheel\<entry>.png` (pink italic capitals over a blue glow, 400x156), unless the wheel already has art for it: your own logos are never replaced.
 
-Idempotent — re-running upserts the same four entries instead of duplicating them. The target system must already exist and use PCLauncher as its emulator (HyperHQ → Settings → Emulator → PCLauncher). Pair with `spindoctor mainmenu add "<NAME>" --apply` if the wheel isn't on the Main Menu yet.
+Idempotent — re-running upserts the picked entries instead of duplicating them. The target system must already exist and use PCLauncher as its emulator (HyperHQ → Settings → Emulator → PCLauncher). Pair with `spindoctor mainmenu add "<NAME>" --apply` if the wheel isn't on the Main Menu yet.
 
 > **Note:** The `.bat` helpers and PCLauncher INI are written immediately (they are non-HyperSpin files and safe to create); only the step that mutates the HyperSpin database XML requires `--apply`. Without `--apply`, the command prints a dry-run preview of what `<game>` entries would be added and exits cleanly.
 
-The GUI's **Custom Wheels** tab covers both modes plus a Windows-only "Auto-refresh on cabinet startup" panel that wraps `schtasks.exe` (Schedule / Remove / Check Status buttons) — see [Standalone tools → Tools menu](standalone-tools.md#wiring-into-hyperspin-tools-menu).
+The GUI's **Custom Wheels** tab covers both modes, with a checklist of the helpers to install, plus a Windows-only "Auto-refresh on cabinet startup" panel that wraps `schtasks.exe` (Schedule / Remove / Check Status buttons) — see [Standalone tools → Tools menu](standalone-tools.md#wiring-into-hyperspin-tools-menu).
+
+The helpers run SpinDoctor by its full path, so after upgrading or moving SpinDoctor, re-run `install-tools` the same way, with the same helpers. [`doctor`](#doctor)'s **SpinDoctor helpers** check flags helpers whose EXE is gone and prints that command.
 
 ### `uninstall-tools`
 
-Reverses `install-tools`. Removes the `.bat` wrappers (and, when `--add-to-system` was used, the PCLauncher `.ini` files and database entries) that `install-tools` wrote. Dry-run by default — pass `--apply` to commit.
+Reverses `install-tools`. Removes the `.bat` wrappers (and, when `--add-to-system` was used, the PCLauncher `.ini` files and database entries) that `install-tools` wrote. Dry-run by default — pass `--apply` to commit. Without `--tool` it removes every SpinDoctor helper, including names older versions wrote; with `--tool` (same names as `install-tools`) only those, and the others stay. For `idle-tour` it also removes `Idle Tour settings.ini` and the tour's `[Startup]` entry in HyperSpin's Startup Script (after a backup), numbering the later entries down so the list keeps no gap.
 
 ```bat
 :: Standard Tools-menu install (bats in HyperLaunch\Tools\spindoctor\)
 spindoctor uninstall-tools              :: dry-run — show what would be removed
 spindoctor uninstall-tools --apply      :: remove the .bat files
+spindoctor uninstall-tools --tool refresh-most-played --apply   :: remove just that one
 
 :: Toolkit-wheel install (pass the same system name used with install-tools)
 spindoctor uninstall-tools --add-to-system Toolkit
@@ -1026,10 +1117,85 @@ spindoctor uninstall-tools --add-to-system Toolkit --apply
 When `--add-to-system <SYSTEM>` is given:
 
 1. Removes the `.bat` and `.ini` files from the PCLauncher directory used for that system (reads the first `Rom_Path` from `Settings/<SYSTEM>/Emulators.ini`, falls back to `Modules/PCLauncher/<SYSTEM>`; also checks the legacy path so files written by older versions are cleaned up).
-2. Removes the SpinDoctor-written `[Refresh …]` sections from the PCLauncher module INI (`Modules/PCLauncher/<SYSTEM>.ini`). Non-SpinDoctor sections are left in place. If the file becomes empty after removal it is deleted.
-3. Deletes the four SpinDoctor `<game>` entries from `<HyperSpin>/Databases/<SYSTEM>/<SYSTEM>.xml`.
+2. Removes those helpers' sections from the PCLauncher module INI (`Modules/PCLauncher/<SYSTEM>.ini`). Every other line is left byte for byte. If the file becomes empty after removal it is deleted.
+3. Deletes those helpers' `<game>` entries from `<HyperSpin>/Databases/<SYSTEM>/<SYSTEM>.xml`.
+4. Deletes their wheel logos from `<HyperSpin>/Media/<SYSTEM>/Images/Wheel/`, but only files that are still SpinDoctor's own logo byte for byte; art you put there stays.
 
 Only files and entries that exist are touched — missing ones are silently skipped.
+
+### `toolkit`
+
+Cabinet actions for a Toolkit wheel or HyperSpin's Tools menu. They're what the [`install-tools`](#install-tools) helpers run, and they work from a console too. Windows only.
+
+```bat
+spindoctor toolkit shutdown                 :: countdown, close HyperSpin, shut Windows down
+spindoctor toolkit shutdown --seconds 10    :: a longer countdown (0 skips it)
+spindoctor toolkit restart                  :: countdown, close HyperSpin, restart Windows
+spindoctor toolkit exit-to-windows          :: countdown, close HyperSpin, back to the desktop
+spindoctor toolkit reset-button-lights      :: zero the PAC-LED64 flash speeds (HyperSpin keeps running)
+spindoctor toolkit set-resolution           :: Windows back to HyperSpin's [Resolution]
+spindoctor toolkit idle-tour --self-test    :: what the idle tour sees now (presses nothing)
+spindoctor toolkit idle-tour-settings       :: show the idle tour's settings; options change them
+
+:: put them on a Toolkit wheel
+spindoctor install-tools --tool shut-down-cabinet,restart-cabinet,exit-to-windows --add-to-system Toolkit --apply
+:: start the idle tour with HyperSpin
+spindoctor install-tools --tool idle-tour --apply
+```
+
+The actions that leave HyperSpin share one sequence:
+
+1. **Countdown.** A black full-screen window shows "Shutting down in 5" (or "Restarting in 5", "Exiting to Windows in 5") over "Press Esc to cancel" (`--seconds`, 0 to 60). It stays on top and takes the focus back every quarter second, because HyperSpin returns to the front as soon as RocketLauncher closes. While it counts, Esc is a system-wide hotkey, so HyperSpin never sees it (it would open its own exit menu). Esc, the Exit button on most panels, cancels: the window closes and HyperSpin comes back to the front.
+2. **HyperSpin closes the polite way**, with `WM_CLOSE` to its windows, so it saves its settings and runs its exit programs. A `RocketLauncher.exe` still running is ended first, because HyperSpin waiting for its "game" ignores the close. HyperSpin closes in under a second; if it's still running after 3 s it's ended.
+3. **LEDBlinky is told to quit** with `LEDBlinky.exe 2` (the EXE that's running, else the one in `ledblinky_dir`). HyperSpin sends LEDBlinky that quit only on its own exit, not when it's closed from outside, so without it the panel stays on the last game's layout. A second quit can restart LEDBlinky's quit animation, so none is sent when HyperSpin's `log.txt` shows it sent one. Nothing waits for LEDBlinky's quit animation, which can take half a minute.
+4. **The action, at once.** `shutdown` and `restart` run `shutdown.exe /s /f /t 0` or `shutdown.exe /r /f /t 0` as soon as HyperSpin has closed: `/f` stops an "app is preventing shutdown" screen from stalling it, Windows ends LEDBlinky and anything HyperSpin's exit programs left running with the rest, and does a full shutdown or a full restart (a cold boot). After the countdown only HyperSpin's close takes time (3 s at most), and the black screen stays up while Windows closes everything. If Windows refuses (exit code not 0), the window closes and the HyperSpin that was running is started again, so the cabinet isn't left on the desktop; the command exits 1.
+
+   `exit-to-windows` doesn't wait either: only the countdown takes time. The window closes and Explorer is restarted (`taskkill /F /IM explorer.exe`, then `explorer.exe` unless Windows starts a new Explorer by itself within 1.5 s). HyperSpin hides the taskbar and shows it again only on its own exit, not after an outside close, and a fresh Explorer brings it back. Explorer windows that were open close. LEDBlinky's quit animation finishes on the panel while you're on the desktop; the command waits for it (or ends LEDBlinky after 30 s), and for HyperSpin's startup script (`HyperSpin Startup Script.exe`, up to 5 s), without a window. Once LEDBlinky is gone, every PAC-LED64 light is set to 0 through the `PacDrive32.dll` in `ledblinky_dir` (as `reset-button-lights` uses, below), because LEDBlinky's quit can leave a board lit; skipped when there's no DLL there.
+
+The helper `install-tools` writes starts the command with `start ""` and returns at once, so RocketLauncher ends and HyperSpin comes back while the countdown takes the front. The window is drawn by Windows itself (no tkinter), so it works from both EXEs. Each step is logged to `%USERPROFILE%\.spindoctor\toolkit.log` (see [Storage locations](spindoctor-files.md#toolkitlog)).
+
+**`reset-button-lights`** stops Ultimarc PAC-LED64 boards flashing on their own (see [Troubleshooting](troubleshooting.md#buttons-on-one-led-board-flash-constantly-even-during-calm-animations)). It sets every port's flash speed to 0 on every PAC-LED64 (product IDs `0x1401`-`0x1404`): `Pac64SetLEDFlashSpeeds(id, 0)`, then `Pac64SetLEDFlashSpeed(id, port, 0)` for ports 0-63. Colours and which buttons are lit stay with LEDBlinky, which can keep running, and HyperSpin isn't closed.
+
+```bat
+spindoctor toolkit reset-button-lights                          :: uses <ledblinky_dir>\PacDrive32.dll
+spindoctor toolkit reset-button-lights --dll D:\Tools\PacDrive32.dll
+spindoctor toolkit reset-button-lights --no-note                :: no note on screen (for scripts)
+```
+
+`PacDrive32.dll`, which LEDBlinky ships, is 32-bit, so the calls run in 32-bit Windows PowerShell (`SysWOW64`), whatever SpinDoctor's own bitness. It prints one line per board and a summary (`2 Ultimarc device(s), 2 LED board(s) reset`), writes them to `toolkit.log`, and shows a 3-second note at the top of the screen that never takes the focus: "Button lights reset", "No button light boards found" or "Button light reset failed". Exit code 1 when the DLL is missing or the reset failed. Add it to HyperSpin's startup programs, before LEDBlinky starts, to repeat the reset at every start. The same script, with `Pac64SetLEDIntensities` to 0, turns the lights off at the end of `exit-to-windows`.
+
+**`set-resolution`** puts Windows back to HyperSpin's resolution. A game that crashes, or an emulator that doesn't restore the display, can leave Windows at its own resolution, and HyperSpin then starts stretched or in a corner (see [Troubleshooting](troubleshooting.md#hyperspin-starts-stretched-or-in-a-corner-after-a-game)).
+
+```bat
+spindoctor toolkit set-resolution                               :: HyperSpin's Settings\Settings.ini [Resolution]
+spindoctor toolkit set-resolution --width 1920 --height 1080    :: a size of your own
+spindoctor toolkit set-resolution --no-note                     :: no note on screen
+```
+
+It reads `[Resolution] Width` and `Height` from `<hyperspin_dir>\Settings\Settings.ini`, keeps the primary display's colour depth and lets Windows pick the refresh rate, tests the mode first (`ChangeDisplaySettingsExW` with `CDS_TEST`) and then sets and saves it (`CDS_UPDATEREGISTRY`), so it sticks after a restart. Nothing changes when the display is already at that size. It logs `set-resolution: 1280x720 -> 1920x1080` to `toolkit.log` and shows a 3-second note ("Resolution set to 1920 × 1080", "Already 1920 × 1080" or "Couldn't set 1920 × 1080") that never takes the focus. Exit code 1 when there's no size to set or the display refused it. No separate resolution tool is needed.
+
+**`idle-tour`** makes HyperSpin's idle mode visit random consoles. It runs beside HyperSpin until HyperSpin closes, started with it by the Startup Script (`install-tools --tool idle-tour --apply`). While HyperSpin's own idle mode runs, it presses Exit in a console after `GamesPerConsole` games or `ConsoleMinutes` (5 and 5 by default; the first game after it opened the console counts), and Start on the main menu after `ConsolesOnMainMenu` consoles or `MainMenuMinutes`, on the console whose video just played unless it's skipped, each time just as that video ends (the length comes from the `.mp4` or `.flv`; when it can't be read, right after the next idle spin lands). On a game or console with no video, where HyperSpin would wait its whole idle `Time`, it presses Down after `NoVideoSeconds` (8). It reads where HyperSpin is from HyperSpin's live `log.txt`, presses only while a video plays with nothing logged since it began or right after an idle spin lands, never presses Exit on the main menu (that opens HyperSpin's exit menu, default Yes), and presses nothing while a game runs, while HyperSpin isn't in front, or once someone uses a control. When HyperSpin reads a joystick itself (`[P1 Joystick] Enabled=true`), which Windows doesn't see, it changes wheels only right after an idle spin lands. HyperSpin's Start, Exit and Down keys come from its `[P1 Controls]`. Its lines in `toolkit.log` start with `idle-tour:`.
+
+```bat
+spindoctor toolkit idle-tour --settings "D:\Arcade\RocketLauncher\Modules\HyperLaunch\Tools\spindoctor\Idle Tour settings.ini"
+spindoctor toolkit idle-tour --self-test    :: settings, HyperSpin's folder, keys, log state, video length; presses nothing
+```
+
+Without `--settings` it uses the built-in settings. It exits 0 when HyperSpin closes, when switched off (`Enabled=0`) or when another copy runs. How it works, the settings and the hazards: [Idle tour](idle-tour.md).
+
+**`idle-tour-settings`** shows or changes the idle tour's settings file, `Idle Tour settings.ini` beside the `Idle Tour.bat` that HyperSpin's Startup Script starts (else in install-tools' folder; `--settings` picks another). With no option it lists them; each option sets one key, and every other byte of the file stays as it is. The GUI's **Idle Tour settings** box (Custom Wheels tab) runs it. Not Windows-only.
+
+```bat
+spindoctor toolkit idle-tour-settings                                        :: show them
+spindoctor toolkit idle-tour-settings --consoles-on-main-menu 1 --games-per-console 10
+spindoctor toolkit idle-tour-settings --console-minutes 0 --main-menu-minutes 0   :: counts only
+spindoctor toolkit idle-tour-settings --tour-max-minutes 60                  :: stop after an hour (0 = never, the default)
+spindoctor toolkit idle-tour-settings --skip "Toolkit|Favorites|Apple II"    :: "" for none
+spindoctor toolkit idle-tour-settings --no-video-seconds 0                   :: no Down past items with no video
+spindoctor toolkit idle-tour-settings --disabled                             :: Enabled=0 (--enabled for 1)
+```
+
+It prints each change (`GamesPerConsole: 5 → 10`); a value the file already has isn't rewritten, and a key the file doesn't have yet is added to its `[IdleTour]` section. Counts are whole numbers from 0 to 9999, minutes 0 to 1440 and `--no-video-seconds` 0 to 3600, where 0 switches that limit or step off. Exit code 1 when there's no settings file (install the tour first) or a value can't be written (a name the file's code page can't hold). The tour reads them the next time HyperSpin starts.
 
 ---
 
@@ -2137,6 +2303,8 @@ A **Coin/Start** check looks at every game on the Main Menu's visible wheels tha
 
 An **Emulator ROM folders** check reads the ROM and save folders that some emulators keep in their *own* config files, which `generate-config` and `migrate` never rewrite: Demul's `Demul.ini` `roms0`…`romsN` (up to `romsPathsCount`), AAE's `aae.ini` `mame_rom_path`, PokeMini's `pokemini.cfg` `eepromfile` (its folder, only while `eepromshare` is on) and the per-game `homedir` in the Daphne module's `RocketLauncher\Modules\Daphne\Daphne.ini` (the default `.` is fine). It finds each emulator from its `Emu_Path` in `Global Emulators.ini`, or one level under `emulators_dir` when it isn't listed there. A folder that doesn't exist is a WARN naming the file, key and current value; when the same folder exists under `roms_dir` (for example `<roms_dir>\Sega Naomi`), the fix line gives the exact replacement. If the emulator's RocketLauncher module sets the folder itself before every launch (the stock AAE module, and the Demul v0.5.8 / v0.7 modules, which add the ROM folder to `Demul.ini`), the stale value is harmless and only shows as INFO. MAME's `mame.ini` `rompath` isn't checked, because RocketLauncher passes `-rompath` on the command line. Diagnosis only — edit the file yourself.
 
+A **Daphne keys** check reads the key files of Daphne 1.0.x and the Singe builds made from it (American Laser Games, Action Max), which use SDL 1.2: the `dapinput.ini` beside each emulator whose `Emu_Path` (in `Global Emulators.ini` or a system's own `Emulators.ini`) names `daphne.exe` or has a `dapinput.ini` beside it, or one level under `emulators_dir` when RocketLauncher lists none, plus the `controls\*.ini` files RocketLauncher's Daphne module copies over it before every launch (`controls\<game>.ini`, else `controls\dapinput.ini`). Each line, such as `KEY_QUIT = 27 0 0`, holds two keyboard keys and a joystick button. A 0 key slot isn't "no key": SDL 1.2 reports every key it has no name for, such as the volume and media keys a keyboard or an I-PAC's shift functions send, as 0, and Daphne checks both key slots of every action, so one Volume Up press quits, pauses, tilts or presses whatever has a 0 slot. Actions the file leaves out keep Daphne's built-in keys, most of which have a 0 second slot. The check reads the file as Daphne does: with no `[KEYBOARD]` line (or one hidden behind a byte-order mark) the whole file is ignored, and reading stops at the first line that isn't `<name> = <key> <key> <button>`. A file that leaves actions on key 0 is a WARN naming them, quit, pause, service and test first; the fix line gives the lines to write, with 296 (F15, a key nothing sends) in each 0 slot. A 0 joystick button is fine, and `KEY_CONSOLE` does nothing in Daphne 1.0, so neither is flagged. Diagnosis only — edit the files with Daphne closed.
+
 For every `PCLauncher` system, a **PC games** check goes one level deeper than the wheel-wiring emulator check: it walks the per-game PCLauncher INIs and reports games with no INI at all, or whose `Application=` path no longer exists on disk (the "Cannot find this Application" / stale drive-letter bug). It points at `add-pc-system` for missing INIs and at `pc-rename --overwrite-pclauncher --apply` for stale ones: plain `pc-rename --apply` only writes INIs that don't exist yet.
 
 For every wheel on the Main Menu (PCLauncher wheels included), a **ROM paths** check confirms RocketLauncher can actually find the games — the layer that fails with RocketLauncher's "Cannot find Rom … in any Rom_Paths provided". It reads `Rom_Path` (`|`-separated, relative paths resolved from the RocketLauncher folder) and `Rom_Extension` the way RocketLauncher does: `Settings\<System>\Emulators.ini` `[ROMS]` (any case, e.g. `[Roms]`) or the flat `Settings\<System>.ini` `[Settings]`, then the emulator's section, `Global Emulators.ini` and RocketLauncher's built-in default list, honoring per-game `Games.ini` `Emulator=` overrides. A `Rom_Path` folder that doesn't exist (moved folder, old drive letter) is a FAIL when none of the wheel's `Rom_Path` folders exist, and a WARN when another one does (RocketLauncher only fails a launch when no folder holds the ROM) or when RocketLauncher looks for none of the wheel's games. Then every game in the wheel's database is looked up, under its name exactly as written in the XML, as `<path>\<name>.<ext>` or `<path>\<name>\<name>.<ext>` (plus any matching file under `<path>\<name>\` when `Rom_Match_Extension` is on): some games missing is a WARN, all of them a FAIL, with the count and an example or two. The fix line names the likely cause — a single subfolder holding most of the missing games (move the files up into the `Rom_Path` folder, or add e.g. `…\Sega Dreamcast\roms` or `…\Sony Playstation\MultiDisc` to `Rom_Path`), or MAME alternate names with a `MameRomName` entry in `RocketLauncher\Modules\MAME\MAME.ini` that are missing their empty `<name>.txt` placeholder. Games that a `Games.ini` `System=` sends to another system's settings get their own "Games via `<System>`" row, judged by that system's `Rom_Path` and `Skipchecks`, as RocketLauncher does; it's a WARN unless none of the wheel's games can be found. Wheels with `Skipchecks=Rom Only` or `Rom and Emu` only get a WARN for missing folders, since RocketLauncher doesn't look for their ROM files. Wheels switched off on the Main Menu are still checked and labeled "(hidden on the Main Menu)", but their findings are INFO, so they can't fail `doctor`. It's diagnosis-only.
@@ -2150,6 +2318,10 @@ The **LEDBlinky** check goes beyond confirming the core files parse: it also fla
 A **LED coverage** check reports how many games in the wheels that use MAME ROM names (and their parents) have LEDBlinky control/color entries, and how many could be lit up with `ledblinky generate --apply`, from SpinDoctor's LEDBlinky library or MAME's data. It is **cache-only** — it never triggers a fresh `mame -listxml` (which can take minutes) from `doctor`; with no cached control data it counts only what the library holds, and with neither it just points you at `ledblinky audit`. It also WARNs when `controls.ini` holds 5,000 or more entries for games in no wheel: LEDBlinky loads them all before it lights anything, so the fix is `ledblinky prune --apply` (see [`ledblinky generate`, `audit` and `prune`](#ledblinky-generate-audit-and-prune)).
 
 If you use the intro-video randomizer, an **Intro video** check surfaces the failures that otherwise have no symptom until the boot video stops changing: an empty pool (`introvideo swap` is a silent no-op), a target whose folder no longer exists, and a logon auto-run task that's registered but stale after a portable upgrade (re-run `introvideo install-autorun --apply`). It also reads every enabled clip's length (headers only) and shows the longest, with how long the logon swap will wait for it. A clip too long for the swap to wait out (over 29 minutes) is a WARN, with `introvideo remove` as the fix. Clips whose length can't be read (not MP4 / M4V / MOV) are listed as INFO.
+
+A **SpinDoctor helpers** check finds the `.bat` files [`install-tools`](#install-tools) wrote (`Refresh Favorites`, `Refresh All` and every other helper in its `--tool` list, and the old `Refresh Both`): in `<rocketlauncher_dir>\Modules\HyperLaunch\Tools\spindoctor`, and for every PCLauncher system in the folders `--add-to-system` uses, which are those of the `.bat` files run by the helper sections of `Modules\PCLauncher\<System>.ini`, the first `Rom_Path` entry of `Settings\<System>\Emulators.ini` and `Modules\PCLauncher\<System>\`. Each helper runs SpinDoctor by full path (`"<exe>" --run-tool spindoctor-fav …` in v3, `"<install folder>\spindoctor-fav.exe" …` before), so once SpinDoctor is moved or upgraded into a new folder and the old one removed, they do nothing. A quoted `.exe` that no longer exists is a WARN per folder; the fix is the `install-tools` command that rewrites those files, with `--tool` naming the helpers found there (`Refresh Both` as `refresh-all`) and the same `--output-dir`, `--add-to-system` and `--apply`. Helpers that call bare command names from PATH (a source install) are INFO.
+
+An **Idle tour** check runs once the [idle tour](idle-tour.md) is installed (its `[Startup]` entry in HyperSpin's Startup Script, or `Idle Tour.bat` in the Tools-menu folder); otherwise it's INFO "not installed". It finds the Startup Script from HyperSpin's `Settings\Settings.ini` `[Startup Program]`. A WARN when the script doesn't start `Idle Tour.bat` (fix: `install-tools --tool idle-tour --apply`), when the entry comes after a gap in the `[Startup]` numbering (the script stops at the first missing number, so the tour never starts), when the entry's `.bat` doesn't exist or runs a SpinDoctor EXE that's gone, when HyperSpin's Startup Program isn't the Startup Script and nothing else is known to start it, when the script also starts another idle tour (two would press keys over each other), when HyperSpin is in single mode (`[Main] Menu_Mode=single`: no main menu, so the tour presses nothing), and when HyperSpin's `[AttractMode] Active` or `[LEDBlinky] Active` isn't `true` (the tour changes wheels only while HyperSpin's idle mode runs, and reads where HyperSpin is from its LEDBlinky calls in `log.txt`). `Enabled=0` in its settings file is INFO. Diagnosis only.
 
 An **Orphan media** check reports leftover media files (wheels, videos, themes) with no matching game — disk bloat left behind after games were removed. It's INFO-only and never deletes anything (doctor's contract); it points at `find-orphan-media --all` to preview and remove.
 

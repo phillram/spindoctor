@@ -105,7 +105,7 @@ You have two equivalent ways to point SpinDoctor at your library — pick whiche
 ```bat
 cd C:\spindoctor
 spindoctor-cli.exe --version
-:: SpinDoctor, version 3.1.0
+:: SpinDoctor, version 3.2.0
 
 spindoctor-cli.exe config init
 ```
@@ -140,18 +140,18 @@ The cabinet end-user shouldn't need to launch the GUI or drop into `cmd.exe` for
 **1. HyperSpin Tools menu (`install-tools`).** From the GUI's **Custom Wheels** tab → "Install for HyperHQ → Tools menu", or from the CLI:
 
 ```bat
-spindoctor install-tools
+spindoctor install-tools --tool refresh-favorites,refresh-recently-played,refresh-most-played,refresh-all
 ```
 
-Writes four `.bat` shortcuts (Refresh Favorites / Recently Played / Most Played / Both) into `<RocketLauncher>\Modules\HyperLaunch\Tools\spindoctor\`. Register them in **HyperHQ → Tools** and they appear inside HyperSpin's in-cabinet Tools menu. On binary installs they embed the running EXE's full path plus `--run-tool`, using `start "" /B /WAIT`, so a GUI-only install works.
+Writes a `.bat` shortcut for each helper you pick (tick them in the GUI, or name them with `--tool`; run `spindoctor install-tools` alone for the list) into `<RocketLauncher>\Modules\HyperLaunch\Tools\spindoctor\`. Register them in **HyperHQ → Tools** and they appear inside HyperSpin's in-cabinet Tools menu. On binary installs they embed the running EXE's full path plus `--run-tool`, using `start "" /B /WAIT`, so a GUI-only install works.
 
 **2. Inside an existing wheel system (`install-tools --add-to-system`).** If you have a "Toolkit" or "Tools" wheel (a HyperSpin system whose "games" are maintenance tasks), expose the helpers as wheel entries inside it. From the GUI's **Custom Wheels** tab → "Install into an existing wheel system", or from the CLI:
 
 ```bat
-spindoctor install-tools --add-to-system Toolkit
+spindoctor install-tools --tool refresh-all --add-to-system Toolkit --apply
 ```
 
-Writes the bats and per-game PCLauncher INIs under `<RocketLauncher>\Modules\PCLauncher\Toolkit\`, and adds matching `<game>` entries to `<HyperSpin>\Databases\Toolkit\Toolkit.xml`. The target system must already exist and use PCLauncher as its emulator.
+Writes the picked bats and per-game PCLauncher INIs under `<RocketLauncher>\Modules\PCLauncher\Toolkit\`, and adds matching `<game>` entries to `<HyperSpin>\Databases\Toolkit\Toolkit.xml`. The target system must already exist and use PCLauncher as its emulator.
 
 **3. Automatic refresh on cabinet startup.** From the GUI's **Custom Wheels** tab → "Auto-refresh on cabinet startup", click *Enable auto-run* (Windows-only — wraps `schtasks.exe`). Configurable post-log-on delay so HyperSpin / RocketLauncher settle before the rebuild kicks in. The generated bat calls the running EXE with `--run-tool` via `start /LOW /B /WAIT ""`, with a hidden VBS shim. See [manual registration](standalone-tools.md#manual-registration) if you need to register the task yourself.
 
@@ -167,7 +167,7 @@ Your config (`%USERPROFILE%\.spindoctor\config.json`), favorites, ignore lists, 
 
 v3 ships only `spindoctor.exe` and `spindoctor-cli.exe`; each works alone. Separate wheel-builder EXEs are no longer shipped. Update external scripts to use `--run-tool` (pip console-script names are unchanged); custom builds can use `build_windows.py --legacy-tools` for old scripts.
 
-After upgrading to a new folder or EXE path, re-run `install-tools`, click **Enable auto-run** again for wheel refresh, and re-run `introvideo install-autorun --apply` (or enable it again in the GUI) once for intro-video rotation. This rewrites saved paths; GUI/autorun status flags stale tasks.
+After upgrading to a new folder or EXE path, re-run `install-tools` (with the same `--tool` picks), click **Enable auto-run** again for wheel refresh, and re-run `introvideo install-autorun --apply` (or enable it again in the GUI) once for intro-video rotation. This rewrites saved paths; GUI/autorun status flags stale tasks, and `spindoctor doctor`'s **SpinDoctor helpers** check flags `install-tools` `.bat` files that still name the old EXE.
 
 ## Troubleshooting
 

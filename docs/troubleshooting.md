@@ -346,6 +346,12 @@ Since v2.7.3 `audit.check_media()` uses `stat().st_size > 0` — a zero-byte fil
 
 If you believe you have zero-byte stubs from an older version, run `audit` and look for slots that are shown as missing even though the file appears to be on disk.
 
+### `inspect` or `audit --detailed` shows no length (`—`) for some videos that play fine
+
+**Cause (before this fix):** with no `ffprobe` installed, SpinDoctor reads an `.mp4` / `.m4v` / `.mov` length from the file's movie header (the `moov` box), but it used to look only in the first 1 MB. Many encoders write that header at the end of the file, after the video data, so those clips had no length, and `inspect --format csv` left `duration_seconds` empty. Clips with the header at the start (often saved with "fast start" / `-movflags +faststart`) were fine.
+
+**Fix:** update SpinDoctor; the header is now found wherever it sits. A clip that still shows `—` has no readable movie header (a cut-short download, for example) or is in another format: `.flv` and `.avi` lengths need `ffprobe` (see [Video plays but has no sound](#video-plays-but-has-no-sound) for getting it).
+
 ---
 
 ## Wheels
@@ -354,17 +360,17 @@ If you believe you have zero-byte stubs from an older version, run `audit` and l
 
 This error appears when RocketLauncher's PCLauncher module finds a `[exe info]`-style INI for the helper entry, but the field for the monitored executable (or FadeTitle) is empty. PCLauncher needs that information to know when the launched program has finished — but the SpinDoctor refresh helpers are `.bat` files that run and exit on their own, so there is no process to monitor.
 
-**Fix — run `install-tools` once:**
+**Fix — run `install-tools` once, with the helpers you want on the wheel:**
 
 ```bat
-spindoctor install-tools --add-to-system Toolkit
+spindoctor install-tools --tool refresh-favorites,refresh-recently-played,refresh-most-played,refresh-all --add-to-system Toolkit --apply
 ```
 
 This writes everything RocketLauncher and PCLauncher need in one step:
 
 | File written | Purpose |
 |---|---|
-| `Modules/PCLauncher/Toolkit/*.bat` | The four refresh scripts |
+| `Modules/PCLauncher/Toolkit/*.bat` | The helpers you picked |
 | `Modules/PCLauncher/Toolkit/*.ini` | Per-game PCLauncher INIs (`[Settings]` format — no FadeTitle needed) |
 | `Databases/Toolkit/Toolkit.xml` | HyperSpin `<game>` entries |
 | `Settings/Toolkit.ini` | RocketLauncher system INI — tells RL to use PCLauncher and where the per-game INIs live |
@@ -380,7 +386,7 @@ doesn't yet:
 ```bat
 spindoctor add-system "Toolkit"
 spindoctor mainmenu add "Toolkit" --apply
-spindoctor install-tools --add-to-system Toolkit
+spindoctor install-tools --tool refresh-all --add-to-system Toolkit --apply
 ```
 
 The command is idempotent — safe to re-run after an upgrade.
@@ -649,6 +655,33 @@ when the game exits. **Fix (Supermodel):** add a `KEY_` to `InputCoin1` /
 line so `[ Global ]` applies. Back the files up first; a device that comes
 back later needs its old bindings.
 
+### A volume key quits or pauses a Daphne or Singe game (laserdisc, American Laser Games, Action Max)
+
+Pressing a volume or other media key during a laserdisc game quits it,
+pauses it, or presses a button, tilts or resets the game. On an I-PAC this
+is often its Volume Up / Down shift function (hold the shift button and push
+a joystick direction). Daphne's `daphne_log.txt` may show `Screenshot
+requested!` or a pause just before it shuts down.
+
+**Cause:** Daphne 1.0.x and its Singe builds use SDL 1.2, which reports every
+key it has no name for as key 0. Each `dapinput.ini` line, such as
+`KEY_QUIT = 27 0 0`, holds two keyboard keys and a joystick button, and Daphne
+checks each key press against both key slots of every action. So the 0 meant
+as "no second key" matches the volume key. Actions missing from the file keep
+Daphne's built-in keys, and most of those have a 0 slot too.
+
+**Find it:** run `spindoctor doctor`. Its **Daphne keys** check lists each key
+file and the actions it leaves on key 0.
+
+**Fix:** with Daphne closed, put a key nothing sends in every 0 key slot. 296
+(F15) works: `KEY_QUIT = 27 296 0`, `KEY_TILT = 296 296 0`. Add a line before
+`END` for each action the check says isn't in the file. Leave the third number,
+the joystick button, as it is; 0 there is fine. If you launch through
+RocketLauncher's Daphne module, fix the files in the emulator's `controls\`
+folder too: the module copies `controls\<game>.ini` (or `controls\dapinput.ini`)
+over `dapinput.ini` before each launch. See
+[Daphne's key file](cabinet-architecture-reference.md#key-file-dapinputini-a-0-key-slot-isnt-no-key).
+
 ### A wheel shows no games, but RocketLauncher's ROM checks pass
 
 The wheel opens empty in HyperSpin (or shows only a few of its games), though
@@ -698,6 +731,228 @@ name.
 to match (`Some Hack V2 .nes` → `Some Hack V2.nes`), and any media saved under
 the old name. Back up the XML first.
 
+### Refresh All (or Refresh Favorites) does nothing after upgrading SpinDoctor
+
+Running a Refresh helper from HyperSpin's Tools menu or a Toolkit wheel no
+longer rebuilds Favorites, Recently Played or Most Played, and a scheduled task
+that runs `Refresh All.bat` fails silently. Every other `doctor` check passes.
+
+**Cause:** `install-tools` writes the helpers with the full path of the
+SpinDoctor EXE that ran it, for example `start "" /B /WAIT
+"D:\Tools\spindoctor-win10-v3.0.0\spindoctor.exe" --run-tool spindoctor-fav
+rebuild --apply` (v2 named `spindoctor-fav.exe` in its install folder).
+Portable releases unzip into a folder of their own, so once the old folder is
+removed the helpers run a program that isn't there.
+
+**Find it:** run `spindoctor doctor`. Its **SpinDoctor helpers** check lists
+each folder whose helpers run a program that no longer exists, with the
+`install-tools` command that rewrites them on its `fix:` line.
+
+**Fix:** re-run `install-tools` from the new install, the way it was first
+run and with the same helpers: for example
+`spindoctor install-tools --tool refresh-all` for the Tools menu, or
+`spindoctor install-tools --tool refresh-all --add-to-system Toolkit --apply`
+for a Toolkit wheel (with `--output-dir <folder>` if one was used). The `fix:`
+line names the helpers it found. Keeping SpinDoctor in a folder whose name has
+no version number avoids this on later upgrades.
+
+### Shut Down Cabinet (or Restart Cabinet) counts down, then HyperSpin comes back instead
+
+The countdown ran to zero and HyperSpin closed, but a moment later HyperSpin
+started again and the cabinet stayed on.
+
+**Cause:** Windows refused the shutdown or restart, so `spindoctor toolkit
+shutdown` (or `restart`) started HyperSpin again rather than leave the cabinet
+on the desktop. Common reasons: another shutdown or restart already scheduled,
+an update installing, or a policy that stops this account shutting the PC down.
+
+**Find it:** the last lines of `%USERPROFILE%\.spindoctor\toolkit.log` show
+`shutdown.exe failed (exit code N)`. Run `shutdown /s /f /t 0` (or `/r`) in a
+console to see Windows' own message for that code.
+
+**If the countdown never appears** (no `countdown started` line in
+`toolkit.log`): the helper runs SpinDoctor by its full path, like the Refresh
+helpers above, so run `spindoctor doctor` and look at **SpinDoctor helpers**.
+
+**If Esc doesn't cancel:** another program already holds Esc as a system-wide
+hotkey, so the countdown only sees Esc while it has the focus. Alt+F4 on the
+countdown cancels too.
+
+**If the buttons are still lit as the cabinet goes off:** Shut Down Cabinet and
+Restart Cabinet don't wait for the lights. HyperSpin tells LEDBlinky to quit
+only on its own exit, so the helper sends `LEDBlinky.exe 2` itself, then shuts
+Windows down or restarts it at once, and Windows ends LEDBlinky part-way through
+its quit animation (which can take half a minute). Windows takes over a few
+seconds after the countdown.
+
+### Exit To Windows leaves the desktop without a taskbar
+
+After **Exit To Windows** HyperSpin is gone, but the desktop has no taskbar or
+Start button.
+
+**Cause:** HyperSpin hides the taskbar while it runs and shows it again only on
+its own exit, so `spindoctor toolkit exit-to-windows` restarts Explorer to bring
+it back. If Explorer couldn't be started, the taskbar stays hidden.
+
+**Find it:** `%USERPROFILE%\.spindoctor\toolkit.log` ends with
+`could not start …explorer.exe`, or has no `on the desktop` line.
+
+**Fix:** press Ctrl+Shift+Esc for Task Manager, then **File → Run new task**,
+`explorer.exe`. On a cabinet whose Windows shell was replaced with HyperSpin,
+starting `explorer.exe` is what gives you a desktop at all.
+
+**If the buttons stay lit on the desktop for a while:** that's LEDBlinky's quit
+animation finishing (up to 30 s); Exit To Windows doesn't make you wait for it.
+
+### HyperSpin starts stretched or in a corner after a game
+
+HyperSpin comes back from a game (or starts after a crash) filling only part of
+the screen, stretched, or with black bars, and the Windows desktop is at a
+different resolution than before.
+
+**Cause:** the game or emulator changed the display mode and didn't put it
+back, usually because it crashed. HyperSpin draws at the size in its
+`Settings\Settings.ini` `[Resolution]` section, whatever Windows is set to.
+
+**Fix:** run `spindoctor toolkit set-resolution`, or put it on the wheel with
+`spindoctor install-tools --tool set-windows-resolution --add-to-system Toolkit --apply`
+and pick **Set Windows Resolution**. It sets Windows back to HyperSpin's
+`[Resolution] Width` × `Height` and saves it. If the note says "Couldn't set",
+`%USERPROFILE%\.spindoctor\toolkit.log` has the reason, for example a size the
+display doesn't support.
+
+### A Toolkit helper shows as plain text on the wheel, or with the wrong logo
+
+The entries `install-tools --add-to-system` added show their name in
+HyperSpin's default font, or an old logo, instead of SpinDoctor's pink-on-blue
+wheel art.
+
+**Cause:** the art is copied to `<HyperSpin>\Media\<System>\Images\Wheel\<entry>.png`
+only when `--apply` writes the entries, and only when no file of that name is
+there: a logo already in place is kept, so your own art is never replaced. An
+install from before SpinDoctor shipped the art wrote none.
+
+**Fix:** re-run the same `install-tools … --add-to-system <System> --apply`
+for a missing logo. To swap an old logo for SpinDoctor's, delete
+`<entry>.png` first, then re-run it. HyperSpin reads wheel art at start, so
+restart HyperSpin to see it.
+
+### The idle tour never changes wheels
+
+HyperSpin's idle mode spins and plays videos, but always on the same wheel,
+although the [idle tour](idle-tour.md) is installed.
+
+**Check first:** `spindoctor doctor` (the **Idle tour** check), and
+`spindoctor toolkit idle-tour --self-test`, whose last line says what would
+stop a key press now. `%USERPROFILE%\.spindoctor\toolkit.log` has an
+`idle-tour:` line for each start, wheel change and pause.
+
+**Causes, most common first:**
+
+- **It never started.** `install-tools --tool idle-tour` without `--apply`
+  writes the `.bat` but doesn't add it to HyperSpin's Startup Script; re-run it
+  with `--apply`. An entry numbered after a gap in the Startup Script's
+  `[Startup]` list never starts, because the script stops at the first missing
+  number: number the entries 1, 2, 3 … without gaps. After moving or upgrading
+  SpinDoctor, the `.bat` runs an EXE that's gone (the **SpinDoctor helpers**
+  check): re-run `install-tools --tool idle-tour`. No `idle-tour: started` line
+  in `toolkit.log` means one of these.
+- **HyperSpin's idle mode or LEDBlinky calls are off.** The tour needs
+  `Settings\Settings.ini` `[AttractMode] Active=true` and `[LEDBlinky]
+  Active=true` (it reads every selection and idle spin from HyperSpin's
+  LEDBlinky calls in `log.txt`). Edit them with HyperSpin closed. Its `started`
+  line is followed by a warning when either is off. In single mode
+  (`[Main] Menu_Mode=single`) there is no main menu, and the tour presses
+  nothing.
+- **It's waiting on purpose.** Nothing happens before HyperSpin's idle mode
+  has started (`[AttractMode] Time`, 300 s by default) and shown the set
+  number of games or consoles; then it changes wheels as the last one's video
+  ends, so a long video means a long wait. On the main menu it opens only a
+  console that isn't in `Skip=` and has a database; a skipped one counts, and
+  it waits for the next. With a tour limit (`TourMaxMinutes`; `0`, the
+  default, is none) it stops after that many minutes, until someone uses a
+  control. `Enabled=0` in `Idle Tour settings.ini` switches it off.
+  `spindoctor toolkit idle-tour-settings` (or the GUI's **Idle Tour
+  settings** box) shows the values it uses.
+- **Something else is in front, or "uses a control".** It presses nothing
+  while HyperSpin isn't the front window (a tool that steals the focus at
+  start), or while a `PauseWhile` program runs. Any keyboard or mouse input,
+  including a program sending keys or a mouse that drifts, counts as someone
+  using a control: the tour then waits for HyperSpin's idle mode to start
+  again.
+
+### The idle tour changes wheels right after a spin, not as a video ends
+
+The idle tour opens a console (or goes back to the main menu) just after
+HyperSpin's idle spin lands, so the video of the console it opens isn't seen.
+
+**Cause:** that's its fallback when it can't time the video's end. Its
+`toolkit.log` line for the item says which:
+
+- **`(video length unknown)`:** a `.mp4` or `.flv` whose length can't be read
+  in the wheel's video folder (`Settings\<wheel>.ini` `[video defaults]
+  path=`, else `Media\<wheel>\Video`), or no video at all with
+  `NoVideoSeconds=0` (otherwise an item with no video gets a Down, below).
+  `spindoctor toolkit idle-tour --self-test` shows the selection's video
+  length and the folder.
+- **`the video ended early`:** HyperSpin spun before the end the file states,
+  for example a video cut short without its header updated.
+- **`(joystick)`:** HyperSpin reads a joystick itself (`[P1 Joystick]` or
+  `[P2 Joystick]` `Enabled=true`). Windows doesn't see those presses, so the
+  tour can't tell someone is playing, and pressing Start at a video's end
+  could answer Yes to an exit menu a joystick opened. It keeps to the spin
+  landings, which show HyperSpin's idle mode is still running, and presses
+  no Down past items with no video (`(no video, joystick)`). Mapping the pad
+  to keys (JoyToKey and the like) instead lets Windows see it.
+
+### The idle tour moves on from a game after a few seconds
+
+During HyperSpin's idle mode the wheel steps to the next game (or console) a
+few seconds after landing on one, instead of waiting for a spin.
+
+**Cause:** that item has no video (no `.mp4` or `.flv`, or only a still), and
+HyperSpin's idle mode would sit on it for its whole idle `Time` (5 minutes by
+default) before spinning again. After `NoVideoSeconds` (8) the idle tour
+presses Down once; its `toolkit.log` line says `(no video: stepping on in
+8 s)`. Adding the missing videos fixes it at the source. `NoVideoSeconds=0` in
+`Idle Tour settings.ini` (or `spindoctor toolkit idle-tour-settings
+--no-video-seconds 0`, or the GUI's **Idle Tour settings** box) switches the
+step off, and HyperSpin then waits as before.
+
+### The cabinet's screen no longer turns off when nobody plays
+
+Since the idle tour was installed, the display stays on all night.
+
+**Cause:** Windows counts the tour's key presses as input, so its screen
+timeout starts over at each wheel change (HyperSpin's own idle timer ignores
+them). By default (`TourMaxMinutes=0`) the tour never stops, so the screen
+stays on for as long as HyperSpin runs.
+
+**Fix:** set a tour limit: `TourMaxMinutes` in `Idle Tour settings.ini`
+(beside `Idle Tour.bat`), `spindoctor toolkit idle-tour-settings
+--tour-max-minutes 60`, or **Stop touring after** in the GUI's **Idle Tour
+settings** box. After that many minutes the tour stops changing wheels and
+leaves HyperSpin's idle mode on the main menu, so the screen turns off after
+Windows' own timeout from then. It starts again after someone uses a control.
+
+### A script's key presses to HyperSpin go missing, or open the wrong thing
+
+A script or helper that drives HyperSpin with key presses works only some of
+the time: presses are lost, the wheel keeps moving after the script stops, or
+an Esc-then-Enter meant to close HyperSpin opens a console or a game instead.
+
+**Cause:** HyperSpin drops a key that goes down and up at once, queues presses
+it gets faster than it moves (about 2 entries a second), and swallows keys
+during its idle spins. Its exit menu writes nothing to `log.txt` and defaults
+to Yes, so a lost Esc turns the following Enter into "open the selected
+entry". Its idle timer also ignores keys sent by a program, so a script can't
+hold HyperSpin's idle mode off.
+
+**Fix:** hold each key about 80 ms, send one key at a time and wait for
+`log.txt` to show its effect, and never send Exit unless the log shows
+HyperSpin is inside a console. See [Idle tour → Scripting
+HyperSpin](idle-tour.md#scripting-hyperspin-what-to-know).
+
 ## Intro Video Randomizer
 
 ### `introvideo` commands fail with "intro_randomizer_dir is not set" / "intro_video_target is not set"
@@ -739,6 +994,72 @@ Diagnostic steps, in the order that actually resolves this fastest:
    ```
    Click **Run** again, then check whether `swap-debug.log` was created at all. **No log file at all** (not even an empty one) means the `.bat` never started — that's the `.vbs` path-derivation bug (fixed on current versions; re-run `install-autorun --apply` to regenerate the launcher files). A log file **with** a `PermissionError` inside points at the lock scenario in step 4 instead.
 4. If the `.bat` does run (confirmed via step 3) but still doesn't change the video, it's the lock: HyperSpin holds `intro_video_target` open for the **entire duration** it's playing the *previous* intro video — not just an instant. Reproduce it directly: run `introvideo swap --apply` while an intro clip is actively playing and it fails immediately with `PermissionError: [WinError 32] The process cannot access the file because it is being used by another process`; run it again once the clip finishes and it succeeds instantly. `swap_video` retries every 2 seconds to ride this out, for the playing clip's length plus a minute (at least 3 minutes, at most 30). It reads the length from the MP4 / M4V / MOV header; when it can't, it uses the longest clip in the pool, or 3 minutes. Older versions retried for a fixed 3 minutes, so a longer clip that was playing made the swap fail, and the same clip then played again at the next boot. `spindoctor doctor`'s **Intro video** check shows the longest clip and how long the swap waits for it, and warns about clips too long to wait out. For a clip in another format, or one over 29 minutes, convert or remove it, or increase `--delay-minutes` on `install-autorun` (or the GUI's **Delay after login** field) for a bigger head start.
+
+## Launch tests
+
+### Recently Played or Most Played won't rebuild: "a game test run … is in progress or was interrupted"
+
+`spindoctor test` puts RocketLauncher's play statistics back after every game,
+so test launches never reach Recently Played or Most Played. While a test run is
+going on, or after one was stopped from the GUI, crashed or lost power before it
+could put them back, the statistics may still hold a test launch, so the wheel
+rebuilds refuse to run. If no test is running, run:
+
+```bat
+spindoctor test --recover
+```
+
+It closes the game the run left open (only the programs the run itself
+started), puts the statistics back from the run's `stats-backup\` folder and
+marks the run interrupted, so `spindoctor test --resume --apply` can finish it.
+The same recovery runs at the start of every `spindoctor test --apply`.
+
+### `spindoctor test` says a game didn't start, but it plays from HyperSpin
+
+- **"nothing opened within 90 seconds"** for CD or large games that RocketLauncher
+  unpacks first: raise `test_launch_timeout`
+  (`spindoctor config set test_launch_timeout 180`). The wait already grows while
+  7-Zip is running.
+- **The game is started by a launcher SpinDoctor doesn't know** (a loader that
+  starts the real game and exits): add the loader's program name to
+  `test_helper_processes`, so SpinDoctor waits for the game's own window.
+- **"Screen looked black"** is a warning, not a failure: some games are still on
+  a black loading screen after `test_game_seconds`, and some full-screen modes
+  can't be captured. Open the screenshot in the run folder, or test again with
+  `--seconds 45`.
+- **Light-gun and PC games** usually need a person: skip their wheels with
+  `test_skip_systems`, and PCLauncher games are skipped by default
+  (`test_skip_pclauncher`).
+
+### `spindoctor test --with-hyperspin` says HyperSpin didn't load, or didn't skip the intro
+
+- **"didn't finish loading the Main Menu within 180 seconds"**: SpinDoctor waits
+  for `wheel loaded successfully` in `<hyperspin_dir>\log.txt`. A long intro video
+  that isn't skipped can take most of that; raise `test_hyperspin_timeout`, or
+  check the log copy (`HyperSpin log.txt` in the run folder) for where it stopped.
+- **"HyperSpin ignored the key press meant to skip its intro video"**: HyperSpin
+  only stops the intro on a key press with `Stop_On_Keypress=true` under
+  `[IntroVideo]` in its `Settings\Settings.ini`.
+- **"the intro video wasn't skipped: HyperSpin's window couldn't be brought to the
+  front"**: another window kept the focus. Close it, or run with `--play-intro`.
+- **"its log has N error line(s)"** for a line that is harmless on your cabinet
+  (for example a joystick that isn't plugged in): add a piece of it to
+  `test_ignore_hyperspin_log`.
+
+### After a test run, new save files and configs are left in the emulator folders
+
+That's the default (`test_cleanup = report`): the run lists what the games
+created in `cleanup.csv` and the report, and leaves it. To have the next runs
+back each new file up and delete it:
+
+```bat
+spindoctor config set test_cleanup remove
+```
+
+or pass `--cleanup remove` for one run. Files that existed before the run are
+never touched. To remove what an earlier run listed, use its `cleanup.csv`. If a
+folder of yours fills with files the cleanup shouldn't look at, add it to
+`test_cleanup_skip`.
 
 ## Light guns
 
@@ -876,6 +1197,10 @@ The board itself is doing it. The PAC-LED64 has its own per-port flash mode, whi
 
 1. Close HyperSpin, then light every LED solid straight through Ultimarc's `PacDrive32.dll`. If the same buttons still blink, the board is in flash mode.
 2. Set every port's flash speed to 0 with `Pac64SetLEDFlashSpeeds` and `Pac64SetLEDFlashSpeed`. `Pac64ClearFlash` alone did not stop it. A full power-off also clears it.
+
+**Fix:** run `spindoctor toolkit reset-button-lights`. It does step 2 on every PAC-LED64 through the `PacDrive32.dll` in `ledblinky_dir`, with HyperSpin and LEDBlinky still running. To fix it from the cabinet, put it on a Toolkit wheel with `spindoctor install-tools --tool reset-button-lights --add-to-system Toolkit --apply`. "No button light boards found" means PacDrive saw no PAC-LED64 (check USB); "Button light reset failed" has its reason in `%USERPROFILE%\.spindoctor\toolkit.log`. See [`toolkit`](commands.md#toolkit).
+
+**One board still lit after LEDBlinky quits** (seen on the same cabinet: the second board stayed purple) is a different thing. Exit To Windows turns every PAC-LED64 light off once LEDBlinky has quit, through the same DLL, and logs it to `toolkit.log` (`lights off: board 1 off: True, …`). Shut Down Cabinet and Restart Cabinet don't wait for LEDBlinky, so they leave the lights to Windows.
 
 The script, the diagnosis and a HyperSpin startup step that repeats the reset at every start are in [Diagnosing buttons that flash on one board](cabinet-architecture-reference.md#diagnosing-buttons-that-flash-on-one-board-pac-led64-on-board-flash-mode) in `cabinet-architecture-reference.md`.
 
@@ -1214,6 +1539,47 @@ so buttons do not register even though the device appears connected.
 If DS4Windows is not listed in the tray, it has exited. See
 [Controller input — DS4Windows and XInput](cabinet-architecture-reference.md#controller-input--ds4windows-and-xinput)
 for the full architecture reference.
+
+---
+
+### An arcade panel's keys do nothing in GameCube games unless the gamepad is on
+
+**Symptom:** Keys from an arcade panel (a keyboard encoder), bound in `GCPadNew.ini` next to
+a gamepad's binds, work only while the pad is switched on. The same kind of binds work in Wii
+games with the pad off.
+
+**Cause:** Dolphin treats a GameCube port as unplugged while its `Device` (the pad) isn't
+connected, and then ignores every bind on that port, keyboard terms included.
+
+**Fix:** Set `Options/Always Connected = True` in each `[GCPadN]` section the panel plays. See
+[GameCube ports need `Always Connected`](cabinet-architecture-reference.md#gamecube-ports-need-always-connected).
+
+---
+
+### Dolphin's controls go back to an older layout at every launch
+
+**Symptom:** Binds added to `WiimoteNew.ini` or `GCPadNew.ini` are gone after a game is
+launched through RocketLauncher, and the file holds an older layout again.
+
+**Cause:** RocketLauncher's Dolphin module has `UseCustomWiimoteProfiles` or
+`UseCustomGCPadProfiles` on. It then copies its own whole-file profile over those files at
+every launch.
+
+**Fix:** Switch both off in the module's settings, then check that the files still hold your
+binds. For a layout that only some games use, use Dolphin's own per-game profiles. See
+[RocketLauncher's Dolphin module](cabinet-architecture-reference.md#rocketlaunchers-dolphin-module).
+
+---
+
+### The panel's joystick is turned a quarter-turn in a sideways Wii Remote game
+
+**Symptom:** In a game played with the Wii Remote held sideways, pushing the panel's joystick
+up moves left, and the other directions are turned the same way.
+
+**Fix:** Give those games a Wii Remote profile with the directions turned (Left → `D-Pad/Up`,
+Right → `D-Pad/Down`, Down → `D-Pad/Left`, Up → `D-Pad/Right`), and load it per game from
+`GameSettings\<GAMEID>.ini`. See
+[Sideways-remote games on a joystick](cabinet-architecture-reference.md#sideways-remote-games-on-a-joystick).
 
 ---
 

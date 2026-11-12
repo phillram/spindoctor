@@ -104,21 +104,25 @@ spindoctor-stats build-wheel --apply
 
 Three integration patterns, in roughly increasing order of "how much you want it to feel like part of HyperSpin":
 
-1. **HyperHQ → Tools menu (default).** The GUI's **Custom Wheels** tab → "Install for HyperHQ → Tools menu" runs:
-   ```bat
-   spindoctor install-tools
-   ```
-   Writes four `.bat` files into `<RocketLauncher>/Modules/HyperLaunch/Tools/spindoctor/`. Open `HyperHQ.exe`, go to the Tools tab, click Add, and point each entry at the matching `.bat`. They appear inside HyperSpin's in-cabinet Tools menu as `Refresh Favorites`, `Refresh Recently Played`, `Refresh Most Played`, and `Refresh All`.
+Tick the helpers you want in the GUI's **Custom Wheels** tab, or name them with `--tool` (see [`install-tools`](commands.md#install-tools) for the list). Only those are written; helpers you installed earlier stay as they are.
 
-2. **As games inside an existing wheel system (`--add-to-system`).** If you've built a "Toolkit" or "Tools" wheel (a HyperSpin system whose "games" are maintenance tasks), expose the helpers as wheel entries inside it. The GUI's **Custom Wheels** tab → "Install into an existing wheel system" runs:
+1. **HyperHQ → Tools menu (default).** The GUI's **Custom Wheels** tab → "Install for HyperHQ → Tools menu" runs, for example:
    ```bat
-   spindoctor install-tools --add-to-system Toolkit
+   spindoctor install-tools --tool refresh-favorites,refresh-recently-played,refresh-most-played,refresh-all
+   ```
+   Writes one `.bat` file per helper into `<RocketLauncher>/Modules/HyperLaunch/Tools/spindoctor/`. Open `HyperHQ.exe`, go to the Tools tab, click Add, and point each entry at the matching `.bat`. They appear inside HyperSpin's in-cabinet Tools menu under their names, such as `Refresh Favorites` and `Refresh All`.
+
+2. **As games inside an existing wheel system (`--add-to-system`).** If you've built a "Toolkit" or "Tools" wheel (a HyperSpin system whose "games" are maintenance tasks), expose the helpers as wheel entries inside it. The GUI's **Custom Wheels** tab → "Install into an existing wheel system" runs, for example:
+   ```bat
+   spindoctor install-tools --tool refresh-all --add-to-system Toolkit
    ```
    Writes the bats and per-game PCLauncher INIs under `<RocketLauncher>/Modules/PCLauncher/Toolkit/`, and adds `<game>` entries (with `genre=Tools`, `manufacturer=SpinDoctor`) to `<HyperSpin>/Databases/Toolkit/Toolkit.xml`. Idempotent on re-run. The target system must already exist and use PCLauncher as its emulator.
 
    > **Why this fixes "PCLauncher does not know what exe / FadeTitle to watch for":** the helpers are `.bat` files that run and exit — there's no persistent process for PCLauncher to monitor. `install-tools` writes `[Settings]`-format INIs (`ApplicationPath` / `StartIn`) instead of the `[exe info]` format, which doesn't require a `fadetitle` or monitored executable at all. If you previously created your own INIs using `[exe info]` and left those fields blank, re-running this command overwrites them with the correct format. See [Troubleshooting → PCLauncher error](troubleshooting.md#pclauncher-does-not-know-what-exe-fadetitle-andor-steamid-to-watch-for-when-launching-a-toolkit-helper) for the full diagnosis.
 
 3. **Manual** — copy the generated `.bat` files (or the `scripts/` convenience files for pip installs) wherever you want and register them yourself.
+
+The **Idle Tour** helper is neither: it runs beside HyperSpin for as long as it's open, so `install-tools --tool idle-tour --apply` adds it to HyperSpin's Startup Script instead. See [Idle tour](idle-tour.md).
 
 ## Wiring into Windows startup
 
@@ -135,7 +139,7 @@ The scheduled task points at the VBS shim via `wscript.exe //B spindoctor-refres
 
 > **If you have an existing task registered before v2.4.11**, click *Disable auto-run* then *Enable auto-run* again. The old task used `cmd /c bat` (normal priority, visible window). Re-registering generates the new shim pair and points the task at the VBS instead.
 
-> **Upgrading to v3 or moving the EXE?** Re-run `install-tools` and click *Enable auto-run* again once to rewrite embedded paths. For intro-video rotation, also re-run `introvideo install-autorun --apply` (or enable it again in the GUI). Status checks flag stale tasks.
+> **Upgrading to v3 or moving the EXE?** Re-run `install-tools` (with the same `--tool` picks) and click *Enable auto-run* again once to rewrite embedded paths. For intro-video rotation, also re-run `introvideo install-autorun --apply` (or enable it again in the GUI). Status checks flag stale tasks, and `spindoctor doctor`'s **SpinDoctor helpers** check flags `install-tools` `.bat` files that still name the old EXE.
 
 ### Manual registration
 

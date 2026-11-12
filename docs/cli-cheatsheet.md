@@ -58,6 +58,21 @@ spindoctor doctor --apply      :: also run safe, idempotent repairs (write missi
 
 Reference: [Command reference → doctor](commands.md#doctor).
 
+### `test` — launch games and see which ones break
+
+```bat
+spindoctor test --system "Nintendo Entertainment System" --all          :: list the games and their file check, launch nothing
+spindoctor test --system "Nintendo Entertainment System" --all --apply  :: launch every game, one after another
+spindoctor test --genre Shooter --count 8 --apply                       :: 8 random Shooter games from any wheel
+spindoctor test --all-systems --per-system 3 --apply                    :: a quick check of every wheel
+spindoctor test --all-systems --per-system 3 --with-hyperspin --apply   :: the same, opening HyperSpin first
+spindoctor test --only-failed --apply                                   :: try the last run's failures again
+spindoctor test --system MAME --all --cleanup remove --apply            :: back up and delete the files the games create
+spindoctor test --recover                                               :: after a run was stopped from the GUI or crashed
+```
+
+`report.html`, results, screenshots and RocketLauncher logs go to `%USERPROFILE%\.spindoctor\tests\<run>\`. Play statistics are put back after every game. Reference: [Command reference → test](commands.md#test).
+
 ### `audit` — compare ROMs vs the HyperSpin DB
 
 ```bat
@@ -483,15 +498,18 @@ Reference: [Standalone tools](standalone-tools.md), [fav](commands.md#fav), [rec
 ### `install-tools` / `uninstall-tools` — wire wheels into HyperSpin
 
 ```bat
-:: Install .bat helpers into HyperSpin's Tools menu
-spindoctor install-tools                               :: write to default HyperLaunch Tools dir
-spindoctor install-tools --output-dir D:\Tools
-spindoctor install-tools --add-to-system Toolkit       :: add as games in a Toolkit wheel
+:: Install .bat helpers into HyperSpin's Tools menu, picked one by one
+spindoctor install-tools                               :: list the helpers (writes nothing)
+spindoctor install-tools --tool refresh-all            :: write to default HyperLaunch Tools dir
+spindoctor install-tools --tool refresh-favorites,refresh-all --output-dir D:\Tools
+spindoctor install-tools --tool refresh-all --add-to-system Toolkit --apply   :: add as games in a Toolkit wheel
 :: ↑ also writes Modules\PCLauncher\Toolkit.ini (required for PCLauncher to launch)
+spindoctor install-tools --tool idle-tour --apply      :: idle tour, started with HyperSpin (docs/idle-tour.md)
 
 :: Remove them again
 spindoctor uninstall-tools                             :: dry-run preview
 spindoctor uninstall-tools --apply
+spindoctor uninstall-tools --tool refresh-all --apply  :: just that one
 spindoctor uninstall-tools --add-to-system Toolkit     :: dry-run for Toolkit variant
 spindoctor uninstall-tools --add-to-system Toolkit --apply
 ```

@@ -72,7 +72,7 @@ The **System** dropdown in the sidebar selects a system in every section at once
 
 ## Tab tour
 
-Tabs appear in new-user journey order: configure paths first (Setup), then confirm the cabinet is healthy (Diagnostics — read-only, so it's safe to explore before touching anything), then build out systems (Systems), then manage games within those systems (Games), enrich metadata (Metadata & Media), curate the library (Maintenance), manage cross-system wheels (Custom Wheels), manage the boot-video randomizer pool (Intro Video), configure hardware (LEDBlinky / Lightgun), then infrastructure (Backup & Restore → Migration), and finally the session log (History) and power-user escapes (Console) at the very end.
+Tabs appear in new-user journey order: configure paths first (Setup), then confirm the cabinet is healthy (Diagnostics — read-only, so it's safe to explore before touching anything), then build out systems (Systems), then manage games within those systems (Games), enrich metadata (Metadata & Media), curate the library (Maintenance), manage cross-system wheels (Custom Wheels), manage the boot-video randomizer pool (Intro Video), configure hardware (LEDBlinky / Lightgun), launch-test games (Test games), then infrastructure (Backup & Restore → Migration), and finally the session log (History) and power-user escapes (Console) at the very end.
 
 Screenshots below show SpinDoctor's dark theme at 125% UI scale with a synthetic sample cabinet, not a real library. Your systems, paths and enabled controls will differ. Maintainers can regenerate them on Windows with `python scripts/capture_gui_screenshots.py`.
 
@@ -209,10 +209,10 @@ Four numbered steps cover building and wiring up the custom wheels; the remainin
 
 **Manage favorites:** **Add / Remove / List** drive `fav add / remove / list` directly. Remove asks for confirmation. Run Refresh custom wheels (Favorites checked) afterwards to push changes into HyperSpin. Select a system to auto-populate the **Game** dropdown from that system's database; click **↻** to refresh the list after database changes.
 
-**Install .bat helpers (optional):** Two sub-sections:
+**Install .bat helpers (optional):** A checklist of every helper `install-tools` can write (hover one for what it does; none is ticked to start), then two sub-sections. Each button acts on the ticked helpers only; with none ticked it asks you to tick one. Helpers you leave unticked are not touched.
 
-1. **Install for HyperHQ → Tools menu** — writes `Refresh Favorites.bat`, `Refresh Recently Played.bat`, `Refresh Most Played.bat`, and `Refresh All.bat` into `<RocketLauncher>\Modules\HyperLaunch\Tools\spindoctor\`. Register them in HyperHQ → Tools to expose them inside HyperSpin's in-cabinet Tools menu.
-2. **Install into an existing wheel system** — adds the helpers as `<game>` entries inside an existing HyperSpin wheel (e.g. a `Toolkit` wheel), with per-game PCLauncher INIs alongside the bats. CLI: `spindoctor install-tools --add-to-system <NAME>`.
+1. **Install for HyperHQ → Tools menu** — writes a `.bat` per ticked helper, such as `Refresh Favorites.bat` or `Refresh All.bat`, into `<RocketLauncher>\Modules\HyperLaunch\Tools\spindoctor\`. Register them in HyperHQ → Tools to expose them inside HyperSpin's in-cabinet Tools menu. CLI: `spindoctor install-tools --tool <names>`.
+2. **Install into an existing wheel system** — adds the ticked helpers as `<game>` entries inside an existing HyperSpin wheel (e.g. a `Toolkit` wheel), with per-game PCLauncher INIs alongside the bats. **Uninstall from wheel** removes the ticked ones. CLI: `spindoctor install-tools --tool <names> --add-to-system <NAME>`.
 
 **Auto-refresh on cabinet startup** (Windows-only): a status label (Enabled / Disabled / "not available" on non-Windows) is always visible, no click needed — refreshes automatically after any of the three buttons below run, matching the Intro Video tab's Auto-run status label — the two use identical **Enable auto-run** / **Disable auto-run** button names, since they wrap the same Windows Task Scheduler mechanism (just for a different scheduled task). If the task is registered but its generated `.bat` no longer matches the currently-running SpinDoctor install (typically after upgrading into a new version folder without re-clicking **Enable auto-run**), the label says so explicitly in amber — "Outdated: Enable auto-run to fix" — rather than a misleading plain "enabled"; re-clicking **Enable auto-run** fixes it in place. **Enable auto-run** registers a Task Scheduler `ONLOGON` task with a configurable post-log-on delay (default 2 min). **Disable auto-run** and **Check task status** round out the lifecycle (the latter also writes a timestamped entry to the Output panel/Logs tab, useful for an audit trail beyond what the status label shows).
 
@@ -337,6 +337,17 @@ Two numbered steps cover the lightgun setup workflow.
 **Detect and audit:** **Detect installed gear** reads existing RocketLauncher INIs and seeds SpinDoctor config with discovered DemulShooter targets (optional `--apply` to persist). **Audit wiring** shows per-system hook status. CLI: `spindoctor lightgun detect / audit`.
 
 **Configure one system:** Pick a system, optionally choose a DemulShooter `-target` value (auto-detected from system name if left blank), and add optional extra args. **Configure system** writes the Pre/Post launch hooks. CLI: `spindoctor lightgun configure --system <NAME>`.
+
+### Test games
+
+Launches games through RocketLauncher, one after another, and shows which ones break: didn't start, closed by itself, an error pop-up, a Windows crash report, not responding, RocketLauncher log errors or a black screen. It runs [`spindoctor test`](commands.md#test); it isn't part of Diagnostics, because a test run launches games and edits RocketLauncher's play statistics (it puts them back after every game).
+
+- **Games to test** follows the sidebar **System** (or check **All systems**): a **Genre** (filled from the system's database; `*` and `?` work), **Game names** (wildcards, several separated by `|`), and **Random, per system**, **Random, in total** or **Every game** with a number. **Seconds per game**, **Open HyperSpin first**, **Include skipped wheels and PCLauncher games** and **Files the games create** (`report`, `remove` or `off`) match the command's options.
+- **Apply changes** keeps its meaning. Off, the button reads **Show games**: the picked games are listed with their file check and `doctor` notes, and nothing launches. On, it reads **Launch games**.
+- **Resume last run** and **Re-test failed** run `test --resume` and `test --only-failed`, also under the Apply switch.
+- **Stop after this game** asks the run to close its current game, put the statistics back and stop. The bottom bar's **Stop** does the same for a test run and only ends the program if the run hasn't stopped within about a minute; closing the window waits a few seconds.
+- If a run was ended before it could tidy up, a note at the top offers **Recover now** (`test --recover`): it closes the game the run left open and puts the statistics back.
+- **Last run** lists the newest run's results, failures first; double-click a row to open its screenshot. **Open report** opens the run's `report.html`, **Open run folder** its folder.
 
 ### Backup & Restore
 
@@ -497,6 +508,8 @@ Every `Entry` / `Text` / `ScrolledText` widget in the GUI — Setup paths, scrap
 ## Stopping a long-running command
 
 The **Stop** button, next to the progress bar at the bottom of the window and shown while a command runs, terminates the current subprocess (sends `SIGTERM` / Windows `TerminateProcess`). The GUI re-enables the Run buttons once the child exits.
+
+A game test from the **Test games** page is the exception: Stop first asks the run to close its game and put RocketLauncher's play statistics back, and only terminates it if it hasn't stopped within about a minute. Whatever a terminated run left behind is finished by **Recover now** on that page, or by the next test run.
 
 **Stop is not a rollback or a guarantee of a recovery manifest.** In particular,
 Windows `TerminateProcess` can prevent Python cleanup and interrupt handlers from
