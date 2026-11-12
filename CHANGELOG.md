@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **`doctor` counts the games HyperSpin hides or shows as text for lack of wheel art, and the letters a wheel's letter jump can't show.** A game with no `Media\<System>\Images\Wheel\<name>.png` (or `.swf`, under the name as written) shows as plain text, and with `[filters] wheels_only=true` in HyperSpin's `Settings\<System>.ini` it isn't on the wheel at all, so newly added games can't be picked until they get art while every ROM check passes. A new **Wheel art** check gives one INFO row per wheel with games lacking art (the Main Menu's system logos included), saying which of the two happens, naming the first five games and giving the `fetch-media --types wheel` command and the INI key as the fix; a wheel where `wheels_only=true` hides every game opens empty, so that one is a WARN. Clones are left out when `parents_only=true` hides them anyway, as are `<enabled>No</enabled>` games. A new **Letter art** check collects the first characters of the descriptions of the games each wheel shows and looks for `Media\<System>\Images\Letters\<char>.png`, ignoring case: a wheel with no `Letters` folder or an empty one is a WARN, missing characters (`$`, `.`, a digit) an INFO listing the files to add. Characters no file can be named after are skipped, as are the Main Menu and SpinDoctor's ranked Recently Played and Most Played wheels. Wheels switched off on the Main Menu are skipped by both. Diagnosis only. Covered by `tests/test_doctor_wheel_art.py`.
+
 ## [3.2.0] - 2026-11-10
 
 ### Added
