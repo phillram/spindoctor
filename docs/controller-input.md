@@ -74,6 +74,12 @@ with the arrow skips; map them to R2 / Touchpad if very-fast jumps are wanted.
    HyperSpin — if it dies when HyperSpin exits, an active Dolphin session loses
    the controller (`[disconnected] DInput/0/Wireless Controller`) until
    DS4Windows is restarted.
+4. **Keep its window hidden:** on the **Settings** tab, tick **Start
+   Minimized** and **Close Minimizes**, and untick **Minimize to Taskbar**.
+   With Minimize to Taskbar ticked, DS4Windows 3.x keeps its window minimized
+   on the taskbar instead of hiding it in the tray, and a game or HyperSpin
+   closing (or Alt+Tab) can bring it back up over the cabinet. See
+   [Troubleshooting → The DS4Windows window keeps popping up](troubleshooting.md#the-ds4windows-window-keeps-popping-up-although-start-minimized-is-on).
 
 Emulators stay configured for the DS4Windows virtual pad — e.g. Dolphin's GCPad
 Port 1 = `XInput/0/Gamepad` (see the [architecture reference](cabinet-architecture-reference.md#controller-input--ds4windows-and-xinput)).

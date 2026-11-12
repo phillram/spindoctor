@@ -953,6 +953,91 @@ hold HyperSpin's idle mode off.
 HyperSpin is inside a console. See [Idle tour → Scripting
 HyperSpin](idle-tour.md#scripting-hyperspin-what-to-know).
 
+### Ghost tray icons pile up after HyperSpin closes
+
+After a few HyperSpin sessions, the notification area's overflow (the **^** by
+the clock) holds several copies of the same icon, such as HyperSearch's
+("HyperSearch - Double click to open log"). Each one vanishes when the mouse
+pointer passes over it.
+
+**Cause:** the HyperSpin Startup Script's `[Exit]` list
+(`Process_Name_To_Close_N`) ends each helper by killing it, so a helper with a
+tray icon never gets to remove it. Windows notices that an icon's program is
+gone only when the pointer passes over the icon, so on a cabinet nobody points
+at, one more icon stays behind after every session. LEDBlinky leaves one the
+same way when it has to be ended by force because its quit hangs. Helpers that
+close themselves, and AutoHotkey helpers with `#NoTrayIcon`, leave none.
+
+**Fix by hand:** open the **^** and move the pointer over the icons. They are
+only leftovers: nothing behind them is still running.
+
+**Fix for good:** add a program to the Startup Script's `[Exit]` list (the next
+free `Program_To_Run_Target_N`, with no gaps) that removes only the icons whose
+program is gone, which is what a mouse-over does:
+
+1. Find the two toolbars that hold the icons: `Shell_TrayWnd` →
+   `TrayNotifyWnd` → `SysPager` → `ToolbarWindow32` (the icons by the clock)
+   and `NotifyIconOverflowWindow` → `ToolbarWindow32` (the ones under **^**).
+2. For each button (`TB_BUTTONCOUNT`, then `TB_GETBUTTON` into a buffer
+   allocated in Explorer with `VirtualAllocEx`), read the button from
+   Explorer's memory with `ReadProcessMemory`. Its `dwData` points at a block
+   that starts with the icon's owner window and its `uID`. On 64-bit
+   Windows 10 that's offset 16 of the 32-byte `TBBUTTON`, and the block holds
+   the 8-byte window handle, then the 4-byte `uID`. This layout is Explorer's
+   own and undocumented; Windows 11's new taskbar may not use these toolbars.
+3. If `IsWindow(owner)` is false, call `Shell_NotifyIcon(NIM_DELETE)` with
+   that window handle and `uID`. Leave every icon whose window still exists
+   alone. Work from the last button to the first, so a removal doesn't shift
+   the buttons still to check.
+
+Run the pass once the killed helpers' processes have ended, and again after
+anything that ends LEDBlinky late. Let only one copy run at a time (a named
+mutex), since a quick HyperSpin restart can make two exits overlap.
+
+**The Startup Script is 32-bit.** A `.bat` it runs gets 32-bit `cmd`, where
+`System32` is really `SysWOW64`, so `powershell.exe` there is the 32-bit one,
+which can't read the 64-bit Explorer's memory. Call 64-bit PowerShell through
+`Sysnative`, keeping `System32` for when the `.bat` already runs 64-bit. For a
+clean-up script `ClearTrayGhosts.ps1` beside the `.bat`:
+
+```bat
+set "PS=%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe"
+if exist "%SystemRoot%\Sysnative\WindowsPowerShell\v1.0\powershell.exe" set "PS=%SystemRoot%\Sysnative\WindowsPowerShell\v1.0\powershell.exe"
+"%PS%" -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "%~dp0ClearTrayGhosts.ps1"
+```
+
+**If a ghost still shows after an exit:** on one cabinet the Startup Script
+skipped its last `[Exit]` program on about one exit in four, though it ran the
+one before it. The next exit clears what was left, so at most one ghost waits
+until then.
+
+### The DS4Windows window keeps popping up, although Start Minimized is on
+
+DS4Windows starts hidden, but later its window comes up over HyperSpin or the
+desktop: when a game or HyperSpin closes, after Alt+Tab, or when a launcher
+hands the focus back.
+
+**Cause:** with **Minimize to Taskbar** ticked on DS4Windows' **Settings** tab
+(`<minimizeToTaskbar>True</minimizeToTaskbar>` in its `Profiles.xml`),
+DS4Windows 3.x doesn't hide its window when it minimizes. It keeps it as a
+minimized window on the taskbar. HyperSpin hides the taskbar, but the window
+is still one Windows can switch to, so anything that switches windows can
+bring it back up.
+
+**Find it:** exit HyperSpin to the desktop. A DS4Windows button on the
+taskbar means Minimize to Taskbar is on. (A second DS4Windows window that
+won't minimize at all is a second copy: start it only once, as in
+[Controller input §3](controller-input.md#3-ds4windows-configuration).)
+
+**Fix:** on the **Settings** tab, untick **Minimize to Taskbar**, and keep
+**Start Minimized** and **Close Minimizes** ticked. Minimized then means
+hidden: only the tray icon shows (under the **^** by the clock; `Win+B`
+reaches it while HyperSpin hides the taskbar), and closing the window hides it
+instead of quitting. The pads and profiles aren't affected. If you edit
+`Profiles.xml` instead (beside `DS4Windows.exe` in a portable install, else in
+`%APPDATA%\DS4Windows`), close DS4Windows first, as it saves its settings back
+to that file.
+
 ## Intro Video Randomizer
 
 ### `introvideo` commands fail with "intro_randomizer_dir is not set" / "intro_video_target is not set"
