@@ -37,6 +37,7 @@ from .database import GameEntry, HyperspinDatabase, load_database
 from ._utils import unique_path, atomic_write_bytes
 from ._text import read_editable_text, write_windows_text
 from .backup import find_sidecars as _find_sidecars, sidecar_pattern as _sidecar_pattern
+from .wheel_start import MODES as WHEEL_START_MODES
 
 console = Console(soft_wrap=True)
 err_console = Console(stderr=True, soft_wrap=True)
@@ -8073,6 +8074,144 @@ def mainmenu_edit(output_dir):
         console.print("[yellow]Discarded.[/yellow]")
         return
     _save_with_message(menu, config, output_dir)
+
+
+# ─── wheel-start ──────────────────────────────────────────────────────────────
+
+@cli.command("wheel-start")
+@click.option("--system", "-s", "systems", multiple=True, metavar="NAME",
+              help="A wheel (repeat for more). Default: every wheel on the main menu.")
+@click.option("--all", "all_wheels", is_flag=True,
+              help="Every wheel on the main menu. Needed with --set when no --system is given.")
+@click.option("--set", "mode", default=None,
+              type=click.Choice(WHEEL_START_MODES, case_sensitive=False),
+              help="Where the wheels start: first = the first game, last = the game "
+                   "it was on last time, random = a random game each time.")
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Write the change. Without it, shows what would change.")
+def wheel_start(systems, all_wheels, mode, apply_changes):
+    """Show or change where HyperSpin wheels start: first, last or random game.
+
+    \b
+    With no --set it shows each wheel. HyperSpin reads it from the wheel's
+    Settings\\<System>.ini, [navigation] section: random_game=true starts on a
+    random game (a different letter every time), use_last_game=true on the
+    game it was on last time, and both false on the first game. --set writes
+    those two keys and nothing else in the file; each file is backed up first.
+    Close HyperSpin first: it writes these files itself.
+    \b
+    Examples:
+      spindoctor wheel-start
+      spindoctor wheel-start -s "Nintendo Entertainment System" --set first --apply
+      spindoctor wheel-start --all --set last --apply
+    """
+    from . import wheel_start as ws
+
+    if systems and all_wheels:
+        raise click.UsageError("Pass --system or --all, not both.")
+    if mode and not systems and not all_wheels:
+        raise click.UsageError("Name the wheels to change with --system, or pass --all.")
+    config = _cfg()
+    if not config.hyperspin_dir:
+        err_console.print("[red]hyperspin_dir is not set.[/red] Run: "
+                          "spindoctor config set hyperspin_dir <path>")
+        sys.exit(1)
+    files = ws.settings_files(config)
+    for name in systems:
+        if name.lower() in ws.NOT_WHEELS:
+            err_console.print(f"[red]{escape(name)} is not a game wheel:[/red] "
+                              f"{escape(name)}.ini holds HyperSpin's own settings.", highlight=False)
+            sys.exit(1)
+        if mode and name.lower() not in files:
+            path = Path(config.hyperspin_dir) / "Settings" / f"{name}.ini"
+            err_console.print(f"[red]No HyperSpin settings file for {escape(name)}:[/red] "
+                              f"{escape(str(path))}", highlight=False)
+            sys.exit(1)
+    if systems:
+        wheels = list(dict.fromkeys(systems))
+    else:
+        try:
+            wheels = ws.main_menu_wheels(config)
+        except (OSError, ValueError, SyntaxError) as exc:   # XML parse errors are SyntaxErrors
+            err_console.print(f"[red]Can't read the main menu:[/red] {escape(str(exc))}", highlight=False)
+            sys.exit(1)
+        if not wheels:
+            err_console.print("[yellow]No wheels on the main menu[/yellow] "
+                              "(Databases\\Main Menu\\Main Menu.xml).")
+            sys.exit(1)
+
+    if not mode:
+        tbl = Table(box=box.SIMPLE, title="Where each wheel starts")
+        tbl.add_column("Wheel", style="cyan")
+        tbl.add_column("Starts on")
+        counts: dict = {}
+        for name in wheels:
+            path = files.get(name.lower())
+            if path is None:
+                tbl.add_row(escape(name), "[dim]no settings file[/dim]")
+                continue
+            try:
+                now = ws.read_wheel_start(path).mode
+            except OSError as exc:
+                tbl.add_row(escape(name), f"[red]can't read: {escape(str(exc))}[/red]")
+                continue
+            counts[now] = counts.get(now, 0) + 1
+            style = {"random": "yellow", "both": "red"}.get(now)
+            text = escape(ws.DESCRIPTIONS[now])
+            tbl.add_row(escape(path.name[:-4]), f"[{style}]{text}[/{style}]" if style else text)
+        console.print(tbl)
+        console.print(", ".join(f"{counts[m]} {m}" for m in (*ws.MODES, "both") if m in counts)
+                      or "[dim]No settings files.[/dim]")
+        return
+
+    mode = mode.lower()
+    if apply_changes and ws.hyperspin_running():
+        err_console.print("[red]HyperSpin is running.[/red] Close it first: HyperSpin "
+                          "writes these settings files itself, so it could put the old "
+                          "setting back.")
+        sys.exit(1)
+    changed = same = no_file = failed = 0
+    backups = []
+    verb = "" if apply_changes else "would change "
+    for name in wheels:
+        path = files.get(name.lower())
+        if path is None:            # only main-menu wheels get here (named ones were checked)
+            no_file += 1
+            console.print(f"  [dim]– {escape(name)}: no settings file[/dim]", highlight=False)
+            continue
+        label = escape(path.name[:-4])
+        try:
+            old = ws.read_wheel_start(path).mode
+            if old == mode:
+                same += 1
+                continue
+            if apply_changes:
+                result = ws.set_wheel_start(path, mode, config)
+                if result and result.backup:
+                    backups.append(result.backup)
+        except OSError as exc:
+            failed += 1
+            err_console.print(f"  [red]✗ {label}: {escape(str(exc))}[/red]", highlight=False)
+            continue
+        changed += 1
+        console.print(f"  [green]~[/green] {verb}{label}: {escape(ws.DESCRIPTIONS[old])} → "
+                      f"{escape(ws.DESCRIPTIONS[mode])}", highlight=False)
+    parts = [f"{changed} {'changed' if apply_changes else 'to change'}",
+             f"{same} already start on {ws.DESCRIPTIONS[mode]}"]
+    if no_file:
+        parts.append(f"{no_file} with no settings file")
+    if failed:
+        parts.append(f"{failed} failed")
+    console.print(", ".join(parts) + ".", highlight=False)
+    if backups:
+        console.print(f"[dim]Backed up first to {escape(str(backups[0].parent))}[/dim]",
+                      highlight=False)
+    if changed and not apply_changes:
+        console.print("[yellow]Dry run:[/yellow] nothing written. Re-run with --apply.")
+    elif changed:
+        console.print("[dim]HyperSpin reads it the next time it starts.[/dim]")
+    if failed:
+        sys.exit(1)
 
 
 # ─── doctor ───────────────────────────────────────────────────────────────────

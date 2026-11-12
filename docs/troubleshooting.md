@@ -731,6 +731,30 @@ name.
 to match (`Some Hack V2 .nes` → `Some Hack V2.nes`), and any media saved under
 the old name. Back up the XML first.
 
+### A wheel starts on a different game (or letter) every time you open it
+
+Each time you open the wheel, HyperSpin lands somewhere else in its list,
+not on its first game or where you left it. Other wheels don't do it.
+
+**Cause:** the wheel is set to start on a random game: `random_game=true`
+under `[navigation]` in `<hyperspin_dir>\Settings\<System>.ini`. HyperHQ sets
+it per wheel, so a build can have it on for some wheels only.
+
+**Find it:** run `spindoctor wheel-start`. It lists where every wheel on the
+main menu starts.
+
+**Fix:** close HyperSpin, then set the wheel to start on its first game, or on
+the game it was on last time:
+
+```bat
+spindoctor wheel-start -s "<System>" --set first --apply
+spindoctor wheel-start -s "<System>" --set last --apply
+```
+
+`--all` instead of `-s` sets every wheel on the main menu. Each file is backed
+up first. To do it by hand, set `random_game=false` in that file (and
+`use_last_game=true` for the last game), with HyperSpin closed.
+
 ### Refresh All (or Refresh Favorites) does nothing after upgrading SpinDoctor
 
 Running a Refresh helper from HyperSpin's Tools menu or a Toolkit wheel no

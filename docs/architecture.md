@@ -44,7 +44,7 @@ temporary view of the filesystem.
 | Configuration and discovery | `config`, `database`, `rl_rom_paths`, `rocketlauncher` | Config validation, XML records, RocketLauncher settings and ROM lookup |
 | Library inspection | `audit`, `fileinfo`, `lint`, `health`, `self_doctor`, `verify` | ROM/database/media comparisons, cabinet checks and integrity reports |
 | Metadata and downloads | `scraper`, `matcher`, `media`, `media_scan` | Provider clients, cached match decisions, downloads and local media import |
-| Game and wheel editing | `edit`, `mainmenu`, `organize`, `curate`, `misplaced`, `orphan_media` | Metadata edits, ordering, ROM moves and cleanup |
+| Game and wheel editing | `edit`, `mainmenu`, `wheel_start`, `organize`, `curate`, `misplaced`, `orphan_media` | Metadata edits, ordering, where wheels start, ROM moves and cleanup |
 | Synthetic wheels | `favorites`, `recent`, `playtime`, `medialink` | Favorites/Recent/Most Played composition and mirrored media |
 | Backup and migration | `backup`, `migrate`, `cleanup` | Snapshots, relocation, restoration and cleanup policies |
 | Hardware and frontend integration | `ledblinky`, `ledblinky_library`, `ledblinky_profiles`, `lightgun`, `rl_user_functions`, `introvideo`, `autostart` | Lighting, gun hooks, User Functions inspection and startup integration |
