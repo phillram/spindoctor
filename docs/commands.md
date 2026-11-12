@@ -1713,15 +1713,61 @@ spindoctor ledblinky lwax batch --output D:\temp\patterns --apply :: pick the ou
 
 From a source checkout without `pip install`, the same generator runs as a standalone script (no `spindoctor` on PATH needed): `python scripts\generate_lwax_patterns.py`. Both share one implementation and produce the same files.
 
-It writes ~170 raw (unsigned) `.lwax` files plus a `README.md` index into `%USERPROFILE%\Downloads\spindoctor-lwax-patterns\` (macOS/Linux: `~/Downloads/spindoctor-lwax-patterns/`) by default. What it makes:
+It writes ~280 raw (unsigned) `.lwax` files plus a `README.md` index into `%USERPROFILE%\Downloads\spindoctor-lwax-patterns\` (macOS/Linux: `~/Downloads/spindoctor-lwax-patterns/`) by default. What it makes:
 
-- **22 effect families × 5 variants** — each family has four fixed-colour variants (every colour globally unique across the whole batch, so nothing clumps) plus one moving/fading **rainbow** variant, spread over slow / medium / fast timing.
+- **22 effect families × 5 variants** — each family has four fixed-colour variants (every colour globally unique across the whole batch, so nothing clumps) plus one moving/fading **rainbow** variant, spread over slow / medium / fast timing. Strobes, heartbeats, checkerboards and the flashing fill/drain files are all still made.
 - A **`breathe_*` solid-colour library** — one file per named colour fading smoothly in and out (standard, `vivid_*`, and `pastel_*` sets), plus `breathe_rainbow`.
 - Two looping **colour-cycle** files — `breathe_cycle` (the panel breathes several unique solids in turn) and `pulse_cycle` (a radial pulse replays in each colour).
+- A flash-free **`_soft` twin of each fixed-colour fill and drain file** (e.g. `fill_cyan_fast_soft.lwax` next to `fill_cyan_fast.lwax`): same colour, groups and speed, but no double flash at the end of the loop. The full fill fades out over 20 frames and stays dark 6 frames before refilling; the empty drain fades back up over 20 frames.
+- The **100 `cute_*` files** — 20 smooth multi-colour patterns, each in its original colourway and four more. See [`ledblinky lwax cute`](#ledblinky-lwax-cute--smooth-multi-colour-patterns-and-new-colourways) below.
+
+Every file the batch made before the `_soft` twins and `cute_*` set comes out byte for byte as before, so files already signed and installed from an earlier batch stay valid.
 
 File names are `family_colour_speed.lwax` (e.g. `fade_red_lime_slow.lwax`, `breathe_pastel_blue_slow.lwax`, `radial_rainbow_out_fast.lwax`). It reads the cabinet's LED layout from `<ledblinky_dir>\LEDBlinkyInputMap.xml` (or a fresh export in `~/Downloads`, or the committed reference copy at `docs/reference/LEDBlinkyInputMap.xml`) — so it runs without re-exporting anything. It regenerates the whole folder each run (clearing old files first). The same command is also available in the GUI's **Custom Command** dropdown.
 
-**Signing and assigning is the same manual step as any `.lwax`** (see the three steps under `ledblinky lwax fade` above): open each file you want in `LEDBlinkyAnimationEditor.exe` → **Save As** (no edits), copy into `<ledblinky_dir>\lwa\`, then assign with `ledblinky patch-settings --fe-lwa "<name>.lwax" --apply`. The folder's `README.md` repeats these steps. Adding brand-new *effect types* beyond what it already covers means editing the builders in `spindoctor/lwax.py` and `spindoctor/lwax_patterns.py` (developer task); generating and using the existing library does not.
+**Signing and assigning is the same manual step as any `.lwax`** (see the three steps under `ledblinky lwax fade` above): open each file you want in `LEDBlinkyAnimationEditor.exe` → **Save As** (no edits), copy into `<ledblinky_dir>\lwa\`, then assign with `ledblinky patch-settings --fe-lwa "<name>.lwax" --apply`. The folder's `README.md` repeats these steps. Adding brand-new *effect types* beyond what it already covers means editing the builders in `spindoctor/lwax.py`, `spindoctor/lwax_patterns.py` and `spindoctor/lwax_cute.py` (developer task); generating and using the existing library, and new colourways of the `cute_*` patterns (`lwax cute`), do not.
+
+### `ledblinky lwax cute` — smooth multi-colour patterns and new colourways
+
+Builds one of the 20 `cute_*` patterns: gumballs rolling round the panel, fairy lights, cotton-candy clouds, sherbet bands, a firefly meadow, two koi in a pond, a sprinkle donut, bubble tea, a lollipop pinwheel, falling petals, a sunrise with the trackball as the sun, aurora curtains, a rainbow caterpillar, a blooming garden, candy-cane stripes, fruit-punch blobs, a bouncy ball, mermaid scales, a starry lullaby round a trackball moon, and paw prints. Nothing in them flashes or hard-cuts, and each loops without a seam.
+
+```bat
+spindoctor ledblinky lwax cute --list                                   :: patterns, their colour slots, the 100 themes
+spindoctor ledblinky lwax cute --theme cute_koi_moonlight               :: preview a built-in theme (prints its colours)
+spindoctor ledblinky lwax cute --theme cute_koi_moonlight --apply       :: write it
+spindoctor ledblinky lwax cute --pattern gumball_roll --color FF0000 --color FFC000 --color 00C0FF --name cute_gumball_mine --apply
+spindoctor ledblinky lwax cute --theme cute_koi_pond --color2 FF9FFF --color2 D435FF --color2 B500D4 --color2 80009F --apply
+spindoctor ledblinky lwax cute --theme cute_firefly_meadow --seed 42 --apply
+```
+
+Each pattern takes a **theme**, its colourway:
+
+- `--color` (repeat once per colour) is the main palette: the gumballs, bulbs, clouds, stripes, first koi, and so on.
+- `--color2` and `--color3` hold backgrounds or a second palette, depending on the pattern: the firefly meadow's sky and ground, the second koi, the donut's two frosting colours, the sunrise's sun. `--list` prints what each pattern reads from each slot and how many colours it needs (koi need exactly 4 per fish, head to tail; fruit punch exactly 6 blobs).
+- `--seed` drives the random placement in the patterns that have any (fireflies, sprinkles, bubbles, petals, garden flowers, fairy-light timing, fruit-punch paths, stars).
+
+Start from a built-in theme with `--theme`, or from a pattern's original colours with `--pattern` (the pattern key is the original theme's name without `cute_`); only the slots you pass are replaced. Colours are hex `RRGGBB`, scaled to LEDBlinky's 0-48 range as `lwax fade` does. The preview prints the palettes in that hex form, so you can copy a theme's colours and change one. The file is named after the theme, or `<theme>_custom` once anything changed, unless you pass `--name`. It goes to `<output_dir>\LEDBlinky\lwax\<name>.lwax`, or `--output`.
+
+Every build also prints its **flash check** tier (see `lwax flash-check` below), so a new colourway that came out flashy shows up before you sign it. The input map is found as `lwax batch` finds it. The patterns place controls on the example cabinet's confirmed panel layout (`PANEL_POS` in `spindoctor/lwax_cute.py`, from the [Physical button layout](cabinet-architecture-reference.md#physical-button-layout) table); a map with a control that isn't on it is refused with the label named. All 100 built-in themes are also part of `lwax batch`. Signing is the same manual **Save As** as any `.lwax`.
+
+### `ledblinky lwax flash-check` — score animations for flashing
+
+Read-only. Replays each `.lwax` against `LEDBlinkyInputMap.xml` and sorts it into a tier, worst first:
+
+| Tier | Rule |
+|---|---|
+| Strobe | the whole panel flashes 2.5 or more times a second |
+| Fast blink | half the panel or more hard-cuts together 4 or more times a second (fast marquees, checkerboards) |
+| Borderline | lockstep cuts 1.5 or more times a second, or 2+ whole-panel flashes inside one second |
+| Fast motion | 2.5 or more hard cuts per button per second, but no panel-wide flashing |
+| Smooth | everything else |
+
+```bat
+spindoctor ledblinky lwax flash-check "%USERPROFILE%\Downloads\spindoctor-lwax-patterns"
+spindoctor ledblinky lwax flash-check cute_gumball_mine.lwax strobe_lime_slow.lwax
+```
+
+Pass files or folders (a folder's own `*.lwax`, not its subfolders); raw and editor-signed files both work. A flash is an up-and-down swing of at least 25% of full brightness in the panel average; a hard cut is a channel jumping by a third of full or more in one frame. The loop wraps, so a snap from the last frame back to the first counts. The table shows the panel flashes per second (`Flash/s`) and in the busiest second (`Worst 1s`), lockstep cuts per second (`Sync/s`) and cuts per button per second (`Cuts/LED/s`), then a count per tier. On the example cabinet's 169-file library it gives 6 Strobe, 5 Fast blink, 22 Borderline, 4 Fast motion and 132 Smooth; every `cute_*` and `_soft` file is Smooth. The scorer is `spindoctor/lwax_flash.py` (`score_lwax`, `score_animation`).
 
 ### `ledblinky lwax calibrate` — map buttons to physical positions
 

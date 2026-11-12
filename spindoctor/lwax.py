@@ -414,6 +414,23 @@ def build_rainbow_scroll(
     return animation
 
 
+def _smoothstep(t: float) -> float:
+    t = 0.0 if t < 0 else 1.0 if t > 1 else t
+    return t * t * (3 - 2 * t)
+
+
+def _fade_frames(color: Color, frames: int, rising: bool) -> "list[Color]":
+    """``frames`` smoothstep-eased steps of ``color`` between off and full,
+    leaving out both ends (the frames on each side of the fade hold them)."""
+    out = []
+    for k in range(1, frames + 1):
+        u = _smoothstep(k / (frames + 1))
+        if not rising:
+            u = 1 - u
+        out.append(tuple(round(c * u) for c in color))
+    return out
+
+
 def build_fill(
     controllers: list[LwaxController],
     groups: "list[list[str]]",
@@ -424,6 +441,8 @@ def build_fill(
     hold_frames: int = 20,
     flash_cycles: int = 2,
     flash_frames: int = 6,
+    fade_reset_frames: int = 0,
+    fade_reset_dark_frames: int = 6,
 ) -> LwaxAnimation:
     """Fills ``groups`` in order (each already-lit group stays lit as the
     next one joins — an accumulating bar, not a moving dot), holds at full
@@ -431,6 +450,11 @@ def build_fill(
     animation loops back to empty and starts filling again.
 
     Pass ``flash_color=None`` to skip the flash and just hold, then reset.
+
+    ``fade_reset_frames`` above 0 ends the loop without any flash or hard
+    cut: after the hold, the full bar fades out over that many eased frames
+    and stays dark for ``fade_reset_dark_frames`` before filling again.
+    ``flash_color`` is ignored then. The default (0) keeps the flash.
     """
     if not groups:
         raise ValueError("Need at least 1 group.")
@@ -455,7 +479,12 @@ def build_fill(
     for _ in range(hold_frames):
         animation.add_frame(duration_ms, full)
 
-    if flash_color is not None:
+    if fade_reset_frames > 0:
+        for color in _fade_frames(fill_color, fade_reset_frames, rising=False):
+            animation.add_frame(duration_ms, {label: color for label in all_labels})
+        for _ in range(fade_reset_dark_frames):
+            animation.add_frame(duration_ms, empty)
+    elif flash_color is not None:
         flash = {label: flash_color for label in all_labels}
         for _ in range(flash_cycles):
             for _ in range(flash_frames):
@@ -476,6 +505,7 @@ def build_drain(
     hold_empty_frames: int = 10,
     flash_cycles: int = 2,
     flash_frames: int = 6,
+    fade_reset_frames: int = 0,
 ) -> LwaxAnimation:
     """The inverse of :func:`build_fill`: starts fully lit, then extinguishes
     ``groups`` one at a time in the order given — a countdown/fuse-burning-down
@@ -483,6 +513,11 @@ def build_drain(
     then the whole animation loops back to full and starts draining again.
 
     Pass ``flash_color=None`` to skip the flash and just hold empty, then reset.
+
+    ``fade_reset_frames`` above 0 ends the loop without any flash or hard
+    cut: after the empty hold, the whole panel fades back up to full over
+    that many eased frames, straight into the full hold the loop starts
+    with. ``flash_color`` is ignored then. The default (0) keeps the flash.
     """
     if not groups:
         raise ValueError("Need at least 1 group.")
@@ -512,7 +547,10 @@ def build_drain(
     for _ in range(hold_empty_frames):
         animation.add_frame(duration_ms, empty)
 
-    if flash_color is not None:
+    if fade_reset_frames > 0:
+        for color in _fade_frames(fill_color, fade_reset_frames, rising=True):
+            animation.add_frame(duration_ms, {label: color for label in all_labels})
+    elif flash_color is not None:
         flash = {label: flash_color for label in all_labels}
         for _ in range(flash_cycles):
             for _ in range(flash_frames):

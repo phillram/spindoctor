@@ -323,7 +323,7 @@ Quick backup and restore scoped to LEDBlinky files. Both folder fields default t
 
 Build moving LED animations, as opposed to the per-game colors in Steps 3–8. **Generate pattern library** writes to `~/Downloads/spindoctor-lwax-patterns/`. **Generate fade** writes to `<output_dir>/LEDBlinky/lwax/fade.lwax` and needs `output_dir` configured. The CLI also accepts explicit output paths. See the [animation command reference](commands.md#ledblinky-lwax-fade) for destinations and signing.
 
-- **Generate pattern library** — the whole ~170-file batch (sweeps, pulses, rain, breathe, rainbow, etc.). CLI: `spindoctor ledblinky lwax batch` (honours the global Apply checkbox).
+- **Generate pattern library** — the whole ~280-file batch (sweeps, pulses, rain, breathe, rainbow, flash-free `_soft` fill/drain, the smooth `cute_*` set, etc.). CLI: `spindoctor ledblinky lwax batch` (honours the global Apply checkbox). New colourways of the `cute_*` patterns, and the flash check, are CLI-only (`ledblinky lwax cute`, `ledblinky lwax flash-check`; both are in the Custom Command dropdown).
 - **Generate fade** — a single custom colour-cycle fade from the comma-separated hex colours in the field (e.g. `FF0000,00FF00,0000FF`). CLI: `spindoctor ledblinky lwax fade --color …`.
 
 Generated files are **unsigned** — before LedBlinky will load one, open it in `LEDBlinkyAnimationEditor.exe` and do **Animation → Save As** (no edits) to sign it; it then appears in the Settings.ini dropdowns. Full walkthrough: [`commands.md` → "`ledblinky lwax batch`"](commands.md#ledblinky-lwax-batch--generate-the-whole-pattern-library).

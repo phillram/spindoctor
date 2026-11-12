@@ -2,14 +2,20 @@
 
 Runs the whole batch against this cabinet's committed reference input map
 (docs/reference/LEDBlinkyInputMap.xml) and checks the output is well-formed,
-in range, uniquely named, and dash-free.
+in range, uniquely named, and dash-free; that the files it made before the
+cute_* set and _soft twins are unchanged; and that the flash scorer agrees
+with the report the example cabinet's animation pool was sorted by.
 """
+import hashlib
 import xml.etree.ElementTree as ET
 
 import pytest
 
 from spindoctor import lwax_patterns
 from spindoctor.lwax import parse_input_map
+from spindoctor.lwax_cute import CUTE_THEMES
+from spindoctor.lwax_flash import score_lwax
+from tests.lwax_reference import LIBM_VARIANTS, REFERENCE_SHA256
 
 
 @pytest.fixture(scope="module")
@@ -26,10 +32,100 @@ def generated(controllers, tmp_path_factory):
     return out_dir, written, palette_used
 
 
-def test_generates_a_full_batch(generated):
-    _out_dir, written, _used = generated
-    # 22 families x 5 + breathe library + cycles -- comfortably over 150.
-    assert len(written) > 150
+# Families whose builders use only exact arithmetic (no sin/cos/atan2/hypot),
+# so their bytes don't depend on the platform's maths library.
+_EXACT_FAMILIES = {
+    "fade", "sweep", "rain", "confetti", "scroll", "fill", "drain", "checker", "radial", "cyclone",
+    "race", "heartbeat", "strobe", "marquee", "bounce", "rowblink", "pulse", "breathe", "candle", "twinkle",
+}
+
+
+def _is_original(name):
+    """The 169 files the batch made before the _soft twins and cute_* set."""
+    return not name.startswith("cute_") and not name.endswith("_soft.lwax")
+
+
+def test_original_files_are_unchanged(generated):
+    out_dir, written, _used = generated
+    names = sorted(f for f, _fr, _d in written)
+    assert sum(1 for n in names if _is_original(n)) == 169
+    digest = hashlib.sha256()
+    count = 0
+    for name in names:
+        if (_is_original(name) and name.split("_", 1)[0] in _EXACT_FAMILIES
+                and name != "breathe_rainbow_slow.lwax"):
+            digest.update(name.encode() + b"\0" + (out_dir / name).read_bytes())
+            count += 1
+    # 143 files, byte for byte as installed on the example cabinet before the
+    # cute set and the _soft twins were added (strobes and flashing fill/drain
+    # included). A change here means an existing animation changed.
+    assert count == 143
+    assert digest.hexdigest()[:16] == "fa6ceb754de38f77"
+
+
+def test_soft_fill_and_drain_twins(generated):
+    out_dir, written, _used = generated
+    names = {f for f, _fr, _d in written}
+    soft = sorted(n for n in names if n.endswith("_soft.lwax"))
+    assert len(soft) == 8
+    for name in soft:
+        assert name.startswith(("fill_", "drain_"))
+        assert name.replace("_soft", "") in names  # the flashing original stays
+    # Byte for byte the flash-free remakes made on the example cabinet from its
+    # installed files.
+    for name, expected in (("fill_cyan_fast_soft.lwax", "6885ca135fe1823e"),
+                           ("drain_amber_fast_soft.lwax", "d436fd7a50935c3e"),
+                           ("drain_green_slow_soft.lwax", "58c5c62b50e22d1a"),
+                           ("drain_magenta_slow_soft.lwax", "9e4739d893a2d053"),
+                           ("drain_red_medium_soft.lwax", "66295e0a524ac5dc"),
+                           ("fill_indigo_slow_soft.lwax", "2b6a17931117dea0"),
+                           ("fill_spring_medium_soft.lwax", "d4ebc7b1dca6a0a6"),
+                           ("fill_yellow_slow_soft.lwax", "b580e5ae8852f2b5")):
+        assert hashlib.sha256((out_dir / name).read_bytes()).hexdigest()[:16] == expected
+
+
+def test_batch_includes_the_cute_set(generated):
+    out_dir, written, _used = generated
+    names = {f for f, _fr, _d in written}
+    assert {f"{t.name}.lwax" for t in CUTE_THEMES} <= names
+    assert len(written) == 169 + 8 + 100
+    # These exact bytes already receive the stricter in-memory smoothness
+    # checks in test_lwax_cute; don't parse and score all 100 files again.
+    for theme in CUTE_THEMES:
+        digest = hashlib.sha256((out_dir / f"{theme.name}.lwax").read_bytes()).hexdigest()[:16]
+        assert digest in {REFERENCE_SHA256[theme.name], *LIBM_VARIANTS.get(theme.name, ())}, theme.name
+
+
+def test_flash_scores_match_the_cabinet_report(generated, controllers):
+    """The Python scorer agrees with Analyze-LwaxFlash.ps1's report on the
+    example cabinet's 169 installed files."""
+    out_dir, written, _used = generated
+    tiers = {}
+    scores = {}
+    for name, _fr, _d in written:
+        if name.startswith("cute_"):
+            continue  # Batch hashes above bridge the separately scored themes.
+        scores[name] = score_lwax(out_dir / name, controllers)
+        tier = scores[name].tier
+        if _is_original(name):
+            tiers[tier] = tiers.get(tier, 0) + 1
+        else:
+            assert tier == "smooth", name  # every _soft twin
+    assert tiers == {"strobe": 6, "blink": 5, "borderline": 22, "busy": 4, "smooth": 132}
+
+    # A few rows of that report, every metric.
+    rows = {
+        "strobe_lime_slow.lwax": (240, 10.8, 45, 2.78, 3, 5.56, 5.56, 2.78, 2.78, "strobe"),
+        "heartbeat_aqua_fast.lwax": (132, 3.96, 30, 3.03, 4, 0, 0, 3.03, 3.03, "strobe"),
+        "checker_orange_yellow_fast.lwax": (16, 3.2, 200, 0, 0, 5, 5, 0, 0, "blink"),
+        "fill_cyan_fast.lwax": (60, 1.8, 30, 1.11, 2, 2.22, 2.78, 1.11, 1.11, "borderline"),
+        "drain_amber_fast.lwax": (79, 2.37, 30, 1.27, 2.5, 2.11, 2.53, 1.27, 1.27, "borderline"),
+    }
+    for name, expected in rows.items():
+        s = scores[name]
+        got = (s.frames, s.loop_sec, s.min_frame_ms, s.panel_flash_hz, s.panel_worst_1s, s.sync_blink_hz,
+               s.snaps_per_led_hz, s.max_led_flicker_hz, s.mean_led_flicker_hz, s.tier)
+        assert got == expected, name
 
 
 def test_every_file_is_valid_xml_and_in_range(generated):
