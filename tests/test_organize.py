@@ -1,5 +1,11 @@
 """ROM restructure plan / apply / undo round-trips."""
 from __future__ import annotations
+import json
+from tests.helpers import write_bytes as _write_bytes
+
+from spindoctor import organize
+import pytest
+import shutil
 
 from pathlib import Path
 
@@ -109,3 +115,71 @@ def test_find_latest_manifest_returns_newest(tmp_path):
     newer.write_text("{}", encoding="utf-8")
     found = find_latest_manifest("Sony Playstation 3", tmp_path)
     assert found == newer
+
+
+def test_organize_does_not_move_its_own_manifest(config_home, tmp_path):
+    folder = tmp_path / "Sony Playstation 3"
+    _write_bytes(folder / "Game.iso")
+    manifest = organize.apply_restructure(organize.plan_restructure(folder.name, tmp_path))
+    plan = organize.plan_restructure(folder.name, tmp_path)
+    assert plan.empty
+    assert manifest.exists()
+
+
+def test_organize_counts_discs_not_bin_cue_files(config_home, tmp_path):
+    folder = tmp_path / "Sega Saturn"
+    for ext in (".bin", ".cue"):
+        _write_bytes(folder / f"Game (Disc 1){ext}")
+    assert organize.plan_restructure(folder.name, tmp_path).empty
+    for ext in (".bin", ".cue"):
+        _write_bytes(folder / f"Game (Disc 2){ext}")
+    plan = organize.plan_restructure(folder.name, tmp_path)
+    assert len(plan.moves) == 4
+    assert plan.creates[0].content.splitlines() == ["Game (Disc 1).cue", "Game (Disc 2).cue"]
+
+
+@pytest.mark.parametrize("exception", [OSError, KeyboardInterrupt])
+def test_organize_interruption_keeps_partial_undo(config_home, tmp_path, monkeypatch, exception):
+    folder = tmp_path / "Sony Playstation 3"
+    _write_bytes(folder / "A.iso")
+    _write_bytes(folder / "B.iso")
+    plan = organize.plan_restructure(folder.name, tmp_path)
+    real_move = shutil.move
+    calls = []
+
+    def interrupted(src, dest, *args, **kwargs):
+        if calls:
+            raise exception("interrupted")
+        calls.append(src)
+        return real_move(src, dest, *args, **kwargs)
+
+    monkeypatch.setattr(shutil, "move", interrupted)
+    with pytest.raises(exception):
+        organize.apply_restructure(plan)
+    manifests = list(folder.glob("_spindoctor-restructure-*.json"))
+    assert len(manifests) == 1
+    record = json.loads(manifests[0].read_text())
+    assert len(record["moves"]) == 2
+    assert record["pending"] == [plan.moves[1].dest]
+    monkeypatch.setattr(shutil, "move", real_move)
+    assert organize.undo_restructure(manifests[0])["errors"] == []
+    assert (folder / "A.iso").exists()
+    assert (folder / "B.iso").exists()
+
+
+def test_organize_partial_undo_never_deletes_recreated_playlist(config_home, tmp_path):
+    original = _write_bytes(tmp_path / "original.iso", b"conflicting")
+    moved = _write_bytes(tmp_path / "organized" / "disc.iso")
+    playlist = _write_bytes(moved.parent / "game.m3u")
+    payload = {
+        "moves": [{"src": str(original), "dest": str(moved)}],
+        "creates": [{"path": str(playlist), "content": "disc.iso\n"}],
+    }
+    manifest = _write_bytes(tmp_path / "manifest.json", json.dumps(payload).encode())
+    assert organize.undo_restructure(manifest)["errors"]
+    assert not playlist.exists()
+    assert json.loads(manifest.read_text())["creates"] == []
+    _write_bytes(playlist, b"new user playlist")
+    original.unlink()
+    assert not organize.undo_restructure(manifest)["errors"]
+    assert playlist.read_bytes() == b"new user playlist"

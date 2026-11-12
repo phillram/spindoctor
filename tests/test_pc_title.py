@@ -21,46 +21,26 @@ def _make(path: Path) -> Path:
     return path
 
 
-def test_smart_uses_stem_for_top_level_shortcut(pc_root):
-    p = _make(pc_root / "Hades.lnk")
-    assert derive_pc_title(p, pc_root, "smart") == "Hades"
-
-
-def test_smart_uses_top_level_folder_for_nested_exe(pc_root):
-    p = _make(pc_root / "Cyberpunk 2077" / "bin" / "launcher.exe")
-    assert derive_pc_title(p, pc_root, "smart") == "Cyberpunk 2077"
-
-
-def test_smart_uses_immediate_parent_for_one_level_deep_exe(pc_root):
-    p = _make(pc_root / "Hades" / "Hades.exe")
-    assert derive_pc_title(p, pc_root, "smart") == "Hades"
-
-
-def test_smart_uses_stem_for_top_level_exe(pc_root):
-    p = _make(pc_root / "Standalone.exe")
-    assert derive_pc_title(p, pc_root, "smart") == "Standalone"
-
-
-def test_smart_uses_stem_for_nested_shortcut(pc_root):
+@pytest.mark.parametrize("relpath, strategy, expected", [
+    pytest.param("Hades.lnk", "smart", "Hades", id="smart-stem-for-top-level-shortcut"),
+    pytest.param("Cyberpunk 2077/bin/launcher.exe", "smart", "Cyberpunk 2077",
+                 id="smart-top-level-folder-for-nested-exe"),
+    pytest.param("Hades/Hades.exe", "smart", "Hades",
+                 id="smart-immediate-parent-for-one-level-deep-exe"),
+    pytest.param("Standalone.exe", "smart", "Standalone", id="smart-stem-for-top-level-exe"),
     # An odd layout: shortcut nested inside a folder.  Stems beat parents
     # for shortcut files because the file *is* the title.
-    p = _make(pc_root / "Steam" / "Hades.url")
-    assert derive_pc_title(p, pc_root, "smart") == "Hades"
-
-
-def test_stem_strategy_always_uses_filename(pc_root):
-    p = _make(pc_root / "Cyberpunk 2077" / "bin" / "launcher.exe")
-    assert derive_pc_title(p, pc_root, "stem") == "launcher"
-
-
-def test_parent_folder_strategy(pc_root):
-    p = _make(pc_root / "Cyberpunk 2077" / "bin" / "launcher.exe")
-    assert derive_pc_title(p, pc_root, "parent_folder") == "bin"
-
-
-def test_parent_folder_strategy_falls_back_to_stem_at_root(pc_root):
-    p = _make(pc_root / "Standalone.exe")
-    assert derive_pc_title(p, pc_root, "parent_folder") == "Standalone"
+    pytest.param("Steam/Hades.url", "smart", "Hades", id="smart-stem-for-nested-shortcut"),
+    pytest.param("Cyberpunk 2077/bin/launcher.exe", "stem", "launcher",
+                 id="stem-strategy-always-uses-filename"),
+    pytest.param("Cyberpunk 2077/bin/launcher.exe", "parent_folder", "bin",
+                 id="parent-folder-strategy"),
+    pytest.param("Standalone.exe", "parent_folder", "Standalone",
+                 id="parent-folder-falls-back-to-stem-at-root"),
+])
+def test_derive_pc_title(pc_root, relpath, strategy, expected):
+    p = _make(pc_root / relpath)
+    assert derive_pc_title(p, pc_root, strategy) == expected
 
 
 def test_shortcut_extensions_constant():

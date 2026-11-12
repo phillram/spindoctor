@@ -12,85 +12,46 @@ import pytest
 from spindoctor.scraper import RateLimiter
 
 
-def test_first_call_does_not_sleep(monkeypatch):
-    """``_last_call`` starts at 0.0, so the first ``wait()`` should
-    pass straight through — no sleep, no delay.
-
-    Worth pinning because the alternative reading ("first call sleeps
-    a full interval") would cost users 1 s per cold start, multiplied
-    across thousands of game lookups.
-    """
+@pytest.mark.parametrize(
+    "rate,start,deltas,expected_sleeps",
+    [
+        # _last_call starts at 0.0, so with the clock far above the interval
+        # the first wait() passes straight through — the alternative reading
+        # ("first call sleeps a full interval") would cost users 1 s per cold
+        # start, multiplied across thousands of game lookups.
+        pytest.param(1.0, 1_000_000.0, [], [],
+                     id="first-call-does-not-sleep"),
+        # Two calls in zero elapsed time → the second sleeps the full
+        # interval (2 calls/s → 0.5 s).
+        pytest.param(2.0, 5.0, [0.0], [0.5],
+                     id="back-to-back-sleeps-full-interval"),
+        # 0.3 s of the 1 s interval already elapsed → sleep only the
+        # remaining 0.7 s. Over-sleeping would turn a 1 Hz limit into a
+        # 0.5 Hz limit in practice.
+        pytest.param(1.0, 10.0, [0.3], [0.7],
+                     id="partial-elapsed-sleeps-remainder"),
+        # Caller already paused well past the interval on its own → wait()
+        # is a no-op: pacing is a floor, not a ceiling.
+        pytest.param(1.0, 1_000.0, [1_000.0], [],
+                     id="elapsed-beyond-interval-does-not-sleep"),
+    ],
+)
+def test_wait_pacing(monkeypatch, rate, start, deltas, expected_sleeps):
     sleeps: list[float] = []
     monkeypatch.setattr("spindoctor.scraper.time.sleep", sleeps.append)
-    # Pin monotonic so we don't accidentally roll past the interval
-    # before the assertion fires on a slow CI runner.
-    monkeypatch.setattr("spindoctor.scraper.time.monotonic", lambda: 1_000_000.0)
+    # Controllable clock: start well above zero so the first wait() — which
+    # measures against the constructor's _last_call = 0.0 — reads as
+    # "already paused enough" and doesn't sleep a spurious full interval.
+    clock = [start]
+    monkeypatch.setattr("spindoctor.scraper.time.monotonic", lambda: clock[0])
 
-    rl = RateLimiter(calls_per_second=1.0)
+    rl = RateLimiter(calls_per_second=rate)
     rl.wait()
+    for delta in deltas:
+        clock[0] += delta
+        rl.wait()
 
-    assert sleeps == []
-
-
-def test_back_to_back_calls_sleep_for_full_interval(monkeypatch):
-    """Two calls in zero elapsed time → second sleeps the full interval."""
-    sleeps: list[float] = []
-    monkeypatch.setattr("spindoctor.scraper.time.sleep", sleeps.append)
-    # Freeze time so elapsed == 0 between calls.
-    monkeypatch.setattr("spindoctor.scraper.time.monotonic", lambda: 5.0)
-
-    rl = RateLimiter(calls_per_second=2.0)  # interval = 0.5 s
-    rl.wait()
-    rl.wait()
-
-    # Exactly one sleep — the second call — for the full 0.5 s interval.
-    assert sleeps == pytest.approx([0.5])
-
-
-def test_partial_elapsed_sleeps_only_the_remainder(monkeypatch):
-    """If half the interval has already elapsed, sleep only the
-    remaining half. The throttle must not over-sleep — that turns a
-    1 Hz limit into a 0.5 Hz limit in practice."""
-    sleeps: list[float] = []
-    monkeypatch.setattr("spindoctor.scraper.time.sleep", sleeps.append)
-
-    clock = [10.0]
-
-    def fake_monotonic() -> float:
-        return clock[0]
-
-    monkeypatch.setattr("spindoctor.scraper.time.monotonic", fake_monotonic)
-
-    rl = RateLimiter(calls_per_second=1.0)  # interval = 1.0 s
-    rl.wait()           # first call: free, _last_call = 10.0
-    clock[0] = 10.3     # 0.3 s later → 0.7 s remaining
-    rl.wait()
-
-    assert sleeps == pytest.approx([0.7])
-
-
-def test_elapsed_greater_than_interval_does_not_sleep(monkeypatch):
-    """If the caller already paused long enough on its own, ``wait()``
-    must be a no-op — pacing is a floor, not a ceiling."""
-    sleeps: list[float] = []
-    monkeypatch.setattr("spindoctor.scraper.time.sleep", sleeps.append)
-
-    # Start the clock well above zero so the first wait() — which
-    # measures against the constructor's _last_call = 0.0 — also reads
-    # as "already paused enough" and doesn't sleep. Without this offset
-    # the first wait() would sleep one full interval, which is the
-    # behaviour pinned by other tests.
-    clock = [1_000.0]
-    monkeypatch.setattr(
-        "spindoctor.scraper.time.monotonic", lambda: clock[0],
-    )
-
-    rl = RateLimiter(calls_per_second=1.0)
-    rl.wait()
-    clock[0] = 2_000.0  # way past the interval
-    rl.wait()
-
-    assert sleeps == []
+    assert sleeps == pytest.approx(expected_sleeps)
 
 
 def test_interval_derived_from_calls_per_second():

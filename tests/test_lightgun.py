@@ -1,5 +1,6 @@
 """Sinden / DemulShooter wiring for lightgun systems."""
 from __future__ import annotations
+from spindoctor import lightgun
 
 from pathlib import Path
 
@@ -408,25 +409,20 @@ def test_default_extra_args_are_sinden_friendly():
 
 # ─── _upsert_ini_key direct ───────────────────────────────────────────────────
 
-def test_upsert_inserts_when_missing():
-    body = "[Settings]\nA=1\n"
-    out = _upsert_ini_key(body, "Settings", "B", "2")
-    assert "A=1" in out and "B=2" in out
-
-
-def test_upsert_replaces_existing():
-    body = "[Settings]\nA=1\nB=old\n"
-    out = _upsert_ini_key(body, "Settings", "B", "new")
-    assert "B=new" in out
-    assert "B=old" not in out
-
-
-def test_upsert_appends_section_when_missing():
-    body = "[Other]\nX=1\n"
-    out = _upsert_ini_key(body, "Settings", "B", "2")
-    assert "[Other]" in out
-    assert "[Settings]" in out
-    assert "B=2" in out
+@pytest.mark.parametrize("body, section, key, value, present, absent", [
+    pytest.param("[Settings]\nA=1\n", "Settings", "B", "2",
+                 ["A=1", "B=2"], [], id="inserts-when-missing"),
+    pytest.param("[Settings]\nA=1\nB=old\n", "Settings", "B", "new",
+                 ["B=new"], ["B=old"], id="replaces-existing"),
+    pytest.param("[Other]\nX=1\n", "Settings", "B", "2",
+                 ["[Other]", "[Settings]", "B=2"], [], id="appends-section-when-missing"),
+])
+def test_upsert_ini_key(body, section, key, value, present, absent):
+    out = _upsert_ini_key(body, section, key, value)
+    for needle in present:
+        assert needle in out
+    for needle in absent:
+        assert needle not in out
 
 
 # ─── config helpers ──────────────────────────────────────────────────────────
@@ -442,3 +438,20 @@ def test_lightgun_systems_helpers_round_trip():
     cfg.set_lightgun("Sega Naomi", False)
     assert cfg.lightgun_systems() == []
     assert "Sega Naomi" not in cfg.system_overrides
+
+
+@pytest.mark.parametrize("eol", ["\n", "\r\n"])
+@pytest.mark.parametrize("prefix", ["", "; comment{eol}Other=1{eol}"])
+def test_lightgun_key_replacement_preserves_lines(eol, prefix):
+    prefix = prefix.format(eol=eol)
+    before = f"[Settings]{eol}{prefix}Pre_Launch_App=old{eol}[Next]{eol}Keep=1{eol}"
+    expected = before.replace("Pre_Launch_App=old", "Pre_Launch_App=new")
+    assert lightgun._upsert_ini_key(before, "Settings", "Pre_Launch_App", "new") == expected
+
+
+@pytest.mark.parametrize("eol", ["\n", "\r\n"])
+@pytest.mark.parametrize("body", ["[Settings]{eol}", "[Settings]{eol}[Next]{eol}Keep=1{eol}"])
+def test_lightgun_insert_into_empty_section_preserves_line_endings(eol, body):
+    before = body.format(eol=eol)
+    expected = before.replace(f"[Settings]{eol}", f"[Settings]{eol}Pre_Launch_App=new{eol}")
+    assert lightgun._upsert_ini_key(before, "Settings", "Pre_Launch_App", "new") == expected

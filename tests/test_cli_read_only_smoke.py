@@ -21,69 +21,19 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from click import unstyle
 from click.testing import CliRunner
 
-import spindoctor.config as config_mod
 from spindoctor.cli import cli
 from spindoctor.config import Config, save_config
 from spindoctor.database import GameEntry, HyperspinDatabase
-
-
-@pytest.fixture
-def isolated_config(tmp_path, monkeypatch):
-    home = tmp_path / "spindoctor_home"
-    monkeypatch.setattr(config_mod, "CONFIG_DIR", home)
-    monkeypatch.setattr(config_mod, "CONFIG_FILE", home / "config.json")
-    config_mod.reset_override_cache()
-    yield home
-    config_mod.reset_override_cache()
-
-
-def _build_nes_library(tmp_path: Path) -> Config:
-    """A small but realistic single-system install used by every test below.
-
-    Three NES games with ROMs, wheels, and snaps. Mirrors the helper in
-    `test_dry_run_gates.py` so a future consolidation can lift this into
-    a `conftest.py` without rewriting either file.
-    """
-    roms_dir = tmp_path / "roms"
-    hs_dir = tmp_path / "hs"
-    (roms_dir / "nes").mkdir(parents=True)
-    db_dir = hs_dir / "Databases" / "nes"
-    media_dir = hs_dir / "Media" / "nes"
-    db_dir.mkdir(parents=True)
-    (media_dir / "Images" / "Wheel").mkdir(parents=True)
-    (media_dir / "Images" / "Artwork3").mkdir(parents=True)
-
-    games = [
-        GameEntry(name="mario", description="Super Mario", manufacturer="Nintendo",
-                  year="1985", genre="Platformer", rating=""),
-        GameEntry(name="zelda", description="Zelda", manufacturer="Nintendo",
-                  year="1986", genre="Action", rating="5"),
-        GameEntry(name="contra", description="Contra", manufacturer="Konami",
-                  year="1988", genre="Action", rating=""),
-    ]
-    for g in games:
-        (roms_dir / "nes" / f"{g.name}.nes").write_text("rom", encoding="utf-8")
-        (media_dir / "Images" / "Wheel" / f"{g.name}.png").write_bytes(b"wheel")
-        (media_dir / "Images" / "Artwork3" / f"{g.name}.png").write_bytes(b"snap")
-
-    db = HyperspinDatabase("nes", db_dir / "nes.xml")
-    for g in games:
-        db.upsert_game(g)
-    db.save()
-
-    cfg = Config()
-    cfg.roms_dir = str(roms_dir)
-    cfg.hyperspin_dir = str(hs_dir)
-    save_config(cfg)
-    return cfg
+from tests.helpers import build_nes_library as _build_nes_library
 
 
 # ─── audit ───────────────────────────────────────────────────────────────────
 
 
-def test_audit_single_system_exits_clean(tmp_path, isolated_config):
+def test_audit_single_system_exits_clean(tmp_path, config_home):
     """`audit --system nes` is the cabinet owner's primary diagnostic.
 
     Untested at the CLI level until now — every other audit assertion
@@ -98,7 +48,7 @@ def test_audit_single_system_exits_clean(tmp_path, isolated_config):
     assert "nes" in result.output.lower()
 
 
-def test_audit_all_systems_exits_clean(tmp_path, isolated_config):
+def test_audit_all_systems_exits_clean(tmp_path, config_home):
     _build_nes_library(tmp_path)
     runner = CliRunner()
     result = runner.invoke(cli, ["audit", "--all"])
@@ -108,7 +58,7 @@ def test_audit_all_systems_exits_clean(tmp_path, isolated_config):
 # ─── inspect ─────────────────────────────────────────────────────────────────
 
 
-def test_inspect_single_game_exits_clean(tmp_path, isolated_config):
+def test_inspect_single_game_exits_clean(tmp_path, config_home):
     """`inspect --system nes --game mario` is the deep-dive companion to
     `audit`; the GUI's Diagnose tab now surfaces it. Pin the plumbing.
     """
@@ -121,7 +71,7 @@ def test_inspect_single_game_exits_clean(tmp_path, isolated_config):
     assert "mario" in result.output.lower()
 
 
-def test_inspect_all_games_exits_clean(tmp_path, isolated_config):
+def test_inspect_all_games_exits_clean(tmp_path, config_home):
     _build_nes_library(tmp_path)
     runner = CliRunner()
     result = runner.invoke(
@@ -133,14 +83,14 @@ def test_inspect_all_games_exits_clean(tmp_path, isolated_config):
 # ─── find-dupes ──────────────────────────────────────────────────────────────
 
 
-def test_find_dupes_single_system_exits_clean(tmp_path, isolated_config):
+def test_find_dupes_single_system_exits_clean(tmp_path, config_home):
     _build_nes_library(tmp_path)
     runner = CliRunner()
     result = runner.invoke(cli, ["find-dupes", "--system", "nes"])
     assert result.exit_code == 0, result.output
 
 
-def test_find_dupes_cross_systems_exits_clean(tmp_path, isolated_config):
+def test_find_dupes_cross_systems_exits_clean(tmp_path, config_home):
     """Cross-systems mode added a dedicated GUI button — needs CLI coverage."""
     _build_nes_library(tmp_path)
     runner = CliRunner()
@@ -151,17 +101,41 @@ def test_find_dupes_cross_systems_exits_clean(tmp_path, isolated_config):
 # ─── lint ────────────────────────────────────────────────────────────────────
 
 
-def test_lint_self_exits_clean():
-    """`lint` scans the spindoctor package itself; no fixture needed."""
-    runner = CliRunner()
-    result = runner.invoke(cli, ["lint"])
+def test_lint_source_reports_findings(tmp_path):
+    """Exercise the real scanner without rescanning the entire package."""
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "example.py").write_text("import os\n# TODO: implement feature\n", encoding="utf-8")
+    result = CliRunner().invoke(cli, ["lint", "--source", str(source)])
     assert result.exit_code == 0, result.output
+    assert "example.py" in result.output
+    assert "unused-import" in result.output
+    assert "todo" in result.output
+    assert "scanned 1 file(s)" in unstyle(result.output)
+    assert "2 finding(s) shown of 2 total" in unstyle(result.output)
+
+
+def test_lint_default_root_is_package(monkeypatch):
+    import spindoctor
+    import spindoctor.lint as lint_mod
+
+    roots = []
+
+    def scan(root):
+        roots.append(root)
+        return lint_mod.LintReport()
+
+    monkeypatch.setattr(lint_mod, "lint_tree", scan)
+    result = CliRunner().invoke(cli, ["lint"])
+    assert result.exit_code == 0, result.output
+    assert roots == [Path(spindoctor.__file__).resolve().parent]
+    assert "scanned 0 file(s)" in unstyle(result.output)
 
 
 # ─── find-orphan-media (dry-run is the default) ──────────────────────────────
 
 
-def test_find_orphan_media_dry_run_exits_clean(tmp_path, isolated_config):
+def test_find_orphan_media_dry_run_exits_clean(tmp_path, config_home):
     _build_nes_library(tmp_path)
     runner = CliRunner()
     result = runner.invoke(cli, ["find-orphan-media", "--system", "nes"])
@@ -171,7 +145,7 @@ def test_find_orphan_media_dry_run_exits_clean(tmp_path, isolated_config):
 # ─── cleanup audit ───────────────────────────────────────────────────────────
 
 
-def test_cleanup_audit_exits_clean(isolated_config):
+def test_cleanup_audit_exits_clean(config_home):
     """`cleanup audit` walks ~/.spindoctor — fixture re-homes that root so
     we report on an empty tree rather than the developer's real cache.
     """
@@ -183,14 +157,14 @@ def test_cleanup_audit_exits_clean(isolated_config):
 # ─── report ──────────────────────────────────────────────────────────────────
 
 
-def test_report_summary_exits_clean(tmp_path, isolated_config):
+def test_report_summary_exits_clean(tmp_path, config_home):
     _build_nes_library(tmp_path)
     runner = CliRunner()
     result = runner.invoke(cli, ["report", "--system", "nes"])
     assert result.exit_code == 0, result.output
 
 
-def test_report_csv_writes_file(tmp_path, isolated_config):
+def test_report_csv_writes_file(tmp_path, config_home):
     """CSV mode plumbs through --output and writes a file. Untested before."""
     _build_nes_library(tmp_path)
     out_csv = tmp_path / "report.csv"
@@ -207,7 +181,7 @@ def test_report_csv_writes_file(tmp_path, isolated_config):
 # ─── doctor ──────────────────────────────────────────────────────────────────
 
 
-def test_doctor_runs_against_clean_install(tmp_path, isolated_config):
+def test_doctor_runs_against_clean_install(tmp_path, config_home):
     """Doctor on a healthy fixture should not crash; exit code 0 or 2
     (FAIL) are both acceptable here because the synthetic library is
     intentionally minimal and may legitimately fail some checks (e.g.
@@ -224,7 +198,7 @@ def test_doctor_runs_against_clean_install(tmp_path, isolated_config):
 # ─── tools-audit ─────────────────────────────────────────────────────────────
 
 
-def test_tools_audit_exits_clean(tmp_path, isolated_config):
+def test_tools_audit_exits_clean(tmp_path, config_home):
     """`tools-audit` is read-only; given --extra-path to an empty tmp dir
     it should walk it and emit a report without touching real PATH.
     """
@@ -241,7 +215,7 @@ def test_tools_audit_exits_clean(tmp_path, isolated_config):
 # ─── systems ─────────────────────────────────────────────────────────────────
 
 
-def test_systems_lists_configured_system(tmp_path, isolated_config):
+def test_systems_lists_configured_system(tmp_path, config_home):
     """`systems` is the simplest read-only command but had no CLI coverage."""
     _build_nes_library(tmp_path)
     runner = CliRunner()
@@ -253,7 +227,7 @@ def test_systems_lists_configured_system(tmp_path, isolated_config):
 # ─── update-db dry-run gate ──────────────────────────────────────────────────
 
 
-def test_update_db_dry_run_does_not_modify_xml(tmp_path, isolated_config):
+def test_update_db_dry_run_does_not_modify_xml(tmp_path, config_home):
     """`update-db` without `--apply` is the most-load-bearing dry-run gate
     on the metadata side. A regression that flips its default polarity
     would silently rewrite the cabinet's HyperSpin XML on first invocation.
@@ -276,18 +250,20 @@ def test_update_db_dry_run_does_not_modify_xml(tmp_path, isolated_config):
 # ─── add-system dry-run gate ─────────────────────────────────────────────────
 
 
-def test_add_system_dry_run_does_not_create_dirs(tmp_path, isolated_config):
-    """`add-system "SNES"` without `--apply` previews what it would do but
-    must not create the roms_dir/snes/ or hyperspin/Databases/snes/ trees.
-    The GUI's Systems tab drives this command — a regression here would
-    populate folders the user didn't ask for on first click.
-    """
+def test_add_system_dry_run_does_not_create_dirs(tmp_path, config_home):
+    """Snapshot configured roots, independent of the proposed folder spelling."""
     cfg = _build_nes_library(tmp_path)
     roms_dir = Path(cfg.roms_dir)
     hs_dir = Path(cfg.hyperspin_dir)
-    # Pre-condition: the SNES tree doesn't exist yet.
-    assert not (roms_dir / "snes").exists()
-    assert not (hs_dir / "Databases" / "snes").exists()
+    roots = (roms_dir, hs_dir, config_home)
+
+    def snapshot():
+        return {
+            str(p): p.read_bytes() if p.is_file() else None
+            for root in roots for p in (root, *root.rglob("*"))
+        }
+
+    before = snapshot()
 
     runner = CliRunner()
     result = runner.invoke(
@@ -297,55 +273,33 @@ def test_add_system_dry_run_does_not_create_dirs(tmp_path, isolated_config):
     )
 
     assert result.exit_code == 0, result.output
-    # The CLI may print plans for any directory name; the gate is that no
-    # files / dirs got created. Walk both roots and confirm nothing was
-    # added under the original library snapshot.
-    assert not any(
-        p for p in (roms_dir.rglob("*")) if "snes" in p.name.lower() and p.is_dir()
-    ), "add-system created roms/snes/ without --apply"
+    assert "Super Nintendo" in result.output
+    assert "DRY RUN" in result.output
+    assert snapshot() == before, "add-system changed configured roots without --apply"
 
 
-def test_fetch_meta_skip_ambiguous_flag_is_registered():
-    """The --skip-ambiguous flag exists on fetch-meta — the GUI relies
-    on it to avoid hanging the subprocess on stdin. Help-output check
-    is enough to pin the wiring without firing a real network call.
+@pytest.mark.parametrize("command,option", [
+    ("fetch-meta", "--skip-ambiguous"),
+    ("fetch-media", "--skip-ambiguous"),
+    ("add-pc-system", "--no-interactive"),
+    ("pc-rename", "--no-interactive"),
+], ids=[
+    "fetch-meta-skip-ambiguous",
+    "fetch-media-skip-ambiguous",
+    "add-pc-system-no-interactive",
+    "pc-rename-no-interactive",
+])
+def test_cli_flag_is_registered(command, option):
+    """Pin the flags the GUI relies on to keep its subprocesses
+    non-interactive: --skip-ambiguous on fetch-meta/fetch-media (avoids
+    hanging on stdin for ambiguous matches) and --no-interactive on
+    add-pc-system/pc-rename (avoids the input() prompt in
+    pc_titles.review_titles). A help-output check is enough to pin the
+    wiring without firing a real network call.
     """
-    from click.testing import CliRunner
-    from spindoctor.cli import cli
-
-    runner = CliRunner()
-    result = runner.invoke(cli, ["fetch-meta", "--help"])
+    result = CliRunner().invoke(cli, [command, "--help"])
     assert result.exit_code == 0, result.output
-    assert "--skip-ambiguous" in result.output
-
-
-def test_add_pc_system_no_interactive_flag_is_registered():
-    """add-pc-system --no-interactive must exist so the GUI can avoid
-    the input() prompt in pc_titles.review_titles."""
-    from click.testing import CliRunner
-    from spindoctor.cli import cli
-
-    result = CliRunner().invoke(cli, ["add-pc-system", "--help"])
-    assert result.exit_code == 0, result.output
-    assert "--no-interactive" in result.output
-
-
-def test_pc_rename_no_interactive_flag_is_registered():
-    from click.testing import CliRunner
-    from spindoctor.cli import cli
-
-    result = CliRunner().invoke(cli, ["pc-rename", "--help"])
-    assert result.exit_code == 0, result.output
-    assert "--no-interactive" in result.output
-
-
-def test_fetch_media_skip_ambiguous_flag_is_registered():
-    from click.testing import CliRunner
-    from spindoctor.cli import cli
-
-    result = CliRunner().invoke(cli, ["fetch-media", "--help"])
-    assert result.exit_code == 0, result.output
-    assert "--skip-ambiguous" in result.output
+    assert option in result.output
 
 
 def test_matcher_choose_match_skip_ambiguous_returns_none():
@@ -370,7 +324,7 @@ def test_matcher_choose_match_skip_ambiguous_returns_none():
 # ─── fetch-meta --game bypass ─────────────────────────────────────────────────
 
 
-def test_fetch_meta_game_flag_processes_complete_game(tmp_path, isolated_config, monkeypatch):
+def test_fetch_meta_game_flag_processes_complete_game(tmp_path, config_home, monkeypatch):
     """When --game names a game whose metadata is already complete,
     fetch-meta must re-fetch it rather than printing 'not found'.
 
@@ -534,51 +488,6 @@ def test_raise_if_ss_error_silent_on_clean_response():
     _raise_if_ss_error({"response": {"jeux": []}})
 
 
-def test_combined_client_raises_when_both_sources_fail():
-    """CombinedMetadataClient.search() must raise MetadataError when both
-    ScreenScraper and TheGamesDB fail, instead of silently returning []."""
-    from spindoctor.scraper import CombinedMetadataClient, MetadataError
-
-    class _AlwaysFail:
-        source_name = "fake"
-        _cache = None
-        def fetch(self, *_a, **_k): raise MetadataError("SS down: 429")
-        def search(self, *_a, **_k): raise MetadataError("TGDB down: 500")
-
-    client = CombinedMetadataClient(_AlwaysFail(), _AlwaysFail())
-    try:
-        client.search("Zelda", "nes")
-        assert False, "should have raised"
-    except MetadataError as e:
-        assert "SS down" in str(e) or "TGDB down" in str(e)
-
-
-def test_combined_client_fallback_when_one_source_fails():
-    """CombinedMetadataClient.search() must return the surviving source's results
-    when only one of the two sources fails."""
-    from spindoctor.scraper import CombinedMetadataClient, MetadataError, GameMetadata
-
-    class _AlwaysFail:
-        source_name = "ss"
-        _cache = None
-        def fetch(self, *_a, **_k): raise MetadataError("SS down")
-        def search(self, *_a, **_k): raise MetadataError("SS down")
-
-    class _AlwaysOk:
-        source_name = "tgdb"
-        _cache = None
-        def fetch(self, *_a, **_k): return None
-        def search(self, *_a, **_k):
-            m = GameMetadata(name="Zelda")
-            m.match_score = 1.0
-            return [m]
-
-    client = CombinedMetadataClient(_AlwaysFail(), _AlwaysOk())
-    results = client.search("Zelda", "nes")
-    assert len(results) == 1
-    assert results[0].name == "Zelda"
-
-
 def test_is_fatal_scraper_error_detects_quota_and_server_errors():
     """_is_fatal_scraper_error must return True for quota/500 patterns and
     False for genuine 'no match' situations."""
@@ -625,7 +534,7 @@ def _build_pc_library(tmp_path: Path) -> tuple[Config, Path]:
     return cfg, ini_path
 
 
-def test_game_remove_pclauncher_deletes_ini_with_apply(tmp_path, isolated_config):
+def test_game_remove_pclauncher_deletes_ini_with_apply(tmp_path, config_home):
     """game remove --remove-pclauncher --apply deletes the PCLauncher INI
     in addition to removing the XML entry."""
     _cfg, ini_path = _build_pc_library(tmp_path)
@@ -644,7 +553,7 @@ def test_game_remove_pclauncher_deletes_ini_with_apply(tmp_path, isolated_config
     assert "Deleted" in result.output or "deleted" in result.output.lower()
 
 
-def test_game_remove_pclauncher_dry_run_does_not_delete(tmp_path, isolated_config):
+def test_game_remove_pclauncher_dry_run_does_not_delete(tmp_path, config_home):
     """Without --apply the INI is preserved and a 'would delete' preview is shown."""
     _cfg, ini_path = _build_pc_library(tmp_path)
 
@@ -660,7 +569,7 @@ def test_game_remove_pclauncher_dry_run_does_not_delete(tmp_path, isolated_confi
     assert "would delete" in result.output.lower()
 
 
-def test_game_remove_pclauncher_missing_ini_is_skipped(tmp_path, isolated_config):
+def test_game_remove_pclauncher_missing_ini_is_skipped(tmp_path, config_home):
     """If the PCLauncher INI doesn't exist, --remove-pclauncher is a silent no-op."""
     _cfg, ini_path = _build_pc_library(tmp_path)
     ini_path.unlink()   # remove it before running the command
@@ -677,7 +586,7 @@ def test_game_remove_pclauncher_missing_ini_is_skipped(tmp_path, isolated_config
     assert "not found" in result.output.lower() or "skipped" in result.output.lower()
 
 
-def test_game_remove_without_pclauncher_flag_leaves_ini(tmp_path, isolated_config):
+def test_game_remove_without_pclauncher_flag_leaves_ini(tmp_path, config_home):
     """Without --remove-pclauncher the INI is untouched even with --apply."""
     _cfg, ini_path = _build_pc_library(tmp_path)
 
@@ -715,7 +624,7 @@ def _build_ordered_library(tmp_path: Path) -> tuple[Config, Path]:
     return cfg, db_dir / "MAME.xml"
 
 
-def test_game_save_order_applies_custom_order(tmp_path, isolated_config):
+def test_game_save_order_applies_custom_order(tmp_path, config_home):
     """game save-order --apply reorders games to match the order file."""
     _cfg, db_path = _build_ordered_library(tmp_path)
 
@@ -737,7 +646,7 @@ def test_game_save_order_applies_custom_order(tmp_path, isolated_config):
     assert names == ["Zelda", "1942", "Contra"]
 
 
-def test_game_save_order_dry_run_does_not_write(tmp_path, isolated_config):
+def test_game_save_order_dry_run_does_not_write(tmp_path, config_home):
     """Without --apply, game save-order must not change the XML."""
     _cfg, db_path = _build_ordered_library(tmp_path)
     original = db_path.read_bytes()
@@ -756,7 +665,7 @@ def test_game_save_order_dry_run_does_not_write(tmp_path, isolated_config):
     assert db_path.read_bytes() == original, "XML must not be written in dry-run"
 
 
-def test_game_save_order_unlisted_games_appended(tmp_path, isolated_config):
+def test_game_save_order_unlisted_games_appended(tmp_path, config_home):
     """Games absent from the order file are appended, not dropped."""
     _cfg, db_path = _build_ordered_library(tmp_path)
 

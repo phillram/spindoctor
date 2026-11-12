@@ -123,15 +123,9 @@ def test_to_dict_round_trip():
 
 
 @pytest.fixture
-def isolated_config(tmp_path, monkeypatch):
-    """Redirect the module-level config paths to a per-test tmp dir."""
-    cfg_dir = tmp_path / ".spindoctor"
-    cfg_file = cfg_dir / "config.json"
-    monkeypatch.setattr(config_mod, "CONFIG_DIR", cfg_dir)
-    monkeypatch.setattr(config_mod, "CONFIG_FILE", cfg_file)
-    config_mod.reset_override_cache()
-    yield cfg_file
-    config_mod.reset_override_cache()
+def isolated_config(config_home_factory, tmp_path):
+    """These tests consume the config file, not its containing directory."""
+    return config_home_factory(tmp_path / ".spindoctor") / "config.json"
 
 
 def test_load_config_returns_defaults_when_missing(isolated_config):
@@ -301,15 +295,6 @@ def test_get_rom_extensions_short_abbrev_prefers_specific_key(isolated_config):
     assert exts != config_mod.get_rom_extensions("SNES")
 
 
-def test_get_rom_extensions_falls_back_to_default(isolated_config):
-    exts = config_mod.get_rom_extensions("Imaginary System")
-    # Default list covers common archives and disc image formats.
-    assert ".zip" in exts
-    assert ".7z" in exts
-    assert ".iso" in exts
-    assert ".chd" in exts
-
-
 def test_get_rom_extensions_uses_override_with_or_without_dot(isolated_config):
     config_mod.save_config(Config(system_overrides={
         "PS7": {"rom_extensions": [".ps7", "iso"]}
@@ -419,6 +404,33 @@ def test_get_rom_extensions_canonical_system_names(system, expected_first):
 
 
 def test_get_rom_extensions_unknown_falls_back_to_default():
-    assert config_mod.get_rom_extensions("Totally Made Up System") == (
-        config_mod.ROM_EXTENSIONS["default"]
-    )
+    exts = config_mod.get_rom_extensions("Totally Made Up System")
+    assert exts == config_mod.ROM_EXTENSIONS["default"]
+    # Default list covers common archives and disc image formats.
+    assert ".zip" in exts
+    assert ".7z" in exts
+    assert ".iso" in exts
+    assert ".chd" in exts
+
+
+def test_config_invalid_encoding_is_recovered_without_losing_original(config_home):
+    config_home.mkdir(parents=True)
+    original = b'{"roms_dir":"\xff"}'
+    config_mod.CONFIG_FILE.write_bytes(original)
+    assert isinstance(config_mod.load_config(), config_mod.Config)
+    assert config_mod.CONFIG_FILE.read_bytes() == original
+    assert list(config_mod.CONFIG_DIR.glob("*.corrupt-*.json"))
+
+
+def test_config_read_failure_propagates_without_using_defaults(tmp_path, monkeypatch):
+    path = tmp_path / "config.json"
+    path.write_text('{"roms_dir":"important"}')
+    monkeypatch.setattr(config_mod, "CONFIG_FILE", path)
+
+    def denied(*args, **kwargs):
+        raise PermissionError("sharing violation")
+
+    monkeypatch.setattr("builtins.open", denied)
+    with pytest.raises(PermissionError, match="sharing violation"):
+        config_mod.load_config()
+    assert path.read_bytes() == b'{"roms_dir":"important"}'

@@ -1,22 +1,12 @@
 """Orphan-media detection: media files whose game is gone."""
 from __future__ import annotations
+from tests.helpers import write_bytes as _write_bytes
 
-import pytest
+from spindoctor import config
 
-import spindoctor.config as config_mod
+
 from spindoctor.config import Config, save_config
 from spindoctor.orphan_media import find_orphan_media
-
-
-@pytest.fixture
-def isolated_config(tmp_path, monkeypatch):
-    monkeypatch.setattr(config_mod, "CONFIG_DIR", tmp_path / "spindoctor_home")
-    monkeypatch.setattr(
-        config_mod, "CONFIG_FILE", tmp_path / "spindoctor_home" / "config.json"
-    )
-    config_mod.reset_override_cache()
-    yield
-    config_mod.reset_override_cache()
 
 
 def _layout(tmp_path, db_text=None, roms=()):
@@ -89,3 +79,17 @@ def test_rom_only_game_is_not_orphan(isolated_config, tmp_path):
     cfg = _cfg(roms_dir, hs)
 
     assert find_orphan_media("nes", cfg).orphans == []
+
+
+def test_orphan_media_keeps_sanitized_names_and_system_assets(isolated_config, tmp_path):
+    from spindoctor import orphan_media
+    hs = tmp_path / "hs"
+    _write_bytes(hs / "Databases" / "PC" / "PC.xml", b'<menu><game name="Game: Test"/></menu>')
+    media = hs / "Media" / "PC"
+    _write_bytes(media / "Images" / "Wheel" / "Game Test.png")
+    _write_bytes(media / "Images" / "Artwork4" / "game test.png")
+    _write_bytes(media / "Sound" / "Wheel Click.mp3")
+    _write_bytes(media / "Themes" / "default.zip")
+    stale = _write_bytes(media / "Themes" / "Removed.zip")
+    report = orphan_media.find_orphan_media("PC", config.Config(hyperspin_dir=str(hs)))
+    assert [o.path for o in report.orphans] == [stale]

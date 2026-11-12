@@ -35,3 +35,11 @@ def test_matching_skips_candidates_that_cannot_beat_best(monkeypatch):
     monkeypatch.setattr(romutils, "SequenceMatcher", CountingMatcher)
     assert romutils.find_best_match("mario", ["maria", "zzzzz", "x"]) == ("maria", 0.8)
     assert scored == ["maria"]
+
+
+def test_fuzzy_match_short_circuits_first_normalized_exact_match(config_home, monkeypatch):
+    from spindoctor import romutils
+    def fail(*args, **kwargs):
+        pytest.fail("an exact match should not need fuzzy scoring")
+    monkeypatch.setattr(romutils, "SequenceMatcher", fail)
+    assert romutils.find_best_match("Mario", ["Mario (USA)", "Mario"]) == ("Mario (USA)", 1.0)

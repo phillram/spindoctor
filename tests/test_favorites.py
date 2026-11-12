@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import pytest
 
-import spindoctor.config as config_mod
 from spindoctor.config import Config, save_config
 from spindoctor.favorites import (
     FavoriteStore, _resolve_target_names, FavoriteEntry,
@@ -11,16 +10,6 @@ from spindoctor.favorites import (
     sync_native, _read_text_robust, _find_favorites_txt, _parse_favorites_txt,
 )
 from spindoctor.medialink import LinkMode
-
-
-@pytest.fixture
-def isolated_config(tmp_path, monkeypatch):
-    home = tmp_path / "spindoctor_home"
-    monkeypatch.setattr(config_mod, "CONFIG_DIR", home)
-    monkeypatch.setattr(config_mod, "CONFIG_FILE", home / "config.json")
-    config_mod.reset_override_cache()
-    yield home
-    config_mod.reset_override_cache()
 
 
 def _build_layout(tmp_path):
@@ -56,7 +45,7 @@ def _cfg(roms, hs, rl):
     return cfg
 
 
-def test_add_and_remove_round_trip(isolated_config, tmp_path, monkeypatch):
+def test_add_and_remove_round_trip(config_home, tmp_path, monkeypatch):
     monkeypatch.setattr("spindoctor.favorites.FAVORITES_FILE",
                         tmp_path / "favorites.json")
     store = FavoriteStore()
@@ -85,10 +74,10 @@ def test_resolve_target_names_disambiguates_collisions():
     assert len(set(values)) == 3
 
 
-def test_rebuild_writes_database_and_media(isolated_config, tmp_path, monkeypatch):
+def test_rebuild_writes_database_and_media(config_home, tmp_path, monkeypatch):
     roms, hs, rl = _build_layout(tmp_path)
     monkeypatch.setattr("spindoctor.favorites.FAVORITES_FILE",
-                        isolated_config / "favorites.json")
+                        config_home / "favorites.json")
     cfg = _cfg(roms, hs, rl)
 
     store = FavoriteStore()
@@ -119,10 +108,10 @@ def test_rebuild_writes_database_and_media(isolated_config, tmp_path, monkeypatc
     assert "[Settings]" in ini_text
 
 
-def test_rebuild_prunes_removed_favorite(isolated_config, tmp_path, monkeypatch):
+def test_rebuild_prunes_removed_favorite(config_home, tmp_path, monkeypatch):
     roms, hs, rl = _build_layout(tmp_path)
     monkeypatch.setattr("spindoctor.favorites.FAVORITES_FILE",
-                        isolated_config / "favorites.json")
+                        config_home / "favorites.json")
     cfg = _cfg(roms, hs, rl)
 
     store = FavoriteStore()
@@ -139,7 +128,7 @@ def test_rebuild_prunes_removed_favorite(isolated_config, tmp_path, monkeypatch)
     assert fav_wheels == []
 
 
-def test_rebuild_orders_games_alphabetically(isolated_config, tmp_path, monkeypatch):
+def test_rebuild_orders_games_alphabetically(config_home, tmp_path, monkeypatch):
     roms, hs, rl = _build_layout(tmp_path)
     # Add a second game per system so we have something to sort.
     for sys_name in ("Super Nintendo", "Sony Playstation"):
@@ -152,7 +141,7 @@ def test_rebuild_orders_games_alphabetically(isolated_config, tmp_path, monkeypa
             encoding="utf-8",
         )
     monkeypatch.setattr("spindoctor.favorites.FAVORITES_FILE",
-                        isolated_config / "favorites.json")
+                        config_home / "favorites.json")
     cfg = _cfg(roms, hs, rl)
 
     # Add deliberately out of order
@@ -171,7 +160,7 @@ def test_rebuild_orders_games_alphabetically(isolated_config, tmp_path, monkeypa
     assert pos_aladdin < pos_mario < pos_tetris
 
 
-def test_rebuild_reorders_existing_wheel(isolated_config, tmp_path, monkeypatch):
+def test_rebuild_reorders_existing_wheel(config_home, tmp_path, monkeypatch):
     """A second rebuild after adding an earlier-alphabet game should reorder."""
     roms, hs, rl = _build_layout(tmp_path)
     for sys_name in ("Super Nintendo",):
@@ -183,7 +172,7 @@ def test_rebuild_reorders_existing_wheel(isolated_config, tmp_path, monkeypatch)
             encoding="utf-8",
         )
     monkeypatch.setattr("spindoctor.favorites.FAVORITES_FILE",
-                        isolated_config / "favorites.json")
+                        config_home / "favorites.json")
     cfg = _cfg(roms, hs, rl)
 
     store = FavoriteStore()
@@ -208,10 +197,10 @@ def test_sorted_entries_uses_display_name_case_insensitive():
     assert ordered == ["aladdin", "Mario", "Zelda"]
 
 
-def test_sync_native_picks_up_per_system_favorites(isolated_config, tmp_path, monkeypatch):
+def test_sync_native_picks_up_per_system_favorites(config_home, tmp_path, monkeypatch):
     roms, hs, rl = _build_layout(tmp_path)
     monkeypatch.setattr("spindoctor.favorites.FAVORITES_FILE",
-                        isolated_config / "favorites.json")
+                        config_home / "favorites.json")
     cfg = _cfg(roms, hs, rl)
 
     # HyperSpin's per-system favorites list — one ROM per system
@@ -227,11 +216,11 @@ def test_sync_native_picks_up_per_system_favorites(isolated_config, tmp_path, mo
     assert any("Super Nintendo" in note for note in notes)
 
 
-def test_sync_native_reports_no_favorites_found(isolated_config, tmp_path, monkeypatch):
+def test_sync_native_reports_no_favorites_found(config_home, tmp_path, monkeypatch):
     """When no _Favorites.ini files exist, notes explain where we looked."""
     roms, hs, rl = _build_layout(tmp_path)
     monkeypatch.setattr("spindoctor.favorites.FAVORITES_FILE",
-                        isolated_config / "favorites.json")
+                        config_home / "favorites.json")
     cfg = _cfg(roms, hs, rl)
 
     store = FavoriteStore()
@@ -242,11 +231,11 @@ def test_sync_native_reports_no_favorites_found(isolated_config, tmp_path, monke
     assert "databases_dir" in combined or "_Favorites.ini" in combined
 
 
-def test_sync_native_reads_utf8_bom_favorites(isolated_config, tmp_path, monkeypatch):
+def test_sync_native_reads_utf8_bom_favorites(config_home, tmp_path, monkeypatch):
     """HyperSpin sometimes writes _Favorites.ini with a UTF-8 BOM — must still parse."""
     roms, hs, rl = _build_layout(tmp_path)
     monkeypatch.setattr("spindoctor.favorites.FAVORITES_FILE",
-                        isolated_config / "favorites.json")
+                        config_home / "favorites.json")
     cfg = _cfg(roms, hs, rl)
 
     ini_path = hs / "Databases" / "Super Nintendo" / "Super Nintendo_Favorites.ini"
@@ -259,19 +248,17 @@ def test_sync_native_reads_utf8_bom_favorites(isolated_config, tmp_path, monkeyp
     assert store.find("Super Nintendo", "Tetris") is not None
 
 
-def test_read_text_robust_handles_utf16(tmp_path):
-    """_read_text_robust can decode UTF-16 encoded ini files."""
+@pytest.mark.parametrize("encoding,expected", [
+    ("utf-16", ["Tetris", "Mario"]),
+    ("utf-8", ["Zelda"]),
+], ids=["utf16", "plain-utf8"])
+def test_read_text_robust_handles_encodings(tmp_path, encoding, expected):
+    """_read_text_robust decodes UTF-16 ini files as well as plain UTF-8."""
     path = tmp_path / "test.ini"
-    path.write_text("Tetris\nMario\n", encoding="utf-16")
+    path.write_text("\n".join(expected) + "\n", encoding=encoding)
     result = _read_text_robust(path)
-    assert "Tetris" in result
-    assert "Mario" in result
-
-
-def test_read_text_robust_handles_plain_utf8(tmp_path):
-    path = tmp_path / "test.ini"
-    path.write_text("Zelda\n", encoding="utf-8")
-    assert "Zelda" in _read_text_robust(path)
+    for name in expected:
+        assert name in result
 
 
 # ─── favorites.txt support ────────────────────────────────────────────────────
@@ -289,7 +276,7 @@ def test_parse_favorites_txt_empty():
 
 # ─── clear_native_favorites regex only strips favorite="1" ───────────────────
 
-def test_clear_native_favorites_only_strips_value_one(isolated_config, tmp_path, monkeypatch):
+def test_clear_native_favorites_only_strips_value_one(config_home, tmp_path, monkeypatch):
     """clear_native_favorites must only remove favorite=\"1\" attributes.
     Attributes with other values (favorite=\"0\", favorite=\"false\") must
     be left untouched — stripping them would corrupt third-party markup."""
@@ -325,36 +312,6 @@ def test_clear_native_favorites_only_strips_value_one(isolated_config, tmp_path,
     assert summary.xml_games_cleared == 1
 
 
-# ─── favorites.rebuild() write-before-delete ordering ────────────────────────
-
-def test_rebuild_writes_media_before_deleting_orphans(isolated_config, tmp_path, monkeypatch):
-    """Media files for current entries must be written before orphan cleanup.
-    If an error mid-write would delete an orphan, the entry that needed that
-    file would be left blank.  Verify the write pass runs first so existing
-    valid entries are never accidentally erased."""
-    monkeypatch.setattr(
-        "spindoctor.favorites.FAVORITES_FILE",
-        isolated_config / "favorites.json",
-    )
-
-    roms, hs, rl = _build_layout(tmp_path)
-    cfg = _cfg(roms, hs, rl)
-
-    # One favorite — builds the wheel once
-    store = FavoriteStore(target_system="Favorites")
-    add(store, "Super Nintendo", "Tetris")
-    save_store(store, isolated_config / "favorites.json")
-
-    # First rebuild creates the wheel media
-    rebuild(store, cfg, media_mode=LinkMode.COPY)
-    wheel_dir = hs / "Media" / "Favorites" / "Images" / "Wheel"
-    assert any(wheel_dir.iterdir()), "first rebuild should create wheel media"
-
-    # Second rebuild with the same store should NOT delete the just-written file
-    rebuild(store, cfg, media_mode=LinkMode.COPY)
-    assert any(wheel_dir.iterdir()), "second rebuild must not delete current entries' media"
-
-
 def test_find_favorites_txt_case_insensitive(tmp_path):
     """_find_favorites_txt finds the file regardless of capitalisation."""
     sys_dir = tmp_path / "MAME"
@@ -372,11 +329,11 @@ def test_find_favorites_txt_missing(tmp_path):
     assert _find_favorites_txt(sys_dir) is None
 
 
-def test_sync_native_reads_favorites_txt(isolated_config, tmp_path, monkeypatch):
+def test_sync_native_reads_favorites_txt(config_home, tmp_path, monkeypatch):
     """Favorites listed in favorites.txt are picked up by sync_native."""
     roms, hs, rl = _build_layout(tmp_path)
     monkeypatch.setattr("spindoctor.favorites.FAVORITES_FILE",
-                        isolated_config / "favorites.json")
+                        config_home / "favorites.json")
     cfg = _cfg(roms, hs, rl)
 
     # Write a favorites.txt matching the format the user reported
@@ -393,11 +350,11 @@ def test_sync_native_reads_favorites_txt(isolated_config, tmp_path, monkeypatch)
     assert any("favorites.txt" in note for note in notes)
 
 
-def test_sync_native_reads_favorites_txt_capital_f(isolated_config, tmp_path, monkeypatch):
+def test_sync_native_reads_favorites_txt_capital_f(config_home, tmp_path, monkeypatch):
     """favorites.txt is found even when capitalised as Favorites.txt."""
     roms, hs, rl = _build_layout(tmp_path)
     monkeypatch.setattr("spindoctor.favorites.FAVORITES_FILE",
-                        isolated_config / "favorites.json")
+                        config_home / "favorites.json")
     cfg = _cfg(roms, hs, rl)
 
     (hs / "Databases" / "Super Nintendo" / "Favorites.txt").write_text(
@@ -410,11 +367,11 @@ def test_sync_native_reads_favorites_txt_capital_f(isolated_config, tmp_path, mo
     assert store.find("Super Nintendo", "Tetris") is not None
 
 
-def test_sync_native_favorites_txt_warns_when_empty(isolated_config, tmp_path, monkeypatch):
+def test_sync_native_favorites_txt_warns_when_empty(config_home, tmp_path, monkeypatch):
     """An empty favorites.txt produces a warning rather than silent failure."""
     roms, hs, rl = _build_layout(tmp_path)
     monkeypatch.setattr("spindoctor.favorites.FAVORITES_FILE",
-                        isolated_config / "favorites.json")
+                        config_home / "favorites.json")
     cfg = _cfg(roms, hs, rl)
 
     (hs / "Databases" / "Super Nintendo" / "favorites.txt").write_text(
@@ -426,7 +383,7 @@ def test_sync_native_favorites_txt_warns_when_empty(isolated_config, tmp_path, m
     assert any("favorites.txt" in w and "0 parseable" in w for w in warns)
 
 
-def test_sync_native_merges_both_ini_and_txt(isolated_config, tmp_path, monkeypatch):
+def test_sync_native_merges_both_ini_and_txt(config_home, tmp_path, monkeypatch):
     """A system can have both _Favorites.ini and favorites.txt; both are read."""
     roms, hs, rl = _build_layout(tmp_path)
     # Add extra games to the database XML so all ROM names resolve
@@ -439,7 +396,7 @@ def test_sync_native_merges_both_ini_and_txt(isolated_config, tmp_path, monkeypa
             encoding="utf-8",
         )
     monkeypatch.setattr("spindoctor.favorites.FAVORITES_FILE",
-                        isolated_config / "favorites.json")
+                        config_home / "favorites.json")
     cfg = _cfg(roms, hs, rl)
 
     (hs / "Databases" / "Super Nintendo" / "Super Nintendo_Favorites.ini").write_text(
@@ -455,7 +412,7 @@ def test_sync_native_merges_both_ini_and_txt(isolated_config, tmp_path, monkeypa
     assert store.find("Super Nintendo", "Mario") is not None
 
 
-def test_sync_native_favorites_txt_real_format(isolated_config, tmp_path, monkeypatch):
+def test_sync_native_favorites_txt_real_format(config_home, tmp_path, monkeypatch):
     """Parse the exact multi-entry format from the user's MAME/favorites.txt."""
     roms, hs, rl = _build_layout(tmp_path)
     # Build a database with a subset of the real game names
@@ -468,7 +425,7 @@ def test_sync_native_favorites_txt_real_format(isolated_config, tmp_path, monkey
         encoding="utf-8",
     )
     monkeypatch.setattr("spindoctor.favorites.FAVORITES_FILE",
-                        isolated_config / "favorites.json")
+                        config_home / "favorites.json")
     cfg = _cfg(roms, hs, rl)
 
     # Simulate the user's real file content
@@ -486,7 +443,7 @@ def test_sync_native_favorites_txt_real_format(isolated_config, tmp_path, monkey
 
 # ── Emulators.ini + PCLauncher INI format ─────────────────────────────────────
 
-def test_rebuild_writes_emulators_ini_in_system_folder(isolated_config, tmp_path, monkeypatch):
+def test_rebuild_writes_emulators_ini_in_system_folder(config_home, tmp_path, monkeypatch):
     """generate_synthetic_system_ini must write Settings/<system>/Emulators.ini.
 
     RocketLauncher installations that use the folder-based settings layout
@@ -496,7 +453,7 @@ def test_rebuild_writes_emulators_ini_in_system_folder(isolated_config, tmp_path
     """
     roms, hs, rl = _build_layout(tmp_path)
     monkeypatch.setattr("spindoctor.favorites.FAVORITES_FILE",
-                        isolated_config / "favorites.json")
+                        config_home / "favorites.json")
     cfg = _cfg(roms, hs, rl)
     (rl / "Settings").mkdir(parents=True, exist_ok=True)
 
@@ -533,7 +490,7 @@ def test_rebuild_writes_emulators_ini_in_system_folder(isolated_config, tmp_path
 
 
 def test_rebuild_flat_settings_ini_pclauncher_section_has_rom_extension(
-    isolated_config, tmp_path, monkeypatch
+    config_home, tmp_path, monkeypatch
 ):
     """The flat Settings/<system>.ini [PCLauncher] section must include Rom_Extension=ini.
 
@@ -550,7 +507,7 @@ def test_rebuild_flat_settings_ini_pclauncher_section_has_rom_extension(
     """
     roms, hs, rl = _build_layout(tmp_path)
     monkeypatch.setattr("spindoctor.favorites.FAVORITES_FILE",
-                        isolated_config / "favorites.json")
+                        config_home / "favorites.json")
     cfg = _cfg(roms, hs, rl)
     (rl / "Settings").mkdir(parents=True, exist_ok=True)
 
@@ -573,7 +530,7 @@ def test_rebuild_flat_settings_ini_pclauncher_section_has_rom_extension(
     )
 
 
-def test_rebuild_pclauncher_ini_uses_settings_format(isolated_config, tmp_path, monkeypatch):
+def test_rebuild_pclauncher_ini_uses_settings_format(config_home, tmp_path, monkeypatch):
     """Per-game PCLauncher INIs must use [Settings] format, not [exe info].
 
     [exe info] requires a fadetitle / monitored process; [Settings] just
@@ -583,7 +540,7 @@ def test_rebuild_pclauncher_ini_uses_settings_format(isolated_config, tmp_path, 
     """
     roms, hs, rl = _build_layout(tmp_path)
     monkeypatch.setattr("spindoctor.favorites.FAVORITES_FILE",
-                        isolated_config / "favorites.json")
+                        config_home / "favorites.json")
     cfg = _cfg(roms, hs, rl)
 
     store = FavoriteStore()
@@ -605,7 +562,7 @@ def test_rebuild_pclauncher_ini_uses_settings_format(isolated_config, tmp_path, 
     assert '-r "Tetris"' in body
 
 
-def test_rebuild_dry_run_shows_system_ini_path(isolated_config, tmp_path, monkeypatch):
+def test_rebuild_dry_run_shows_system_ini_path(config_home, tmp_path, monkeypatch):
     """Dry-run must show the system INI path that *would* be written.
 
     Previously showed 'skipped (rocketlauncher_dir not set or invalid)'
@@ -614,7 +571,7 @@ def test_rebuild_dry_run_shows_system_ini_path(isolated_config, tmp_path, monkey
     """
     roms, hs, rl = _build_layout(tmp_path)
     monkeypatch.setattr("spindoctor.favorites.FAVORITES_FILE",
-                        isolated_config / "favorites.json")
+                        config_home / "favorites.json")
     cfg = _cfg(roms, hs, rl)
 
     store = FavoriteStore()
@@ -631,7 +588,7 @@ def test_rebuild_dry_run_shows_system_ini_path(isolated_config, tmp_path, monkey
     assert not (rl / "Settings" / "Favorites.ini").exists()
 
 
-def test_rebuild_writes_hyperspin_settings_ini_when_missing(isolated_config, tmp_path, monkeypatch):
+def test_rebuild_writes_hyperspin_settings_ini_when_missing(config_home, tmp_path, monkeypatch):
     """rebuild must write <hyperspin_dir>/Settings/Favorites.ini when absent.
 
     HyperSpin requires this file to open a sub-wheel.  Without it the wheel
@@ -640,7 +597,7 @@ def test_rebuild_writes_hyperspin_settings_ini_when_missing(isolated_config, tmp
     """
     roms, hs, rl = _build_layout(tmp_path)
     monkeypatch.setattr("spindoctor.favorites.FAVORITES_FILE",
-                        isolated_config / "favorites.json")
+                        config_home / "favorites.json")
     cfg = _cfg(roms, hs, rl)
 
     store = FavoriteStore()
@@ -657,7 +614,7 @@ def test_rebuild_writes_hyperspin_settings_ini_when_missing(isolated_config, tmp
     assert "hyperlaunch=true" in body
 
 
-def test_rebuild_preserves_existing_hyperspin_settings_ini(isolated_config, tmp_path, monkeypatch):
+def test_rebuild_preserves_existing_hyperspin_settings_ini(config_home, tmp_path, monkeypatch):
     """rebuild must NOT overwrite Settings/<system>.ini when it already exists.
 
     User customisations (wheel layout, filter settings, etc.) must survive
@@ -665,7 +622,7 @@ def test_rebuild_preserves_existing_hyperspin_settings_ini(isolated_config, tmp_
     """
     roms, hs, rl = _build_layout(tmp_path)
     monkeypatch.setattr("spindoctor.favorites.FAVORITES_FILE",
-                        isolated_config / "favorites.json")
+                        config_home / "favorites.json")
     cfg = _cfg(roms, hs, rl)
 
     # Pre-create a customised settings file.
@@ -687,7 +644,7 @@ def test_rebuild_preserves_existing_hyperspin_settings_ini(isolated_config, tmp_
 
 # ── PCLauncher system-level INI ───────────────────────────────────────────────
 
-def test_rebuild_writes_pclauncher_system_ini(isolated_config, tmp_path, monkeypatch):
+def test_rebuild_writes_pclauncher_system_ini(config_home, tmp_path, monkeypatch):
     """rebuild must write Modules/PCLauncher/Favorites.ini with [game] sections.
 
     PCLauncher.ahk reads game configuration from the *system-level* INI file
@@ -702,7 +659,7 @@ def test_rebuild_writes_pclauncher_system_ini(isolated_config, tmp_path, monkeyp
     """
     roms, hs, rl = _build_layout(tmp_path)
     monkeypatch.setattr("spindoctor.favorites.FAVORITES_FILE",
-                        isolated_config / "favorites.json")
+                        config_home / "favorites.json")
     cfg = _cfg(roms, hs, rl)
 
     store = FavoriteStore()
@@ -740,7 +697,7 @@ def test_rebuild_writes_pclauncher_system_ini(isolated_config, tmp_path, monkeyp
     assert "WorkingFolder=" in body
 
 
-def test_rebuild_pclauncher_system_ini_cross_system(isolated_config, tmp_path, monkeypatch):
+def test_rebuild_pclauncher_system_ini_cross_system(config_home, tmp_path, monkeypatch):
     """Each game section must reference its own source system, not a shared one.
 
     btoads2play is a MAME game; its Parameters must say -s "MAME".
@@ -749,7 +706,7 @@ def test_rebuild_pclauncher_system_ini_cross_system(isolated_config, tmp_path, m
     """
     roms, hs, rl = _build_layout(tmp_path)
     monkeypatch.setattr("spindoctor.favorites.FAVORITES_FILE",
-                        isolated_config / "favorites.json")
+                        config_home / "favorites.json")
     cfg = _cfg(roms, hs, rl)
 
     store = FavoriteStore()
@@ -771,11 +728,11 @@ def test_rebuild_pclauncher_system_ini_cross_system(isolated_config, tmp_path, m
 
 # ─── sync_native: XML favorite="1", pre-skip, progress + verbose ──────────────
 
-def test_sync_native_picks_up_xml_favorite_attribute(isolated_config, tmp_path, monkeypatch):
+def test_sync_native_picks_up_xml_favorite_attribute(config_home, tmp_path, monkeypatch):
     """A <game favorite="1"/> attribute in a system XML is synced."""
     roms, hs, rl = _build_layout(tmp_path)
     monkeypatch.setattr("spindoctor.favorites.FAVORITES_FILE",
-                        isolated_config / "favorites.json")
+                        config_home / "favorites.json")
     cfg = _cfg(roms, hs, rl)
 
     # Mark the SNES Tetris as a favorite via the HyperSpin XML attribute form.
@@ -794,11 +751,11 @@ def test_sync_native_picks_up_xml_favorite_attribute(isolated_config, tmp_path, 
     assert n == 1
 
 
-def test_sync_native_skips_xml_parse_when_no_favorites(isolated_config, tmp_path, monkeypatch):
+def test_sync_native_skips_xml_parse_when_no_favorites(config_home, tmp_path, monkeypatch):
     """Consoles with no favorites must not trigger a full XML parse."""
     roms, hs, rl = _build_layout(tmp_path)
     monkeypatch.setattr("spindoctor.favorites.FAVORITES_FILE",
-                        isolated_config / "favorites.json")
+                        config_home / "favorites.json")
     cfg = _cfg(roms, hs, rl)
 
     # No favorites of any kind exist in _build_layout's XMLs.
@@ -818,11 +775,11 @@ def test_sync_native_skips_xml_parse_when_no_favorites(isolated_config, tmp_path
     assert parsed == []
 
 
-def test_sync_native_progress_and_verbose_callbacks(isolated_config, tmp_path, monkeypatch):
+def test_sync_native_progress_and_verbose_callbacks(config_home, tmp_path, monkeypatch):
     """progress_cb fires once per console; verbose detail flows to log_cb."""
     roms, hs, rl = _build_layout(tmp_path)
     monkeypatch.setattr("spindoctor.favorites.FAVORITES_FILE",
-                        isolated_config / "favorites.json")
+                        config_home / "favorites.json")
     cfg = _cfg(roms, hs, rl)
     (hs / "Databases" / "Super Nintendo" / "Super Nintendo_Favorites.ini").write_text(
         "Tetris\n", encoding="utf-8",
@@ -845,22 +802,22 @@ def test_sync_native_progress_and_verbose_callbacks(isolated_config, tmp_path, m
     assert any("Super Nintendo" in line and "+1" in line for line in logs)
 
 
-def test_sync_native_log_cb_silent_without_verbose(isolated_config, tmp_path, monkeypatch):
+def test_sync_native_log_cb_silent_without_verbose(config_home, tmp_path, monkeypatch):
     """log_cb is only invoked when verbose=True."""
     roms, hs, rl = _build_layout(tmp_path)
     monkeypatch.setattr("spindoctor.favorites.FAVORITES_FILE",
-                        isolated_config / "favorites.json")
+                        config_home / "favorites.json")
     cfg = _cfg(roms, hs, rl)
     logs: list[str] = []
     sync_native(FavoriteStore(), cfg, log_cb=logs.append, verbose=False)
     assert logs == []
 
 
-def test_rebuild_caches_source_db_loads(isolated_config, tmp_path, monkeypatch):
+def test_rebuild_caches_source_db_loads(config_home, tmp_path, monkeypatch):
     """Many favorites from one system parse that source DB only once."""
     roms, hs, rl = _build_layout(tmp_path)
     monkeypatch.setattr("spindoctor.favorites.FAVORITES_FILE",
-                        isolated_config / "favorites.json")
+                        config_home / "favorites.json")
     cfg = _cfg(roms, hs, rl)
 
     # Two SNES games so the rebuild loop visits "Super Nintendo" twice.

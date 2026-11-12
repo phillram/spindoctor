@@ -12,9 +12,9 @@ import os
 from pathlib import Path
 
 import pytest
+from click import unstyle
 from click.testing import CliRunner
 
-import spindoctor.config as config_mod
 from spindoctor import health, lightgun
 from spindoctor.cli import cli
 from spindoctor.config import Config, save_config
@@ -37,16 +37,6 @@ def _no_system_scan_roots(monkeypatch):
     for var in ("PROGRAMFILES", "PROGRAMFILES(X86)", "LOCALAPPDATA",
                 "APPDATA", "PROGRAMDATA"):
         monkeypatch.delenv(var, raising=False)
-
-
-@pytest.fixture
-def isolated_config(tmp_path, monkeypatch):
-    home = tmp_path / "spindoctor_home"
-    monkeypatch.setattr(config_mod, "CONFIG_DIR", home)
-    monkeypatch.setattr(config_mod, "CONFIG_FILE", home / "config.json")
-    config_mod.reset_override_cache()
-    yield home
-    config_mod.reset_override_cache()
 
 
 def _write(p: Path, body: str = "", encoding: str = "utf-8") -> Path:
@@ -248,17 +238,17 @@ def test_detect_lists_systems_wired_via_user_functions(tmp_path):
     assert wiring["American Laser Games"] == f"User Functions: {UF}\\American Laser Games.ahk"
 
 
-def test_detect_cli_names_the_user_functions_file(tmp_path, isolated_config):
+def test_detect_cli_names_the_user_functions_file(tmp_path, config_home):
     cfg, uf = _cabinet(tmp_path)
     _write(uf / "Gun Games.ahk", _ahk(SINDEN_RUN))
     save_config(cfg)
     result = CliRunner().invoke(cli, ["lightgun", "detect"])
     assert result.exit_code == 0, result.output
-    out = " ".join(result.output.split())
+    out = " ".join(unstyle(result.output).split())
     assert f"Gun Games (User Functions: {UF}\\Gun Games.ahk)" in out
 
 
-def test_audit_cli_reports_user_functions_wiring(tmp_path, isolated_config):
+def test_audit_cli_reports_user_functions_wiring(tmp_path, config_home):
     cfg, uf = _cabinet(tmp_path)
     _write(uf / "Emulators" / "MAME (Gun Games).ahk", _ahk(SINDEN_RUN))
     cfg.set_lightgun("Gun Games", True)
@@ -417,7 +407,7 @@ def test_configure_has_no_warning_without_user_functions(tmp_path):
     assert plan.warnings == []
 
 
-def test_configure_cli_prints_the_warning_and_stays_a_dry_run(tmp_path, isolated_config):
+def test_configure_cli_prints_the_warning_and_stays_a_dry_run(tmp_path, config_home):
     cfg, uf = _cabinet(tmp_path)
     _write(uf / "Gun Games.ahk", _ahk(SINDEN_RUN))
     _write(Path(cfg.rocketlauncher_dir) / "Modules" / "DemulShooter" / "DemulShooter.exe")
@@ -427,7 +417,7 @@ def test_configure_cli_prints_the_warning_and_stays_a_dry_run(tmp_path, isolated
     result = CliRunner().invoke(cli, ["lightgun", "configure", "--system", "Gun Games",
                                       "--target", "mame"])
     assert result.exit_code == 0, result.output
-    out = " ".join(result.output.split())
+    out = " ".join(unstyle(result.output).split())
     assert "Warning:" in out
     assert f"User Functions ({UF}\\Gun Games.ahk)" in out
     assert ini.read_text(encoding="utf-8") == before
@@ -502,7 +492,7 @@ def test_system_file_covers_unwired_emulator_overrides(tmp_path):
     assert _node(health.check_lightguns(cfg), "Gun Games").status == health.Status.OK
 
 
-def test_audit_cli_labels_emulator_only_coverage_partial(tmp_path, isolated_config):
+def test_audit_cli_labels_emulator_only_coverage_partial(tmp_path, config_home):
     cfg, uf = _cabinet(tmp_path, games_ini="[Time Crisis]\nEmulator=PCSX2\n")
     _write(uf / "Emulators" / "PCSX2.ahk", _ahk(SINDEN_RUN))
     cfg.set_lightgun("Gun Games", True)

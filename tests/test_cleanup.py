@@ -1,5 +1,9 @@
 """Cache + manifest inventory and removal."""
 from __future__ import annotations
+from tests.helpers import write_bytes as _write_bytes
+
+from spindoctor import cleanup
+from spindoctor import config
 
 import json
 import time
@@ -10,7 +14,7 @@ import pytest
 import spindoctor.cleanup as cleanup_mod
 import spindoctor.config as config_mod
 from spindoctor.cleanup import (
-    filter_files, format_size, FileEntry, prune_empty_dirs, remove, scan,
+    filter_files, FileEntry, prune_empty_dirs, remove, scan,
 )
 from spindoctor.config import Config
 
@@ -41,6 +45,9 @@ def test_scan_empty_layout_returns_zero_counts(isolated_home, tmp_path):
     assert "match-cache" in reports
     assert "metadata-cache" in reports
     assert "db-backups" in reports
+    # partial-downloads must also be present and zero when hyperspin_dir is unset.
+    assert "partial-downloads" in reports
+    assert reports["partial-downloads"].count == 0
 
 
 def test_scan_finds_match_and_metadata_caches(isolated_home, tmp_path):
@@ -115,13 +122,6 @@ def test_scan_finds_partial_download_sidecars(isolated_home, tmp_path):
     assert names == {"1942.png.part", "Super Mario World.mp4.part"}
 
 
-def test_partial_downloads_returns_zero_when_hyperspin_unset(isolated_home):
-    cfg = Config()
-    reports = scan(cfg)
-    assert "partial-downloads" in reports
-    assert reports["partial-downloads"].count == 0
-
-
 def test_filter_files_older_than(isolated_home, tmp_path):
     now = 1_700_000_000.0
     old = FileEntry(tmp_path / "old.json", 100, now - 40 * 86400)
@@ -183,16 +183,33 @@ def test_prune_empty_dirs_leaves_non_empty(isolated_home, tmp_path):
     assert keep.exists()
 
 
-def test_format_size_units():
-    assert format_size(0) == "0 B"
-    assert format_size(512) == "512 B"
-    assert format_size(2048).startswith("2.0 KB")
-    assert format_size(5 * 1024 * 1024).endswith(" MB")
-
-
 def test_scan_filters_by_keys(isolated_home):
     _touch(isolated_home / "match_cache" / "MAME.json", "{}")
     _touch(isolated_home / "metadata_cache" / "x.json", "{}")
     cfg = Config()
     reports = scan(cfg, keys=["match-cache"])
     assert list(reports.keys()) == ["match-cache"]
+
+
+def test_cleanup_does_not_mark_misplaced_undo_safe(isolated_home):
+    assert not cleanup.scan(config.Config(), ["misplaced-manifests"])["misplaced-manifests"].safe
+
+
+def test_filtered_cleanup_does_not_scan_other_categories(isolated_home, monkeypatch):
+    def fail(*args, **kwargs):
+        pytest.fail("unselected cache category was scanned")
+    monkeypatch.setattr(cleanup, "_scan_glob", fail)
+    assert cleanup.scan(config.Config(), []) == {}
+
+
+def test_cleanup_includes_partial_identity_sidecars(isolated_home, tmp_path):
+    hs = tmp_path / "hs"
+    folder = hs / "Media" / "PC" / "Images" / "Wheel"
+    part = _write_bytes(folder / "game.png.part")
+    identity = _write_bytes(folder / "game.png.part.json", b"{}")
+    orphan_identity = _write_bytes(folder / "other.png.part.json", b"{}")
+    _write_bytes(folder / "game.png.part.bak")
+    reports = cleanup.scan(config.Config(hyperspin_dir=str(hs)), ["partial-downloads"])
+    assert {entry.path for entry in reports["partial-downloads"].files} == {
+        part, identity, orphan_identity,
+    }

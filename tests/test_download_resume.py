@@ -497,27 +497,47 @@ class _FakeCompletedProcess:
         self.stdout = stdout
 
 
+def _fake_ffmpeg_output(path: Path, size: int) -> None:
+    """Create a *size*-byte file without writing the bytes.
+
+    The HLS path only inspects ``stat().st_size``; extending with truncate()
+    keeps realistic trailer sizes while avoiding ~50 MB of disk I/O per test.
+    """
+    with open(path, "wb") as fh:
+        fh.truncate(size)
+
+
+class _OfflineSession:
+    """Session whose GETs fail, so _pick_hls_variant falls back to the master URL."""
+
+    def get(self, url, **_kwargs):
+        import requests
+        raise requests.ConnectionError(f"offline test session: {url}")
+
+
 def _hls_downloader(tmp_path: Path) -> "MediaDownloader":
     cfg = Config()
     cfg.hyperspin_dir = str(tmp_path)
     cfg.ffmpeg_path = ""
-    return MediaDownloader(cfg)
+    dl = MediaDownloader(cfg)
+    dl._session = _OfflineSession()
+    return dl
 
 
 def test_download_hls_happy_path(tmp_path, monkeypatch):
-    """ffmpeg exits 0 and writes a non-empty tmp file → renamed to dest, success."""
+    """ffmpeg exits 0 and writes a full-length, non-empty tmp file → renamed to
+    dest: success with no warning, size/duration recorded on the result, and no
+    lingering ._hlstmp.mp4 temp file."""
     dl = _hls_downloader(tmp_path)
     dest = dl.media_path("PC Games", "Hades", "video")
 
-    monkeypatch.setattr("spindoctor.media._find_ffmpeg", lambda _: ("/usr/bin/ffmpeg", None))
-
-    captured: dict = {}
+    monkeypatch.setattr("spindoctor.media._find_ffmpeg",
+                        lambda _: ("/usr/bin/ffmpeg", "/usr/bin/ffprobe"))
 
     def fake_run(cmd, capture_output, timeout):
-        captured["cmd"] = cmd
         tmp = Path(cmd[-1])
         tmp.parent.mkdir(parents=True, exist_ok=True)
-        tmp.write_bytes(b"\x00" * 50_000_000)  # 50 MB — realistic full trailer
+        _fake_ffmpeg_output(tmp, 50_000_000)  # 50 MB — realistic full trailer
         return _FakeCompletedProcess(0)
 
     monkeypatch.setattr("spindoctor.media.subprocess.run", fake_run)
@@ -530,9 +550,15 @@ def test_download_hls_happy_path(tmp_path, monkeypatch):
     r = dl.download_to_path(dest, "https://cdn/master.m3u8", label="Hades", media_type="video")
 
     assert r.success
-    assert not r.warning
+    assert not r.warning, f"no warning expected for full-length trailer, got: {r.warning}"
     assert r.path is not None and r.path.exists()
     assert r.path.suffix == ".mp4"
+    # Size and probed duration are recorded on the result.
+    assert r.file_size_bytes == 50_000_000
+    assert r.duration_secs == 79.9
+    # The ._hlstmp.mp4 temp file must not linger after a successful download.
+    tmp_files = list(dest.parent.glob("*._hlstmp.mp4"))
+    assert not tmp_files, f"tmp file lingered after success: {tmp_files}"
 
 
 def test_download_hls_uses_correct_ffmpeg_args(tmp_path, monkeypatch):
@@ -552,7 +578,7 @@ def test_download_hls_uses_correct_ffmpeg_args(tmp_path, monkeypatch):
         captured["cmd"] = cmd
         tmp = Path(cmd[-1])
         tmp.parent.mkdir(parents=True, exist_ok=True)
-        tmp.write_bytes(b"\x00" * 50_000_000)
+        _fake_ffmpeg_output(tmp, 50_000_000)
         return _FakeCompletedProcess(0)
 
     monkeypatch.setattr("spindoctor.media.subprocess.run", fake_run)
@@ -664,7 +690,7 @@ def test_download_hls_passes_audio_url_to_ffmpeg(tmp_path, monkeypatch):
         captured["cmd"] = cmd
         tmp = Path(cmd[-1])
         tmp.parent.mkdir(parents=True, exist_ok=True)
-        tmp.write_bytes(b"\x00" * 50_000_000)
+        _fake_ffmpeg_output(tmp, 50_000_000)
         return _FakeCompletedProcess(0)
 
     monkeypatch.setattr("spindoctor.media.subprocess.run", fake_run)
@@ -709,7 +735,7 @@ def test_download_hls_no_audio_url_uses_single_input(tmp_path, monkeypatch):
         captured["cmd"] = cmd
         tmp = Path(cmd[-1])
         tmp.parent.mkdir(parents=True, exist_ok=True)
-        tmp.write_bytes(b"\x00" * 50_000_000)
+        _fake_ffmpeg_output(tmp, 50_000_000)
         return _FakeCompletedProcess(0)
 
     monkeypatch.setattr("spindoctor.media.subprocess.run", fake_run)
@@ -736,7 +762,7 @@ def test_download_hls_small_output_sets_warning(tmp_path, monkeypatch):
     def fake_run(cmd, capture_output, timeout):
         tmp = Path(cmd[-1])
         tmp.parent.mkdir(parents=True, exist_ok=True)
-        tmp.write_bytes(b"\x00" * 2_000_000)  # 2 MB — matches real truncated-trailer size
+        _fake_ffmpeg_output(tmp, 2_000_000)  # 2 MB — matches real truncated-trailer size
         return _FakeCompletedProcess(0)
 
     monkeypatch.setattr("spindoctor.media.subprocess.run", fake_run)
@@ -761,7 +787,7 @@ def test_download_hls_short_duration_sets_warning(tmp_path, monkeypatch):
         tmp = Path(cmd[-1])
         tmp.parent.mkdir(parents=True, exist_ok=True)
         # Large file (>5 MB) so only the duration check triggers the warning.
-        tmp.write_bytes(b"\x00" * 10_000_000)
+        _fake_ffmpeg_output(tmp, 10_000_000)
         return _FakeCompletedProcess(0)
 
     monkeypatch.setattr("spindoctor.media.subprocess.run", fake_run)
@@ -774,30 +800,6 @@ def test_download_hls_short_duration_sets_warning(tmp_path, monkeypatch):
     assert r.success
     assert r.warning, "warning must be set when ffprobe reports < 30 s duration"
     assert "truncated" in r.warning.lower()
-
-
-def test_download_hls_full_length_no_warning(tmp_path, monkeypatch):
-    """A large file (≥5 MB) with ≥30 s duration must succeed with no warning."""
-    dl = _hls_downloader(tmp_path)
-    dest = dl.media_path("PC Games", "Hades", "video")
-
-    monkeypatch.setattr("spindoctor.media._find_ffmpeg",
-                        lambda _: ("/usr/bin/ffmpeg", "/usr/bin/ffprobe"))
-
-    def fake_run(cmd, capture_output, timeout):
-        tmp = Path(cmd[-1])
-        tmp.parent.mkdir(parents=True, exist_ok=True)
-        tmp.write_bytes(b"\x00" * 50_000_000)  # 50 MB — realistic full trailer
-        return _FakeCompletedProcess(0)
-
-    monkeypatch.setattr("spindoctor.media.subprocess.run", fake_run)
-    monkeypatch.setattr("spindoctor.media._probe_hls_duration", lambda path, fp: 79.9)
-
-    r = dl.download_to_path(dest, "https://cdn/master.m3u8", label="Hades", media_type="video",
-                            overwrite=True)
-
-    assert r.success
-    assert not r.warning, f"no warning expected for full-length trailer, got: {r.warning}"
 
 
 def test_download_hls_no_ffmpeg_returns_error(tmp_path, monkeypatch):
@@ -902,29 +904,6 @@ def test_download_hls_skips_when_dest_exists_no_overwrite(tmp_path, monkeypatch)
     assert dest.read_bytes() == b"existing-video"
 
 
-def test_download_hls_tmp_cleaned_up_on_success(tmp_path, monkeypatch):
-    """After a successful download the ._hlstmp.mp4 temp file must not linger."""
-    dl = _hls_downloader(tmp_path)
-    dest = dl.media_path("PC Games", "Hades", "video")
-
-    monkeypatch.setattr("spindoctor.media._find_ffmpeg", lambda _: ("/usr/bin/ffmpeg", None))
-
-    def fake_run(cmd, capture_output, timeout):
-        tmp = Path(cmd[-1])
-        tmp.parent.mkdir(parents=True, exist_ok=True)
-        tmp.write_bytes(b"\x00" * 50_000_000)
-        return _FakeCompletedProcess(0)
-
-    monkeypatch.setattr("spindoctor.media.subprocess.run", fake_run)
-    monkeypatch.setattr("spindoctor.media._probe_hls_duration", lambda path, fp: 79.9)
-
-    r = dl.download_to_path(dest, "https://cdn/master.m3u8", label="Hades", media_type="video")
-
-    assert r.success
-    tmp_files = list(dest.parent.glob("*._hlstmp.mp4"))
-    assert not tmp_files, f"tmp file lingered after success: {tmp_files}"
-
-
 def test_download_hls_audio_fix_is_applied(tmp_path, monkeypatch):
     """_maybe_fix_video_audio must be called after a successful HLS download so that
     non-AAC audio streams are re-encoded in a separate pass (the in-mux -c:a aac approach
@@ -937,7 +916,7 @@ def test_download_hls_audio_fix_is_applied(tmp_path, monkeypatch):
     def fake_run(cmd, capture_output, timeout):
         tmp = Path(cmd[-1])
         tmp.parent.mkdir(parents=True, exist_ok=True)
-        tmp.write_bytes(b"\x00" * 50_000_000)
+        _fake_ffmpeg_output(tmp, 50_000_000)
         return _FakeCompletedProcess(0)
 
     monkeypatch.setattr("spindoctor.media.subprocess.run", fake_run)
@@ -970,7 +949,7 @@ def test_download_hls_audio_warn_surfaces_in_result(tmp_path, monkeypatch):
     def fake_run(cmd, capture_output, timeout):
         tmp = Path(cmd[-1])
         tmp.parent.mkdir(parents=True, exist_ok=True)
-        tmp.write_bytes(b"\x00" * 50_000_000)
+        _fake_ffmpeg_output(tmp, 50_000_000)
         return _FakeCompletedProcess(0)
 
     monkeypatch.setattr("spindoctor.media.subprocess.run", fake_run)
@@ -1010,7 +989,7 @@ def test_download_hls_best_quality_uses_explicit_variant(tmp_path, monkeypatch):
     def fake_run(cmd, capture_output, timeout):
         tmp = Path(cmd[-1])
         tmp.parent.mkdir(parents=True, exist_ok=True)
-        tmp.write_bytes(b"\x00" * 50_000_000)
+        _fake_ffmpeg_output(tmp, 50_000_000)
         return _FakeCompletedProcess(0)
 
     monkeypatch.setattr("spindoctor.media.subprocess.run", fake_run)
@@ -1154,7 +1133,7 @@ def test_download_hls_audio_pre_download_used_as_ffmpeg_input(tmp_path, monkeypa
         captured["cmd"] = cmd
         out = Path(cmd[-1])
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_bytes(b"\x00" * 50_000_000)
+        _fake_ffmpeg_output(out, 50_000_000)
         return _FakeCompletedProcess(0)
 
     monkeypatch.setattr("spindoctor.media.subprocess.run", fake_run)
