@@ -1790,6 +1790,254 @@ def check_game_name_spaces(config: Config) -> Check:
     return parent
 
 
+# Wheel art HyperSpin accepts, looked up under the database name as written.
+_HS_WHEEL_ART_EXTS = (".png", ".swf")
+# Characters Windows refuses in a file name: no art can be named after them.
+_NOT_IN_FILE_NAMES = frozenset('\\/:*?"<>|')
+# SpinDoctor's ranked wheels (the recent.py / playtime.py defaults) list games
+# by date or by plays, not A-Z, so jumping a letter means nothing there.
+_RANKED_WHEELS = frozenset({"recently played", "most played"})
+# Game names, and first characters, listed per wheel before "and N more".
+_ART_NAMES_SHOWN = 5
+_LETTERS_SHOWN = 12
+
+
+def _file_stems(folder: Path, exts: tuple[str, ...]) -> Optional[set[str]]:
+    """Lower-cased stems of the files in *folder* ending in one of *exts*
+    (lower case, dot included; ``..png`` is the stem ``.``); None when the
+    folder is missing or can't be listed."""
+    stems: set[str] = set()
+    try:
+        with os.scandir(folder) as it:
+            for entry in it:
+                low = entry.name.lower()
+                ext = next((e for e in exts if low.endswith(e)), None)
+                if ext and len(low) > len(ext) and entry.is_file():
+                    stems.add(low[:-len(ext)])
+    except OSError:
+        return None
+    return stems
+
+
+@dataclass
+class _HsWheelView:
+    """What one visible wheel lists, for :func:`check_wheel_art` and
+    :func:`check_letter_art`."""
+    system: str
+    ini: Path
+    wheels_only: bool
+    parents_only: bool
+    # (name as written, description) of each game HyperSpin can list before
+    # the wheels_only filter: enabled, and parents only with parents_only=true.
+    listed: list[tuple[str, str]]
+    no_art: set[str]  # names as written, from *listed*, with no wheel art
+
+    def shown(self) -> list[tuple[str, str]]:
+        """The games HyperSpin puts on the wheel."""
+        if not self.wheels_only:
+            return self.listed
+        return [g for g in self.listed if g[0] not in self.no_art]
+
+
+def _hs_listed_games(system: str, databases_dir: Path, parents_only: bool) -> list[tuple[str, str]]:
+    """``(name as written, description)`` per database game HyperSpin lists
+    before its art filters: not ``<enabled>No</enabled>``, and with
+    *parents_only* not a clone (a ``<cloneof>`` naming another game)."""
+    try:
+        games = load_database(system, databases_dir).games()
+    except Exception:  # noqa: BLE001 — DB integrity is check_databases' job
+        return []
+    raw = _raw_game_names(system, databases_dir) if games else {}
+    listed: list[tuple[str, str]] = []
+    for name, game in games.items():
+        if game.enabled == "No":
+            continue
+        clone = (game.cloneof or "").strip()
+        if parents_only and clone and clone.lower() != name.lower():
+            continue
+        listed.append((raw.get(name, name), (game.description or "").strip() or name))
+    return listed
+
+
+def _hs_wheel_views(config: Config) -> Optional[list[_HsWheelView]]:
+    """One view per Main Menu wheel switched on, the Main Menu itself first;
+    None when there's no HyperSpin folder or Main Menu."""
+    if not config.hyperspin_dir or not Path(config.hyperspin_dir).is_dir():
+        return None
+    hs_dir = Path(config.hyperspin_dir)
+    mm_path = hs_dir / "Databases" / "Main Menu" / "Main Menu.xml"
+    wheels = _main_menu_wheels(mm_path)
+    if not wheels:
+        return None
+    hidden = _hidden_main_menu_wheels(mm_path)
+    on = [w for w in wheels if w not in hidden]
+    views: list[_HsWheelView] = []
+    for system in ["Main Menu"] + on:
+        ini = hs_dir / "Settings" / f"{system}.ini"
+        filters = _read_rl_ini(ini).get("filters", {})
+        wheels_only = filters.get("wheels_only", "").strip().lower() == "true"
+        parents_only = filters.get("parents_only", "").strip().lower() == "true"
+        if system == "Main Menu":
+            listed = [(w, w) for w in on]
+        else:
+            listed = _hs_listed_games(system, config.databases_dir, parents_only)
+        art = _file_stems(config.media_dir / system / "Images" / "Wheel", _HS_WHEEL_ART_EXTS) or set()
+        no_art = {name for name, _d in listed
+                  if name.lower() not in art or not _NOT_IN_FILE_NAMES.isdisjoint(name)}
+        views.append(_HsWheelView(system, ini, wheels_only, parents_only, listed, no_art))
+    return views
+
+
+def _wheel_art_node(view: _HsWheelView, config: Config) -> Check:
+    """One wheel's node for :func:`check_wheel_art`."""
+    missing = [name for name, _d in view.listed if name in view.no_art]
+    k, n = len(missing), len(view.listed)
+    of = f"{n:,} {'parent ' if view.parents_only else ''}game{'s' if n != 1 else ''}"
+    names = _some([f'"{m}"' for m in missing], _ART_NAMES_SHOWN)
+    folder = config.media_dir / view.system / "Images" / "Wheel"
+    add = f"Add wheel art to {folder} as <name>.png"
+    if view.system != "Main Menu":
+        add += f' (spindoctor fetch-media --system "{view.system}" --types wheel --apply)'
+    node = Check(name=view.system, status=Status.INFO)
+    if not view.wheels_only:
+        node.detail = (f"{k:,} of {of} {'has' if k == 1 else 'have'} no wheel art, "
+                       f"so HyperSpin shows {'its' if k == 1 else 'their'} name as plain text: {names}")
+        node.fix = add
+        return node
+    if k == n:
+        node.status = Status.WARN
+        node.detail = (f"wheels_only=true, but none of its {of} has wheel art, "
+                       "so HyperSpin lists no games")
+    else:
+        node.detail = (f"wheels_only=true hides {k:,} of {of} from the wheel, "
+                       f"as {'it has' if k == 1 else 'they have'} no wheel art: {names}")
+    node.fix = f"{add}, or set wheels_only=false under [filters] in {view.ini} to list them as text"
+    return node
+
+
+def check_wheel_art(config: Config) -> Check:
+    """Games with no wheel art: shown as plain text, or hidden by wheels_only.
+
+    HyperSpin shows each game by its wheel art,
+    ``Media\\<System>\\Images\\Wheel\\<name>.png`` (or ``.swf``) under the
+    database name as written.  A game without it shows its name as plain
+    text, unless the wheel's ``Settings\\<System>.ini`` has ``[filters]
+    wheels_only=true``: then HyperSpin leaves the game off the wheel, so a game
+    added to the database can't be seen or picked until it gets art, while
+    every ROM check passes.  Games ``parents_only=true`` hides anyway (clones)
+    aren't counted, nor are ``<enabled>No</enabled>`` games.  The Main Menu is
+    checked too: its games are the systems, with art under
+    ``Media\\Main Menu\\Images\\Wheel``.
+
+    One INFO row per wheel with games lacking art, saying how they show and
+    naming the first five; a WARN when wheels_only=true hides every game, as
+    the wheel then opens empty.  Wheels switched off on the Main Menu are
+    skipped.  Diagnosis only.
+    """
+    name = "Wheel art"
+    views = _hs_wheel_views(config)
+    if views is None:
+        return Check(name=name, status=Status.INFO,
+                     detail="hyperspin_dir or its Main Menu not found; skipping")
+    parent = Check(name=name, status=Status.OK)
+    hidden = [0, 0]  # games, wheels
+    text = [0, 0]
+    for view in views:
+        if not view.no_art:
+            continue
+        parent.children.append(_wheel_art_node(view, config))
+        tally = hidden if view.wheels_only else text
+        tally[0] += len(view.no_art)
+        tally[1] += 1
+
+    def count(games: int, wheels: int) -> str:
+        return f"{games:,} game{'s' if games != 1 else ''} on {wheels} wheel{'s' if wheels != 1 else ''}"
+
+    parts = []
+    if hidden[1]:
+        parts.append(f"wheels_only=true hides {count(*hidden)} (no wheel art)")
+    if text[1]:
+        parts.append(f"{count(*text)} show as plain text (no wheel art)")
+    wheels = len(views) - 1
+    parent.detail = "; ".join(parts) or (
+        f"every game on the Main Menu and its {wheels} wheel{'s' if wheels != 1 else ''} has wheel art")
+    parent.status = _worst(c.status for c in parent.children)
+    return parent
+
+
+def check_letter_art(config: Config) -> Check:
+    """First characters with no letter art for HyperSpin's letter jump.
+
+    Jumping to the next letter (HyperSpin's skip keys) shows
+    ``Media\\<System>\\Images\\Letters\\<char>.png`` for the first character
+    of the game's description.  A wheel with no ``Letters`` folder, or one
+    with no ``.png`` in it, has no letter to show for any game; a missing
+    picture for one character (``$``, ``.``, a digit) shows nothing for those
+    games only.  Only games on the wheel count: clones are left out with
+    ``parents_only=true``, and games without wheel art with
+    ``wheels_only=true``.  Characters no file can be named after (``"``,
+    ``?``, ...) are skipped.
+
+    Per visible Main Menu wheel: a WARN when the folder is missing or empty,
+    an INFO listing the characters with no picture otherwise.  The Main Menu
+    (systems in your own order) and SpinDoctor's ranked Recently Played and
+    Most Played wheels (by date and by plays, not A-Z) are skipped, as are
+    wheels switched off on the Main Menu.  Diagnosis only.
+    """
+    name = "Letter art"
+    views = _hs_wheel_views(config)
+    if views is None:
+        return Check(name=name, status=Status.INFO,
+                     detail="hyperspin_dir or its Main Menu not found; skipping")
+    parent = Check(name=name, status=Status.OK)
+    checked = 0
+    for view in views:
+        if view.system == "Main Menu" or view.system.lower() in _RANKED_WHEELS:
+            continue
+        initials = sorted({d[:1].lower() for _n, d in view.shown()
+                           if d and d[:1].isprintable() and not d[:1].isspace()
+                           and d[:1] not in _NOT_IN_FILE_NAMES})
+        if not initials:
+            continue
+        checked += 1
+        folder = config.media_dir / view.system / "Images" / "Letters"
+        letters = _file_stems(folder, (".png",))
+        n = len(initials)
+        chars = f"{n} first character{'s' if n != 1 else ''}"
+        if not letters:
+            why = "no Letters folder" if letters is None else "no .png letters in its Letters folder"
+            listed = _some(['"' + c + '"' for c in initials], _LETTERS_SHOWN)
+            parent.children.append(Check(
+                name=view.system, status=Status.WARN,
+                detail=(f"{why}, so HyperSpin has no letter to show when you jump to the "
+                        f"next letter ({chars}: {listed})"),
+                fix=(f"Copy a letter set (a.png to z.png, 0.png to 9.png) into {folder}; "
+                     "another wheel's Images\\Letters set works"),
+            ))
+            continue
+        missing = [c for c in initials if c not in letters]
+        if missing:
+            listed = _some(['"' + c + '"' for c in missing], _LETTERS_SHOWN)
+            files = _some(['"' + c + '.png"' for c in missing], _LETTERS_SHOWN)
+            parent.children.append(Check(
+                name=view.system, status=Status.INFO,
+                detail=f"no letter art for {len(missing)} of {chars}: {listed}",
+                fix=f"Add {files} to {folder}",
+            ))
+
+    empty = sum(1 for c in parent.children if c.status == Status.WARN)
+    some = len(parent.children) - empty
+    parts = []
+    if empty:
+        parts.append(f"{empty} wheel{'s have' if empty != 1 else ' has'} no letter art at all")
+    if some:
+        parts.append(f"{some} wheel{'s miss' if some != 1 else ' misses'} letters for some first characters")
+    parent.detail = "; ".join(parts) or (
+        f"every first character on {checked} wheel{'s' if checked != 1 else ''} has letter art")
+    parent.status = _worst(c.status for c in parent.children)
+    return parent
+
+
 def check_lightguns(config: Config) -> Check:
     """Verify DemulShooter wiring for every system marked ``lightgun: true``.
 
@@ -3160,6 +3408,8 @@ def run_health_checks(config: Config, fix: bool = False) -> HealthReport:
     _safe("ROM paths", lambda: check_rom_paths(config))
     _safe("HyperSpin ROMs only", lambda: check_hyperspin_roms_only(config))
     _safe("Spaces in game names", lambda: check_game_name_spaces(config))
+    _safe("Wheel art", lambda: check_wheel_art(config))
+    _safe("Letter art", lambda: check_letter_art(config))
     _safe("Match cache", lambda: check_match_cache(config, fix, report.fixes_applied))
     _safe("Global Emulators.ini", lambda: check_global_emulators(config, fix, report.fixes_applied))
     _safe("RocketLauncher settings", lambda: check_rocketlauncher_settings(config))

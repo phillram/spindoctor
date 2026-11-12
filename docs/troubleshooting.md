@@ -731,6 +731,51 @@ name.
 to match (`Some Hack V2 .nes` → `Some Hack V2.nes`), and any media saved under
 the old name. Back up the XML first.
 
+### Games in the database don't show on the wheel, or show as plain text
+
+Games you added to a wheel's database (or extra disks of a game) never appear
+in HyperSpin, though they launch from RocketLauncher and `audit` finds their
+ROMs. Or they appear as their name in HyperSpin's default font.
+
+**Cause:** they have no wheel art,
+`Media\<System>\Images\Wheel\<name>.png` (or `.swf`), under the database name
+as written. HyperSpin shows such a game as plain text, unless the wheel's
+`<hyperspin_dir>\Settings\<System>.ini` has `wheels_only=true` under
+`[filters]`: then HyperSpin lists only the games that have wheel art, and the
+rest can't be seen or picked.
+
+**Find it:** run `spindoctor doctor`. Its **Wheel art** check counts, per
+wheel, the games hidden by `wheels_only=true` and the games shown as plain
+text, and names the first few. With `parents_only=true` clones are hidden
+anyway, so they aren't counted.
+
+**Fix:** add the art, by hand or with
+`spindoctor fetch-media --system "<System>" --types wheel --apply`, or set
+`wheels_only=false` under `[filters]` (with HyperSpin closed) to list the
+games as text. Leaving `wheels_only=true` on keeps games you don't want, such
+as a second disk or side of a game whose first disk has art, off the wheel.
+
+### Jumping to the next letter shows no letter
+
+On some wheels HyperSpin's skip keys (often the joystick's left and right)
+show no big letter when you jump to the next letter, or show none for games
+starting with a digit or a symbol such as `$` or `.`.
+
+**Cause:** the letter comes from
+`Media\<System>\Images\Letters\<char>.png`, for the first character of the
+game's description. The wheel has no `Letters` folder, an empty one, or no
+picture for that character.
+
+**Find it:** run `spindoctor doctor`. Its **Letter art** check lists the
+wheels with no letter art at all, and the characters each other wheel has no
+picture for. It skips SpinDoctor's Recently Played and Most Played wheels,
+which aren't in A–Z order.
+
+**Fix:** copy a letter set from another wheel's `Images\Letters` folder (or
+one made to match the wheel), and add a picture for each character listed,
+such as `$.png`, `..png` or `1.png`. A character no file can be named after,
+such as `"`, can't have a letter.
+
 ### Refresh All (or Refresh Favorites) does nothing after upgrading SpinDoctor
 
 Running a Refresh helper from HyperSpin's Tools menu or a Toolkit wheel no
