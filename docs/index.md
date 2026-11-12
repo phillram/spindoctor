@@ -31,6 +31,7 @@ After installation, launch `spindoctor-gui` for guided forms or `spindoctor` fro
 | Find where SpinDoctor stores its files | [SpinDoctor Files](spindoctor-files.md) |
 | Share logs or examples without exposing private details | [Privacy and sharing diagnostics](privacy.md) |
 | Understand package boundaries and data flow | [Software architecture](architecture.md) |
+| Run and maintain the test suite | [Testing](testing.md) |
 | Understand HyperSpin/RocketLauncher file layouts and hardware examples | [Example cabinet reference](cabinet-architecture-reference.md) |
 
 ## How the guides fit together
