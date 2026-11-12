@@ -103,6 +103,25 @@ the launch settings (PCLauncher and `Skipchecks` can launch without a ROM
 file). See *"Cannot find Rom … in any Rom_Paths provided", or a wheel opens
 but no game launches* under [Wheels](#wheels).
 
+### `find-dupes --by-content` pairs two ROMs whose sizes or SHA1s differ
+
+A content group lists files of different sizes, and some of them are marked
+`(ROM header ignored)`.
+
+**Cause:** the files hold the same game data, and the marked ones also start
+with a ROM header: a 512-byte SNES copier header (`.smc`, `.sfc`, `.swc`,
+`.fig`), an iNES header (`.nes`) or a fwNES header (`.fds`). Fan translations
+and hack sets often have one, while other sets of the same games have none or a
+different one. `find-dupes` leaves the header out, so these copies pair up;
+older versions compared whole files and missed them. The `sha1:` in the group's
+label is the SHA1 of the data after the header.
+
+**Which copy to keep:** SNES emulators skip a copier header themselves, so
+either copy plays. Most NES emulators read the game's mapper, mirroring and
+battery save from the iNES header, so keep a `.nes` copy that has one. Two
+headers can disagree on one of those flags: keep the copy that plays and saves
+correctly in your emulator. `find-dupes` only reports; it never removes a file.
+
 ## Metadata / scraping
 
 ### Reading `scraper.log`

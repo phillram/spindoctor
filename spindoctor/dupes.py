@@ -3,7 +3,9 @@
 Finds ROM files that look like duplicates by:
   * normalized title (region/version/disc tags stripped) — e.g.
     ``Zelda (USA).nes`` and ``Zelda (Japan).nes`` collapse to the same key
-  * file content (size + SHA1) when ``by_content=True`` — slow but exact
+  * file content (size + SHA1) when ``by_content=True`` — slow but exact;
+    a ROM header (SNES copier, iNES, fwNES) is left out, so a headered and
+    an unheadered copy of one game match
   * cross-system: the same normalized title appearing under two systems
     (e.g. ``Tetris`` filed under both ``GameBoy`` and ``NES``).
 """
@@ -18,6 +20,7 @@ from typing import Iterable, Optional
 from . import archives
 from .audit import scan_roms
 from .config import Config
+from .romheaders import file_header_length
 from .romutils import normalize
 
 
@@ -28,6 +31,9 @@ class DuplicateGroup:
     system: str
     files: list[Path] = field(default_factory=list)
     reason: str = "title"  # "title" | "content"
+    # Content groups whose copies differ by a ROM header: the files whose
+    # header was left out of the match. Empty when all are byte-for-byte equal.
+    headers_ignored: list[Path] = field(default_factory=list)
 
     @property
     def count(self) -> int:
@@ -45,11 +51,12 @@ class CrossSystemMatch:
         return sorted({s for s, _ in self.occurrences})
 
 
-def _hash_file(path: Path, chunk: int = 1 << 20) -> Optional[str]:
-    """SHA1 the bytes of *path* directly (no archive unwrapping)."""
+def _hash_file(path: Path, chunk: int = 1 << 20, start: int = 0) -> Optional[str]:
+    """SHA1 the bytes of *path* from offset *start* (no archive unwrapping)."""
     try:
         h = hashlib.sha1()
         with open(path, "rb") as f:
+            f.seek(start)
             while True:
                 buf = f.read(chunk)
                 if not buf:
@@ -60,29 +67,52 @@ def _hash_file(path: Path, chunk: int = 1 << 20) -> Optional[str]:
         return None
 
 
-def _content_hash(path: Path) -> Optional[str]:
-    """Return a SHA1 that represents the *logical* content of a ROM file.
+def _joined_sha1(digests: list[str]) -> str:
+    return hashlib.sha1("|".join(sorted(digests)).encode("ascii")).hexdigest()
 
-    For raw files this is the file SHA1. For archive containers (zip/7z/rar/
-    gz/chd) it is a SHA1 of the sorted concatenation of inner-entry SHA1s,
+
+def _content_hash(path: Path) -> tuple[Optional[str], Optional[str]]:
+    """Return ``(sha1, exact)`` for the *logical* content of a ROM file.
+
+    For raw files ``sha1`` is the file SHA1, taken after the ROM header when
+    the file has one (see :mod:`spindoctor.romheaders`), so a headered
+    ``.smc`` and an unheadered ``.sfc`` of one game collapse to the same key.
+    For archive containers (zip/7z/rar/gz/chd) it is a SHA1 of the sorted
+    concatenation of inner-entry SHA1s, each after its ROM header likewise,
     so ``mario.zip`` and ``mario.7z`` containing the same payload collapse to
     the same key. Falls back to the wrapper SHA1 when the optional dep
     needed to peek inside is missing.
+
+    ``exact`` stands for the bytes with their headers: it equals ``sha1``
+    when no header was left out, and two files with the same ``sha1`` are
+    byte-for-byte copies only when their ``exact`` match too.
     """
     if archives.archive_kind(path) is None:
-        return _hash_file(path)
-    info = archives.extract_inner_hash(path)
+        try:
+            skip = file_header_length(path, path.stat().st_size)
+            header = b""
+            if skip:
+                with open(path, "rb") as f:
+                    header = f.read(skip)
+        except OSError:
+            return None, None
+        digest = _hash_file(path, start=skip)
+        if digest is None or not skip:
+            return digest, digest
+        return digest, digest + ":" + hashlib.sha1(header).hexdigest()
+    info = archives.extract_inner_hash(path, headerless=True)
     if not info or not info["entries"]:
         # py7zr/rarfile not installed, or unsupported CHD version — fall back
         # to the raw wrapper SHA1 so the user still gets *some* duplicate
         # detection signal.
-        return _hash_file(path)
-    inner = sorted(
-        e.get("sha1", "") for e in info["entries"] if e.get("sha1")
-    )
+        wrapper = _hash_file(path)
+        return wrapper, wrapper
+    inner = [e.get("sha1_headerless") or e["sha1"] for e in info["entries"] if e.get("sha1")]
     if not inner:
-        return _hash_file(path)
-    return hashlib.sha1("|".join(inner).encode("ascii")).hexdigest()
+        wrapper = _hash_file(path)
+        return wrapper, wrapper
+    exact = [e["sha1"] for e in info["entries"] if e.get("sha1")]
+    return _joined_sha1(inner), _joined_sha1(exact)
 
 
 def find_duplicates_in_system(
@@ -96,6 +126,8 @@ def find_duplicates_in_system(
     same normalized title. Pass ``by_content=True`` to additionally pair
     files that share the same SHA1 — useful for catching pure copies that
     were renamed (``mario.zip`` and ``Super Mario.zip`` of identical bytes).
+    The SHA1 leaves out a ROM header, so copies that differ only by one
+    pair up too; the headered files are then listed in ``headers_ignored``.
     """
     roms = scan_roms(system_name, Path(config.roms_dir))
     groups: list[DuplicateGroup] = []
@@ -136,7 +168,9 @@ def find_duplicates_in_system(
                     if archives.archive_kind(p) is not None:
                         archive_paths.append(p)
                     else:
-                        raw_by_size[size].append(p)
+                        # A ROM header makes a copy bigger by its length, so
+                        # bucket raw files by their size after the header.
+                        raw_by_size[size - file_header_length(p, size)].append(p)
             grouped: list[list[Path]] = list(raw_by_size.values())
             if archive_paths:
                 grouped.append(archive_paths)
@@ -144,8 +178,9 @@ def find_duplicates_in_system(
                 if len(paths) < 2:
                     continue
                 by_hash: dict[str, list[Path]] = defaultdict(list)
+                exact: dict[Path, Optional[str]] = {}
                 for p in paths:
-                    digest = _content_hash(p)
+                    digest, exact[p] = _content_hash(p)
                     if digest:
                         by_hash[digest].append(p)
                 for digest, hpaths in by_hash.items():
@@ -154,10 +189,16 @@ def find_duplicates_in_system(
                         if sig in seen_pairs:
                             continue
                         seen_pairs.add(sig)
+                        # Name the files whose header was left out, unless
+                        # the copies are byte-for-byte the same anyway.
+                        ignored: list[Path] = []
+                        if len({exact[p] for p in sig}) > 1:
+                            ignored = [p for p in sig if exact[p] != digest]
                         groups.append(
                             DuplicateGroup(
                                 key=digest[:12], system=system_name,
                                 files=list(sig), reason="content",
+                                headers_ignored=ignored,
                             )
                         )
 

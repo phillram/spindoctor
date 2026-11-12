@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **`find-dupes --by-content` pairs ROMs that differ only by a ROM header.** It compared whole-file SHA1s, so two copies of one game didn't pair when one had a header the other lacked, or a different one: a 512-byte SNES copier header (an `.smc`, `.sfc`, `.swc` or `.fig` file 512 bytes over a whole KiB), a 16-byte iNES header (`.nes` starting `NES\x1A`) or a 16-byte fwNES header (`.fds` starting `FDS\x1A`). Raw files were also grouped by size before hashing, so a headered copy never even reached the hash. Fan translations and hack sets often carry these headers; on one cabinet's NES and SNES hack folders, `find-dupes --by-content` now finds 26 more groups (58 more files). The SHA1 now leaves a header out, and raw files are grouped by their size after the header. Inside `.zip`, `.7z`, `.rar` and `.gz` archives each entry is handled the same way, in the same reading pass (`archives.extract_inner_hash(..., headerless=True)` adds `sha1_headerless`; `verify` doesn't ask for it). In a group whose copies aren't byte-for-byte the same, the files whose header was left out are marked `(ROM header ignored)`. Other files are compared whole, however odd their size. `find-dupes` also shows file names as written now: lowercase tags such as `[h1]` or `[b1]` were read as Rich markup and dropped from the output. New `spindoctor/romheaders.py`. Covered by `tests/test_dupes_rom_headers.py`.
+
 ## [3.2.0] - 2026-11-10
 
 ### Added
