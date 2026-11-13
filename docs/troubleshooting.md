@@ -655,6 +655,40 @@ when the game exits. **Fix (Supermodel):** add a `KEY_` to `InputCoin1` /
 line so `[ Global ]` applies. Back the files up first; a device that comes
 back later needs its old bindings.
 
+### Every game in one MAME (or HBMAME) ignores the panel; coin is 5 and start is 1 again
+
+No panel button works in any game of that emulator, while MAME's own keys
+(5 for coin, 1 for start, Ctrl / Alt / Space) do on a keyboard. Other
+emulators are fine, and the games still launch, so launch tests pass.
+
+**Cause:** MAME rewrites `cfg\default.cfg`, the folder-wide key map, as every
+game exits. It empties the file first and writes the new map once it has
+built it, so a crash in between leaves the file at 0 bytes. The next run can't
+read it and, without a word, starts from MAME's own keys; at exit it saves an
+empty map, `<system name="default" />` with no `<input>` (180 bytes). MAME
+0.145 to 0.179 crash that way when `default.cfg` names a pad input by the
+pad's own name, such as `JOYCODE_1_HATSWITCHU` (MAME 0.160's name for a
+DirectInput pad's d-pad), while that pad isn't connected: MAME can't place the
+code and crashes turning it back into text. Its own crash handler catches it,
+so Windows logs nothing. It was seen with HBMAME 0.160 and a key map that also
+bound the d-pads of four pads; MAME 0.180 and later drop such codes instead. A
+`ctrlr\default.cfg` in the emulator's folder is often an older copy of the
+map: MAME reads it only when `mame.ini`'s `ctrlr` option names it
+(`ctrlr default`).
+
+**Find it:** run `spindoctor doctor`. Its **MAME key maps** check flags a
+0-byte or unreadable `default.cfg`, an empty one beside a copy that still
+holds a map, and, on MAME 0.145 to 0.179, the pad codes it will crash on.
+
+**Fix:** close MAME. Put the map back in `cfg\default.cfg` from the copy the
+check names or from a backup, or set the keys again in MAME's menu (Tab >
+Input (general)). On MAME 0.145 to 0.179, first take out the pad codes the
+check lists, each with the `OR` in front of it. Codes for a pad that isn't
+always plugged in come back as `JOYCODE_n_UNKNOWN_*` after one save, which
+those versions can't read either, so a keyboard-encoder panel is safest with
+keys only. Then start and quit one game, and check that `default.cfg` still
+holds the map.
+
 ### A volume key quits or pauses a Daphne or Singe game (laserdisc, American Laser Games, Action Max)
 
 Pressing a volume or other media key during a laserdisc game quits it,
