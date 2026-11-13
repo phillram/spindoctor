@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **`doctor` flags MAME key maps that a crash while saving has emptied, or will.** MAME rewrites `cfg\default.cfg` as every game exits, emptying the file before it writes the new map, so a crash in between leaves 0 bytes. The next run can't read it, starts from MAME's own keys (5 coin, 1 start, Ctrl / Alt / Space) without a word, and saves an empty map (`<system name="default" />`) at exit: the panel stops working while every launch still passes. A new **MAME key maps** check reads each MAME-family emulator RocketLauncher lists (`mame*` / `hbmame*` in `Global Emulators.ini` or a system's own `Emulators.ini`; else one level under `emulators_dir`), honouring `cfg_directory`, `ctrlr` and `ctrlrpath` from `mame.ini` / `hbmame.ini`. A 0-byte or unreadable `default.cfg` is a WARN, and so is an empty or missing one beside a copy that still holds a map (`ctrlr\default.cfg`, `cfg\default.BAK.cfg`) which `ctrlr` doesn't load; an empty map with no such copy is fine. MAME 0.145 to 0.179 crash that way saving a pad code they can place only while the pad is connected: the pad's own name for an input (`JOYCODE_1_HATSWITCHU`, a DirectInput d-pad in MAME 0.160) or the `UNKNOWN` MAME writes for a pad that's gone. For those versions, read from the program's `ProductVersion` as RocketLauncher's MAME module does, such codes in `default.cfg` are a WARN before the map is lost. Game cfgs of 0 bytes are INFO. Diagnosis only. New `spindoctor/mame_keymaps.py`; the Daphne keys check now shares the emulator list with it (`_rl_emulator_entries`). Covered by `tests/test_doctor_mame_key_maps.py`.
+
 ## [3.2.0] - 2026-11-10
 
 ### Added
