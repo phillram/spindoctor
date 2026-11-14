@@ -352,6 +352,37 @@ If you believe you have zero-byte stubs from an older version, run `audit` and l
 
 **Fix:** update SpinDoctor; the header is now found wherever it sits. A clip that still shows `—` has no readable movie header (a cut-short download, for example) or is in another format: `.flv` and `.avi` lengths need `ffprobe` (see [Video plays but has no sound](#video-plays-but-has-no-sound) for getting it).
 
+### A wheel plays no videos, or some games' videos never play, though the files are in its Video folder
+
+A whole wheel plays no videos (often after a drive move), or the videos you
+added to `Media\<System>\Video` for some games never play, while `audit` counts
+them as present and the files play fine in Windows.
+
+**Cause:** `path=` under `[video defaults]` in HyperSpin's
+`Settings\<System>.ini`. When it's set, HyperSpin reads that wheel's videos
+from that folder **only**, with no fallback to the wheel's own `Video` folder,
+game by game or otherwise. Many setups point the MAME sub-wheels (4-Player
+Games, Driving Games, Gun Games) at `Media\MAME\Video` this way, so the videos
+of the wheel's other games (console ports, light-gun games from other
+systems) never play from its own folder. If the folder no longer exists (for
+example `R:\Arcade\Media\Nintendo Wii\Video\` after the drive letter changed),
+the wheel plays no videos at all, and HyperSpin shows no error.
+
+**Find it:** run `spindoctor doctor`. Its **Video redirects** check lists every
+Main Menu wheel with `path=` set: a WARN for a folder that doesn't exist, or
+for another folder while games whose videos sit in the wheel's own `Video`
+folder have none there (with how many); an INFO for a relative `path=`, and
+for own videos that are hidden while the other folder has a video for each of
+those games.
+
+**Fix:** with HyperSpin closed, copy the videos the wheel's games use from the
+`path=` folder into `Media\<System>\Video` (skip files already there, so the
+wheel's own videos are kept), then clear the value in
+`Settings\<System>.ini`, leaving `path=` with nothing after it. HyperSpin then
+reads `Media\<System>\Video`, so every video saved there plays. Back the INI up
+first. Repointing `path=` at the right folder also works, but any video saved
+in the wheel's own folder stays hidden.
+
 ---
 
 ## Wheels
