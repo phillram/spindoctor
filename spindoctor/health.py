@@ -2137,6 +2137,152 @@ def check_coin_start(config: Config) -> Check:
     return parent
 
 
+def _mame_emulator_folders(config: Config) -> dict[tuple[Path, str], list[str]]:
+    """``(folder, exe)`` -> RocketLauncher emulator names, for each MAME-family build.
+
+    An emulator counts when its ``Emu_Path`` names an existing ``mame*`` or
+    ``hbmame*`` program (MAME, HBMAME and builds named after them, as the
+    Coin/Start check reads them), from ``Global Emulators.ini`` and each
+    system's own ``Emulators.ini``; when neither has one, the folders one
+    level under ``emulators_dir`` holding such a program (no names).
+    """
+    def mame(name: str) -> bool:
+        return name.lower().startswith(("mame", "hbmame"))
+
+    found: dict[tuple[Path, str], list[str]] = {}
+    for section, exe, candidates in _rl_emulator_entries(config):
+        if not mame(exe):
+            continue
+        candidate = next((c for c in candidates if c.is_file()), None)
+        if candidate is not None:
+            names = found.setdefault((candidate.parent, candidate.name), [])
+            if section not in names:
+                names.append(section)
+    if not found and config.emulators_dir:
+        for folder in _subfolders(Path(config.emulators_dir)):
+            try:
+                with os.scandir(folder) as it:
+                    exes = sorted(e.name for e in it if e.is_file() and mame(e.name)
+                                  and e.name.lower().endswith(".exe"))
+            except OSError:
+                continue
+            if exes:
+                found[(folder, exes[0])] = []
+    return found
+
+
+def check_mame_key_maps(config: Config) -> Check:
+    """MAME key maps that a crash while saving has emptied, or will.
+
+    MAME saves ``cfg\\default.cfg`` as every game exits, and a crash while it
+    does leaves the file at 0 bytes.  The next run ignores it and starts from
+    MAME's own keys (5, 1, Ctrl / Alt / Space), then saves an empty map, so
+    the panel's map is gone while every launch still works (see
+    :mod:`spindoctor.mame_keymaps`).  Per MAME folder RocketLauncher lists:
+
+    * ``default.cfg`` of 0 bytes, or one MAME can't read: WARN.
+    * No key map in ``default.cfg`` (or none there) while ``ctrlr\\default.cfg``
+      or ``cfg\\default.BAK.cfg`` holds one MAME never reads (``mame.ini``'s
+      ``ctrlr`` doesn't name it): WARN, the map was probably lost.  With no
+      such copy, an empty map is fine: MAME's own keys or each game's cfg.
+    * MAME 0.145-0.179 with pad codes in ``default.cfg`` that it can place
+      only while that pad is connected: WARN, it crashes saving them.
+    * Game cfgs of 0 bytes (the same crash while saving a game's own
+      settings): INFO.
+
+    Diagnosis only.
+    """
+    from .mame_keymaps import exe_product_version, read_key_maps
+
+    name = "MAME key maps"
+    folders = _mame_emulator_folders(config)
+    if not folders:
+        return Check(name=name, status=Status.INFO, detail="no MAME or HBMAME emulator found")
+
+    parent = Check(name=name, status=Status.OK)
+    for (folder, exe), emulators in folders.items():
+        maps = read_key_maps(folder, exe)
+        default = maps.default
+        node = Check(name=f"{', '.join(emulators) or folder.name}: {folder}", status=Status.OK)
+        restore = ""
+        if maps.spares:
+            spare = maps.spares[0]
+            restore = (f"With MAME closed, copy {spare.label} over {default.label} ({spare.ports} "
+                       "bindings), start and quit one game, and check that the file still holds them")
+            if spare.unplaceable and maps.crashes_saving:
+                restore += (f"; first take {_some(spare.unplaceable)} out of the copy (each with the "
+                            f"OR before it): MAME {maps.version} crashes saving them when the pad "
+                            "isn't connected")
+        else:
+            restore = (f"With MAME closed, put the panel's key map back in {default.label} from a "
+                       "backup, or set the keys again in MAME's menu (Tab > Input (general))")
+        controller = maps.controller if maps.controller is not None and maps.controller.has_map else None
+        if controller is not None:
+            keys = f"only the map in {controller.label} ({maps.ini_name}'s ctrlr)"
+        else:
+            keys = "MAME's own keys (5 coin, 1 start, Ctrl / Alt / Space)"
+        lost = f"the next run ignores it, starts from {keys} and saves an empty map at exit"
+
+        if default.path is not None and default.size == 0:
+            node.children.append(Check(
+                name=default.label, status=Status.WARN,
+                detail=f"0 bytes: MAME crashed while saving it, so {lost}",
+                fix=restore))
+        elif default.path is not None and not default.loads:
+            node.children.append(Check(
+                name=default.label, status=Status.WARN,
+                detail=("MAME can't read it (no <mameconfig> with a \"default\" system), so MAME "
+                        f"ignores it, starts from {keys} and saves an empty map over it at exit"),
+                fix=restore))
+        elif not default.has_map and maps.spares and controller is None:
+            spare = maps.spares[0]
+            where = "isn't there" if default.path is None else "holds no key map"
+            ctrlr = (f"{maps.ini_name}'s ctrlr is blank" if not maps.controller_option
+                     else f"{maps.ini_name}'s ctrlr names {maps.controller_option}")
+            node.children.append(Check(
+                name=default.label, status=Status.WARN,
+                detail=(f"{where}, while {spare.label} holds {spare.ports} bindings MAME never "
+                        f"reads ({ctrlr}): the panel's map was probably lost, and MAME uses its "
+                        "own keys"),
+                fix=restore))
+
+        if default.has_map and default.unplaceable and maps.crashes_saving:
+            node.children.append(Check(
+                name=f"{default.label} pad codes", status=Status.WARN,
+                detail=(f"MAME {maps.version} can place {_some(default.unplaceable)} only while "
+                        "their pad is connected; without it, MAME crashes saving this file as "
+                        f"the game exits, leaving it 0 bytes, and {lost}"),
+                fix=(f"With MAME closed, take those codes out of {default.label} (each with the OR "
+                     "before it), keeping the keys, or connect the pad before MAME starts")))
+
+        if maps.empty_games:
+            n = len(maps.empty_games)
+            node.children.append(Check(
+                name="game cfgs", status=Status.INFO,
+                detail=(f"{n} game cfg file{'s are' if n != 1 else ' is'} 0 bytes "
+                        f"({_some(maps.empty_games, 5)}): MAME crashed while saving "
+                        f"{'them' if n != 1 else 'it'}, so those games start from "
+                        f"{default.label} and their own settings are gone")))
+
+        if node.children:
+            version = maps.version or exe_product_version(folder / exe)
+            node.detail = f"{exe}, MAME {version}" if version else exe
+            node.status = _worst(c.status for c in node.children)
+            parent.children.append(node)
+
+    total = len(folders)
+    warned = sum(1 for c in parent.children if c.status == Status.WARN)
+    plural = "s" if total != 1 else ""
+    if warned:
+        parent.detail = f"{warned} of {total} MAME folder{plural} lost or can lose the panel's key map"
+    elif parent.children:
+        parent.detail = f"{total} MAME folder{plural}: key maps fine; some game cfgs are empty"
+    else:
+        parent.detail = f"{total} MAME folder{plural}: no key map lost or at risk"
+    parent.status = _worst(c.status for c in parent.children)
+    return parent
+
+
 @dataclass(frozen=True)
 class _EmuFolderSetting:
     """One emulator config value that names a ROM or save folder.
@@ -2450,6 +2596,40 @@ def check_emulator_rom_paths(config: Config) -> Check:
     return parent
 
 
+def _rl_emulator_entries(config: Config) -> list[tuple[str, str, list[Path]]]:
+    """``(emulator name, exe name lower-cased, candidate exe paths)`` per emulator.
+
+    From ``Global Emulators.ini`` and each system's own
+    ``Settings\\<System>\\Emulators.ini`` (their ``[ROMS]`` sections aside),
+    with ``Emu_Path`` resolved as :func:`_resolve_emu_path` does.
+    """
+    from pathlib import PureWindowsPath
+
+    if not config.rocketlauncher_dir:
+        return []
+    rl_dir = Path(config.rocketlauncher_dir)
+    settings = rl_dir / "Settings"
+    inis = [settings / "Global Emulators.ini"]
+    inis += [d / "Emulators.ini" for d in _subfolders(settings)]
+    out = []
+    for ini in inis:
+        try:
+            entries = _read_ini_entries(ini) if ini.is_file() else []
+        except OSError:
+            continue
+        sections: dict[str, tuple[str, dict[str, str]]] = {}
+        for section, key, value in entries:
+            if section.lower() != "roms":
+                sections.setdefault(section.lower(), (section, {}))[1].setdefault(
+                    key.lower(), value)
+        for section, keys in sections.values():
+            emu_path = next((keys[k] for k in _EMU_PATH_KEYS if keys.get(k)), "").strip('"')
+            if emu_path:
+                out.append((section, PureWindowsPath(emu_path).name.lower(),
+                            _resolve_emu_path(emu_path, rl_dir)))
+    return out
+
+
 def _daphne_emulator_folders(config: Config) -> dict[Path, list[str]]:
     """Folder -> RocketLauncher emulator names, for each Daphne or Singe build.
 
@@ -2459,37 +2639,18 @@ def _daphne_emulator_folders(config: Config) -> dict[Path, list[str]]:
     ``Settings\\<System>\\Emulators.ini``; when neither has one, from the
     folders one level under ``emulators_dir`` holding either file (no names).
     """
-    from pathlib import PureWindowsPath
-
     from .daphne_keys import KEY_FILE
 
     found: dict[Path, list[str]] = {}
-    if config.rocketlauncher_dir:
-        rl_dir = Path(config.rocketlauncher_dir)
-        settings = rl_dir / "Settings"
-        inis = [settings / "Global Emulators.ini"]
-        inis += [d / "Emulators.ini" for d in _subfolders(settings)]
-        for ini in inis:
-            try:
-                entries = _read_ini_entries(ini) if ini.is_file() else []
-            except OSError:
-                continue
-            sections: dict[str, tuple[str, dict[str, str]]] = {}
-            for section, key, value in entries:
-                if section.lower() != "roms":
-                    sections.setdefault(section.lower(), (section, {}))[1].setdefault(
-                        key.lower(), value)
-            for section, keys in sections.values():
-                emu_path = next((keys[k] for k in _EMU_PATH_KEYS if keys.get(k)), "").strip('"')
-                exe = PureWindowsPath(emu_path).name.lower()
-                for candidate in (_resolve_emu_path(emu_path, rl_dir) if emu_path else []):
-                    folder = candidate.parent
-                    if ((exe == "daphne.exe" and candidate.is_file())
-                            or (folder / KEY_FILE).is_file()):
-                        names = found.setdefault(folder, [])
-                        if section not in names:
-                            names.append(section)
-                        break
+    for section, exe, candidates in _rl_emulator_entries(config):
+        for candidate in candidates:
+            folder = candidate.parent
+            if ((exe == "daphne.exe" and candidate.is_file())
+                    or (folder / KEY_FILE).is_file()):
+                names = found.setdefault(folder, [])
+                if section not in names:
+                    names.append(section)
+                break
     if not found and config.emulators_dir:
         for folder in _subfolders(Path(config.emulators_dir)):
             if (folder / KEY_FILE).is_file() or (folder / "daphne.exe").is_file():
@@ -3168,6 +3329,7 @@ def run_health_checks(config: Config, fix: bool = False) -> HealthReport:
     _safe("Daphne keys", lambda: check_daphne_keys(config))
     _safe("User Functions", lambda: check_user_functions(config))
     _safe("Coin/Start", lambda: check_coin_start(config))
+    _safe("MAME key maps", lambda: check_mame_key_maps(config))
     _safe("LEDBlinky", lambda: check_ledblinky(config))
     _safe("LED coverage", lambda: check_led_coverage(config))
     _safe("Intro video", lambda: check_intro_video(config))
