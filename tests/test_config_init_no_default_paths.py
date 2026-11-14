@@ -1,22 +1,10 @@
 """`spindoctor config init` never offers or saves a path the user didn't type."""
 from __future__ import annotations
 
-import pytest
 from click.testing import CliRunner
 
-import spindoctor.config as config_mod
 from spindoctor.cli import _INIT_FIELDS, cli
 from spindoctor.config import load_config
-
-
-@pytest.fixture
-def isolated_config(tmp_path, monkeypatch):
-    home = tmp_path / "spindoctor_home"
-    monkeypatch.setattr(config_mod, "CONFIG_DIR", home)
-    monkeypatch.setattr(config_mod, "CONFIG_FILE", home / "config.json")
-    config_mod.reset_override_cache()
-    yield home
-    config_mod.reset_override_cache()
 
 
 def test_init_fields_have_no_default_paths():
@@ -25,7 +13,7 @@ def test_init_fields_have_no_default_paths():
         assert ":\\" not in field[1] and ":/" not in field[1], field
 
 
-def test_required_paths_must_be_typed_and_optional_ones_stay_blank(isolated_config, tmp_path):
+def test_required_paths_must_be_typed_and_optional_ones_stay_blank(config_home, tmp_path):
     roms, hs, emus, rl = (str(tmp_path / n) for n in ("roms", "hs", "emus", "rl"))
     required = [roms, hs, emus, rl]
     optional_count = sum(1 for f in _INIT_FIELDS if f[2])

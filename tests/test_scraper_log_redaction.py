@@ -1,6 +1,7 @@
 """scraper.log must not expose passwords in urllib3 exception strings."""
 from __future__ import annotations
 
+import pytest
 
 from spindoctor.scraper import _redact_error_str
 
@@ -41,23 +42,19 @@ def test_redact_error_str_removes_sspassword():
     assert "screenscraper.fr" in result
 
 
-def test_redact_error_str_handles_no_params():
+@pytest.mark.parametrize(
+    "params",
+    [
+        pytest.param(None, id="no-params"),
+        pytest.param({}, id="empty-params"),
+        # params dict without sspassword — no crash, string unchanged
+        pytest.param({"ssid": "user"}, id="missing-secret-key"),
+    ],
+)
+def test_redact_error_str_without_secret_params_leaves_message_unchanged(params):
     error = Exception("some network error without params")
-    result = _redact_error_str(error, None)
+    result = _redact_error_str(error, params)
     assert result == "some network error without params"
-
-
-def test_redact_error_str_handles_empty_params():
-    error = Exception("some error")
-    result = _redact_error_str(error, {})
-    assert result == "some error"
-
-
-def test_redact_error_str_handles_missing_key():
-    # params dict doesn't have sspassword — no crash, string unchanged
-    error = Exception("error without password in params")
-    result = _redact_error_str(error, {"ssid": "user"})
-    assert result == "error without password in params"
 
 
 def test_redact_error_str_thegamesdb_apikey():

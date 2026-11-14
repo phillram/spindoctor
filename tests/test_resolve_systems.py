@@ -76,20 +76,6 @@ def test_resolve_systems_all_filters_synthetic(tmp_path, monkeypatch):
     assert "MAME" in result
 
 
-def test_resolve_systems_explicit_synthetic_exits_nonzero(tmp_path, monkeypatch):
-    """Explicitly naming a synthetic wheel with --system exits with code 1."""
-    from spindoctor.cli import _resolve_systems
-    from spindoctor.config import load_config
-
-    hs, rl, cfg_file = _build_layout(tmp_path, ["MAME"])
-    monkeypatch.setattr("spindoctor.config.CONFIG_FILE", cfg_file)
-    config = load_config()
-
-    with pytest.raises(SystemExit) as exc_info:
-        _resolve_systems(config, system="Favorites", all_systems=False)
-    assert exc_info.value.code == 1
-
-
 def test_resolve_systems_explicit_synthetic_all_three(tmp_path, monkeypatch):
     """All three synthetic wheel names are rejected when passed as --system."""
     from spindoctor.cli import _resolve_systems

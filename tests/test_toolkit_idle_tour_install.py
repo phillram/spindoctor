@@ -12,6 +12,7 @@ from __future__ import annotations
 import re
 
 import pytest
+from click import unstyle
 from click.testing import CliRunner
 
 import spindoctor.config as config_mod
@@ -262,7 +263,8 @@ def test_install_with_apply_adds_the_entry_after_a_backup(cabinet):
         + TOUR_LINES.format(out=cabinet["menu"].resolve()).encode("utf-8"))
     backups = list(cabinet["script_dir"].glob("HyperSpin Startup Script.*.bak"))
     assert len(backups) == 1 and backups[0].read_bytes() == before
-    assert "added [Startup] entry 3" in result.output and "no [Exit]" in result.output
+    output = unstyle(result.output)
+    assert "added [Startup] entry 3" in output and "no [Exit]" in output
     again = _run("install-tools", "--tool", "idle-tour", "--apply")
     assert again.exit_code == 0 and "already starts Idle Tour.bat ([Startup] entry 3)" in again.output
     assert len(list(cabinet["script_dir"].glob("*.bak"))) == 1

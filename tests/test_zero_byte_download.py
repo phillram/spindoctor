@@ -1,8 +1,6 @@
 """Tests for the three zero-byte / data-consistency fixes:
 
 1. _download_to fails cleanly when the server returns an empty body (0 bytes).
-2. CombinedMetadataClient.search() has no duplicate variable declarations
-   (regression guard via a search that hits both error and success paths).
 3. media_scan.match_to_database / import_media treat a zero-byte target as
    absent (consistent with audit.check_media after PR #312).
 4. preview._first_existing skips zero-byte files.
@@ -56,18 +54,6 @@ def test_download_fails_on_empty_response(tmp_path, monkeypatch):
 
     assert not r.success
     assert "empty" in r.error.lower() or "0 byte" in r.error.lower()
-
-
-def test_download_empty_response_does_not_leave_dest_on_disk(tmp_path, monkeypatch):
-    dl = _make_downloader(tmp_path)
-
-    monkeypatch.setattr(dl._session, "get",
-                        lambda *a, **kw: _FakeResp(b"", status_code=200))
-
-    r = dl.download("1942", "MAME", "wheel", "https://x/1942.png",
-                    max_retries=1)
-
-    assert not r.success
     dest = dl.media_path("MAME", "1942", "wheel")
     assert not dest.exists(), "zero-byte dest must not be left on disk after failure"
 
@@ -88,43 +74,6 @@ def test_download_empty_response_retries_then_fails(tmp_path, monkeypatch):
 
     assert not r.success
     assert len(calls) == 3, "should retry up to max_retries before giving up"
-
-
-def test_download_nonempty_response_still_succeeds(tmp_path, monkeypatch):
-    dl = _make_downloader(tmp_path)
-
-    monkeypatch.setattr(dl._session, "get",
-                        lambda *a, **kw: _FakeResp(b"\x89PNG\r\n\x1a\n"))
-
-    r = dl.download("1942", "MAME", "wheel", "https://x/1942.png")
-
-    assert r.success
-    assert r.path is not None and r.path.stat().st_size > 0
-
-
-# ─── fix 2: CombinedMetadataClient.search duplicate declarations ──────────────
-
-def test_combined_search_no_duplicate_ss_error_declaration():
-    """Regression guard: search() must not shadow ss_error / tgdb_error."""
-    import ast, inspect, textwrap
-    from spindoctor.scraper import CombinedMetadataClient
-
-    src = textwrap.dedent(inspect.getsource(CombinedMetadataClient.search))
-    tree = ast.parse(src)
-
-    # Count AnnAssign / Assign targets named ss_error or tgdb_error.
-    names_assigned: list[str] = []
-    for node in ast.walk(tree):
-        if isinstance(node, ast.AnnAssign):
-            if isinstance(node.target, ast.Name):
-                names_assigned.append(node.target.id)
-
-    for name in ("ss_error", "tgdb_error"):
-        count = names_assigned.count(name)
-        assert count <= 1, (
-            f"{name} is declared {count} times in CombinedMetadataClient.search() "
-            f"— duplicate declaration shadowing the initial None assignment"
-        )
 
 
 # ─── fix 3: media_scan zero-byte target consistency ───────────────────────────

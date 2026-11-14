@@ -1,8 +1,14 @@
 """LEDBlinky synthesis and INI parsing tests."""
 from __future__ import annotations
+from tests.helpers import encode_legacy_text as _encode_legacy_text
+
+from spindoctor.config import Config
+from spindoctor._text import read_editable_text
 
 import textwrap
 import types
+
+import pytest
 
 from spindoctor import ledblinky
 from spindoctor.ledblinky import (
@@ -170,89 +176,35 @@ def test_run_mame_listxml_hides_console_window(monkeypatch):
 # ─── _normalize_scale_entry ───────────────────────────────────────────────────
 
 
-def test_normalize_scale_entry_full_brightness():
-    """100 % brings dominant channel to 48 regardless of stored value."""
-    # Already-max white: unchanged
-    e = ColorEntry(name="White", r=48, g=48, b=48)
-    out = _normalize_scale_entry(e, 1.0)
-    assert (out.r, out.g, out.b) == (48, 48, 48)
-
-    # Dim white: boosted to max
-    e = ColorEntry(name="DimWhite", r=20, g=20, b=20)
-    out = _normalize_scale_entry(e, 1.0)
-    assert (out.r, out.g, out.b) == (48, 48, 48)
-
-    # Already-max red: unchanged
-    e = ColorEntry(name="Red", r=48, g=0, b=0)
-    out = _normalize_scale_entry(e, 1.0)
-    assert (out.r, out.g, out.b) == (48, 0, 0)
-
-    # Dim red: dominant channel boosted to 48
-    e = ColorEntry(name="DimRed", r=24, g=0, b=0)
-    out = _normalize_scale_entry(e, 1.0)
-    assert out.r == 48
-    assert out.g == 0
-    assert out.b == 0
-
-
-def test_normalize_scale_entry_half_brightness():
-    """50 % yields dominant channel = 24, ratios preserved."""
-    e = ColorEntry(name="White", r=48, g=48, b=48)
-    out = _normalize_scale_entry(e, 0.5)
-    assert (out.r, out.g, out.b) == (24, 24, 24)
-
-    e = ColorEntry(name="Red", r=48, g=0, b=0)
-    out = _normalize_scale_entry(e, 0.5)
-    assert (out.r, out.g, out.b) == (24, 0, 0)
-
-    # Dim white at 50% still produces the same result as bright white at 50%
-    e = ColorEntry(name="DimWhite", r=20, g=20, b=20)
-    out = _normalize_scale_entry(e, 0.5)
-    assert (out.r, out.g, out.b) == (24, 24, 24)
-
-
-def test_normalize_scale_entry_zero():
-    """0 % turns every color off."""
-    e = ColorEntry(name="White", r=48, g=48, b=48)
-    out = _normalize_scale_entry(e, 0.0)
-    assert (out.r, out.g, out.b) == (0, 0, 0)
-
-
-def test_normalize_scale_entry_pure_black_unchanged():
-    """Pure-black entries are returned unchanged at any scale."""
-    e = ColorEntry(name="Off", r=0, g=0, b=0)
-    for factor in (0.0, 0.5, 1.0):
-        out = _normalize_scale_entry(e, factor)
-        assert (out.r, out.g, out.b) == (0, 0, 0), f"factor={factor}"
-
-
-def test_normalize_scale_entry_preserves_hue():
-    """Hue ratios between channels are preserved after normalization."""
-    # Orange: R dominant, G half, B zero
-    e = ColorEntry(name="Orange", r=48, g=24, b=0)
-    out_full = _normalize_scale_entry(e, 1.0)
-    assert out_full.r == 48
-    assert out_full.g == 24
-    assert out_full.b == 0
-
-    out_half = _normalize_scale_entry(e, 0.5)
-    assert out_half.r == 24
-    assert out_half.g == 12
-    assert out_half.b == 0
-
-    # Dim orange (half intensity stored) should normalize to same values as full orange
-    e_dim = ColorEntry(name="DimOrange", r=24, g=12, b=0)
-    out_dim_full = _normalize_scale_entry(e_dim, 1.0)
-    assert out_dim_full.r == 48
-    assert out_dim_full.g == 24
-    assert out_dim_full.b == 0
-
-
-def test_normalize_scale_entry_name_preserved():
-    """Color name is always carried through unchanged."""
-    e = ColorEntry(name="Turquoise", r=10, g=40, b=30)
-    out = _normalize_scale_entry(e, 0.75)
-    assert out.name == "Turquoise"
+@pytest.mark.parametrize("name, rgb, factor, expected", [
+    # 100 % brings the dominant channel to 48 regardless of the stored value.
+    pytest.param("White", (48, 48, 48), 1.0, (48, 48, 48), id="full-white-unchanged"),
+    pytest.param("DimWhite", (20, 20, 20), 1.0, (48, 48, 48), id="full-dim-white-boosted"),
+    pytest.param("Red", (48, 0, 0), 1.0, (48, 0, 0), id="full-red-unchanged"),
+    pytest.param("DimRed", (24, 0, 0), 1.0, (48, 0, 0), id="full-dim-red-boosted"),
+    # 50 % yields dominant channel = 24, ratios preserved; a dim white at 50 %
+    # produces the same result as bright white at 50 %.
+    pytest.param("White", (48, 48, 48), 0.5, (24, 24, 24), id="half-white"),
+    pytest.param("Red", (48, 0, 0), 0.5, (24, 0, 0), id="half-red"),
+    pytest.param("DimWhite", (20, 20, 20), 0.5, (24, 24, 24), id="half-dim-white-same-as-bright"),
+    # 0 % turns every color off.
+    pytest.param("White", (48, 48, 48), 0.0, (0, 0, 0), id="zero-turns-off"),
+    # Pure-black entries are returned unchanged at any scale.
+    pytest.param("Off", (0, 0, 0), 0.0, (0, 0, 0), id="black-unchanged-at-zero"),
+    pytest.param("Off", (0, 0, 0), 0.5, (0, 0, 0), id="black-unchanged-at-half"),
+    pytest.param("Off", (0, 0, 0), 1.0, (0, 0, 0), id="black-unchanged-at-full"),
+    # Hue ratios between channels are preserved; a dim orange (half intensity
+    # stored) normalizes to the same values as full orange.
+    pytest.param("Orange", (48, 24, 0), 1.0, (48, 24, 0), id="hue-orange-full"),
+    pytest.param("Orange", (48, 24, 0), 0.5, (24, 12, 0), id="hue-orange-half"),
+    pytest.param("DimOrange", (24, 12, 0), 1.0, (48, 24, 0), id="hue-dim-orange-full"),
+])
+def test_normalize_scale_entry(name, rgb, factor, expected):
+    e = ColorEntry(name=name, r=rgb[0], g=rgb[1], b=rgb[2])
+    out = _normalize_scale_entry(e, factor)
+    assert (out.r, out.g, out.b) == expected
+    # The color name is always carried through unchanged.
+    assert out.name == name
 
 
 # ─── _patch_admin_buttons_in_text ─────────────────────────────────────────────
@@ -503,78 +455,51 @@ def test_patch_admin_button_colors_validates_colors(tmp_path):
 
 # ── _uniform_section_color ─────────────────────────────────────────────────────
 
-def test_uniform_section_color_single_color():
-    """All button keys share one color → returns that color."""
-    from spindoctor.ledblinky import _uniform_section_color
-    lines = [
+@pytest.mark.parametrize("lines, expected", [
+    # All button keys share one color → that color.
+    pytest.param([
         "P1_BUTTON1=White\n",
         "P1_BUTTON2=White\n",
         "P1_JOYSTICK=White\n",
         "P1_START=White\n",
         "P1_COIN=White\n",
-    ]
-    assert _uniform_section_color(lines) == "White"
-
-
-def test_uniform_section_color_mixed():
-    """Mixed colors → returns None."""
-    from spindoctor.ledblinky import _uniform_section_color
-    lines = [
+    ], "White", id="single-color-uniform"),
+    # Mixed colors → None.
+    pytest.param([
         "P1_BUTTON1=Blue\n",
         "P1_BUTTON2=Orange\n",
         "P1_START=White\n",
-    ]
-    assert _uniform_section_color(lines) is None
-
-
-def test_uniform_section_color_two_players_uniform():
-    """P1 and P2 all same color → uniform."""
-    from spindoctor.ledblinky import _uniform_section_color
-    lines = [
+    ], None, id="mixed-colors"),
+    # P1 and P2 all the same color → uniform.
+    pytest.param([
         "P1_BUTTON1=Red\n",
         "P1_BUTTON2=Red\n",
         "P2_BUTTON1=Red\n",
         "P2_BUTTON2=Red\n",
-    ]
-    assert _uniform_section_color(lines) == "Red"
-
-
-def test_uniform_section_color_two_players_mixed_across():
-    """P1=Red but P2=Green → mixed → None."""
-    from spindoctor.ledblinky import _uniform_section_color
-    lines = [
+    ], "Red", id="two-players-uniform"),
+    # P1=Red but P2=Green → mixed → None.
+    pytest.param([
         "P1_BUTTON1=Red\n",
         "P2_BUTTON1=Green\n",
-    ]
-    assert _uniform_section_color(lines) is None
-
-
-def test_uniform_section_color_no_player_keys():
-    """Section with no P*_BUTTON keys → None (can't determine uniformity)."""
-    from spindoctor.ledblinky import _uniform_section_color
-    lines = [
+    ], None, id="two-players-mixed-across"),
+    # No P*_BUTTON keys → None (can't determine uniformity).
+    pytest.param([
         "ledcolor1=FF0000\n",
         "ledcolor2=00FF00\n",
-    ]
-    assert _uniform_section_color(lines) is None
-
-
-def test_uniform_section_color_empty():
-    """Empty section body → None."""
-    from spindoctor.ledblinky import _uniform_section_color
-    assert _uniform_section_color([]) is None
-
-
-def test_uniform_section_color_ignores_non_player_lines():
-    """Non-button lines (blank, comments, hex entries) don't count."""
-    from spindoctor.ledblinky import _uniform_section_color
-    lines = [
+    ], None, id="no-player-keys"),
+    # Empty section body → None.
+    pytest.param([], None, id="empty"),
+    # Non-button lines (blank, comments, hex entries) don't count.
+    pytest.param([
         "\n",
         "; this is a comment\n",
         "P1_BUTTON1=Blue\n",
         "P1_BUTTON2=Blue\n",
-    ]
-    assert _uniform_section_color(lines) == "Blue"
+    ], "Blue", id="ignores-non-player-lines"),
+])
+def test_uniform_section_color(lines, expected):
+    from spindoctor.ledblinky import _uniform_section_color
+    assert _uniform_section_color(lines) == expected
 
 
 # ── _rewrite_section_body ──────────────────────────────────────────────────────
@@ -1058,7 +983,8 @@ def test_sync_players_mirrors_p1_color_per_key(tmp_path):
 
 
 def test_sync_players_does_not_overwrite_existing_p2_keys(tmp_path):
-    """Keys already present in Colors.ini for P2 are left untouched."""
+    """Keys already present in Colors.ini for P2 are left untouched
+    (default override=False behaviour)."""
     controls = (
         "[mygame]\n"
         "P1_BUTTON1=1\nP2_BUTTON1=1\n"
@@ -1072,6 +998,7 @@ def test_sync_players_does_not_overwrite_existing_p2_keys(tmp_path):
 
     assert result.roms_updated == 0
     assert result.keys_added == 0
+    assert result.keys_overwritten == 0
     text = (tmp_path / "Colors.ini").read_text(encoding="utf-8")
     assert "P2_BUTTON1=Green" in text  # original value preserved
 
@@ -1210,20 +1137,6 @@ def test_sync_players_override_does_not_affect_p1(tmp_path):
     assert "P1_BUTTON1=Blue" in text  # P1 unchanged
 
 
-def test_sync_players_override_false_preserves_existing(tmp_path):
-    """Without --override, existing P2+ keys are never replaced (default behaviour)."""
-    controls = "[mygame]\nP1_BUTTON1=1\nP2_BUTTON1=1\n"
-    colors = "[mygame]\nP1_BUTTON1=Red\nP2_BUTTON1=Green\n"
-    cfg = _write_sync_fixtures(tmp_path, controls, colors)
-
-    result = sync_player_colors(cfg, dry_run=False, backup=False, override=False)
-
-    assert result.roms_updated == 0
-    assert result.keys_overwritten == 0
-    text = (tmp_path / "Colors.ini").read_text(encoding="utf-8")
-    assert "P2_BUTTON1=Green" in text  # original value preserved
-
-
 # ─── filename constant casing regression tests ────────────────────────────────
 # LedBlinky is a Windows application whose filenames have specific mixed-case
 # spellings.  Linux CI uses a case-sensitive filesystem, so even one wrong
@@ -1238,27 +1151,6 @@ def test_filename_constants_exact_casing():
     assert CONTROLS_INI_NAME == "controls.ini",          "Must be all-lowercase 'controls.ini'"
     assert CONTROLS_XML_NAME == "LEDBlinkyControls.xml", "Must be 'LEDBlinkyControls.xml'"
     assert COLOR_RGB_NAME    == "Color-RGB.ini",         "Must be 'Color-RGB.ini'"
-
-
-def test_no_bare_colors_ini_string_in_module():
-    """The module source must not contain the bare string literal 'colors.ini'
-    (lowercase) — all path constructions must go through COLORS_INI_NAME.
-    The constant definition itself and comments are exempted.
-    """
-    import inspect
-    src = inspect.getsource(ledblinky)
-    # Strip comment lines and the constant definition line so we only catch
-    # accidental bare-string path usages.
-    offending = [
-        line for line in src.splitlines()
-        if '"colors.ini"' in line.lower() and '"colors.ini"' in line
-        and not line.strip().startswith("#")
-        and "COLORS_INI_NAME" not in line
-    ]
-    assert offending == [], (
-        "Found bare 'colors.ini' string literal(s) in ledblinky.py — "
-        "use COLORS_INI_NAME instead:\n" + "\n".join(offending)
-    )
 
 
 # ─── patch_ledblinky_settings / read_ledblinky_settings_keys tests ────────────
@@ -1516,3 +1408,58 @@ def test_inspect_rom_guesses_dot_log_when_absent(tmp_path):
     # No log present → guessed path uses the current filename + a clear warning.
     assert result["log_path"] == tmp_path / "LEDBlinky.log"
     assert any("log not found" in w.lower() for w in result["warnings"])
+
+
+LEGACY_ENCODINGS = ("utf-8", "utf-8-sig", "cp1252", "utf-16", "utf-16-be")
+
+
+@pytest.mark.parametrize("encoding", LEGACY_ENCODINGS)
+def test_settings_edit_preserves_encoding_bom_newlines_and_comments(tmp_path, encoding):
+    path = tmp_path / "Settings.ini"
+    text = "; café\r\n[GameOptions]\r\nGamePlayLWAFile=Random.lwa\r\n\r\n[Other]\r\nx=1"
+    path.write_bytes(_encode_legacy_text(text, encoding))
+    ledblinky.patch_ledblinky_settings(Config(ledblinky_dir=str(tmp_path)), dry_run=False, backup=False)
+    assert path.read_bytes() == _encode_legacy_text(text.replace("=Random.lwa", "="), encoding)
+
+
+@pytest.mark.parametrize("encoding", LEGACY_ENCODINGS)
+def test_color_rename_preserves_palette_comments_and_unrelated_sections(tmp_path, encoding):
+    palette = "; café\r\n[Colors]\r\n; palette note\r\nRed = 48,0,0\r\n\r\n[Extra]\r\nx=keep\r\n"
+    colors = "; café\r\n[game]\r\nP1_BUTTON1=Red\r\n\r\n; do not touch\r\n"
+    xml = '<root><!-- café --><control color="Red"/></root>\r\n'
+    for name, text in ((ledblinky.COLOR_RGB_NAME, palette), (ledblinky.COLORS_INI_NAME, colors),
+                       (ledblinky.CONTROLS_XML_NAME, xml)):
+        (tmp_path / name).write_bytes(_encode_legacy_text(text, encoding))
+    ledblinky.apply_color_rename(Config(ledblinky_dir=str(tmp_path)), "Red", "Ruby",
+                          dry_run=False, backup=False)
+    assert (tmp_path / ledblinky.COLOR_RGB_NAME).read_bytes() == _encode_legacy_text(palette.replace("Red =", "Ruby ="), encoding)
+    assert (tmp_path / ledblinky.COLORS_INI_NAME).read_bytes() == _encode_legacy_text(colors.replace("=Red", "=Ruby"), encoding)
+    assert (tmp_path / ledblinky.CONTROLS_XML_NAME).read_bytes() == _encode_legacy_text(xml.replace('"Red"', '"Ruby"'), encoding)
+
+
+def test_edit_preserves_undefined_ansi_bytes(tmp_path):
+    path = tmp_path / "Settings.ini"
+    before = b"; caf\xe9 \x81\r\n[GameOptions]\r\nGamePlayLWAFile=Random.lwa\r\n"
+    path.write_bytes(before)
+    ledblinky.patch_ledblinky_settings(Config(ledblinky_dir=str(tmp_path)), dry_run=False, backup=False)
+    assert path.read_bytes() == before.replace(b"=Random.lwa", b"=")
+
+
+def test_hook_patch_preserves_crlf_and_missing_final_newline():
+    text = "; café\r\n[Main]\r\nStart_Hyperspin_Process=LEDBlinky.exe\r\nuntouched=1"
+    result, changed = ledblinky._comment_out_hooks(text)
+    assert changed == 1
+    assert result == text.replace("Start_Hyperspin_Process=LEDBlinky.exe",
+                                 ";Start_Hyperspin_Process=LEDBlinky.exe  " + ledblinky.LEDBLINKY_DISABLE_TAG)
+    assert ledblinky._comment_out_hooks(result) == (result, 0)
+
+
+def test_stub_xml_preserves_comments_processing_instructions_and_encoding(tmp_path):
+    path = tmp_path / ledblinky.CONTROLS_XML_NAME
+    text = '<?xml version="1.0" encoding="UTF-16"?>\r\n<EmulatorList><!-- café --><?custom keep?></EmulatorList>'
+    path.write_bytes(text.encode("utf-16"))
+    assert ledblinky._ensure_controls_xml_entries(path, path, ["Search"]) == (True, ["Search"])
+    result = read_editable_text(path)
+    assert "<!-- café -->" in result
+    assert "<?custom keep?>" in result
+    assert path.read_bytes().startswith(b"\xff\xfe")

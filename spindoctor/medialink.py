@@ -104,12 +104,20 @@ class LinkPlan:
 def _read_hs_video_dir(settings_dir: Path, system: str) -> Optional[Path]:
     """Return the ``[video defaults]`` path override from a HyperSpin system INI.
 
-    HyperSpin MAME subsystems ("4-Player Games", "Driving Games", "Gun Games",
-    etc.) often store their video files in ``Media/MAME/Video/`` and redirect
-    HyperSpin's video lookup via the system's Settings INI::
+    Some setups point HyperSpin MAME subsystems ("4-Player Games", "Driving
+    Games", "Gun Games", etc.) at the MAME wheel's videos in
+    ``Media/MAME/Video/`` through the system's Settings INI::
 
         [video defaults]
         path=D:\\Arcade\\Media\\MAME\\Video\\
+
+    With ``path=`` set, HyperSpin reads that wheel's videos *only* from that
+    folder, with no per-game fallback: videos saved in the wheel's own
+    ``Media/<system>/Video/`` (by a scraper, or added by hand for games that
+    aren't MAME's) never play, and a path that's gone (an old drive letter)
+    plays none at all, without an error.  Copying the videos the wheel uses
+    into its own ``Video/`` folder and leaving ``path=`` blank is the safer
+    setup; ``doctor``'s Video redirects check reports both problems.
 
     When the INI exists and the path points at an existing directory, this
     function returns that directory so :func:`plan_mirror` can look there when

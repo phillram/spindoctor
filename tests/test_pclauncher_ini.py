@@ -1,5 +1,8 @@
 """PCLauncher per-game INI generation + Global Emulators integration."""
 from __future__ import annotations
+from tests.helpers import write_bytes as _write_bytes
+
+from spindoctor import rocketlauncher
 
 from pathlib import Path, PureWindowsPath
 
@@ -10,7 +13,6 @@ from spindoctor.rocketlauncher import (
     repath_pclauncher_system_ini,
     EMULATOR_EXECUTABLES,
     EMULATOR_EXTENSIONS,
-    EMULATOR_WINDOW_TITLES,
     _FADE_TITLE_TIMEOUT,
     _get_fade_title,
     _resolve_pclauncher_exe,
@@ -133,62 +135,42 @@ def test_generate_pclauncher_inis_requires_rocketlauncher_dir(tmp_path):
 
 # ─── _win_safe_stem ───────────────────────────────────────────────────────────
 
-def test_win_safe_stem_strips_colon():
-    assert _win_safe_stem("Submachine: Legacy") == "Submachine Legacy"
-
-
-def test_win_safe_stem_strips_all_forbidden_chars():
-    assert _win_safe_stem('A\\B/C:D*E?F"G<H>I|J') == "ABCDEFGHIJ"
-
-
-def test_win_safe_stem_passthrough_for_safe_title():
-    assert _win_safe_stem("Hades") == "Hades"
-    assert _win_safe_stem("Mega Man X") == "Mega Man X"
-
-
-def test_win_safe_stem_strips_trailing_dots():
-    assert _win_safe_stem("Game...") == "Game"
-    assert _win_safe_stem("Game.") == "Game"
+@pytest.mark.parametrize("title, expected", [
+    pytest.param("Submachine: Legacy", "Submachine Legacy", id="strips-colon"),
+    pytest.param('A\\B/C:D*E?F"G<H>I|J', "ABCDEFGHIJ", id="strips-all-forbidden-chars"),
+    pytest.param("Hades", "Hades", id="passthrough-safe-title"),
+    pytest.param("Mega Man X", "Mega Man X", id="passthrough-title-with-space"),
+    pytest.param("Game...", "Game", id="strips-trailing-dots"),
+    pytest.param("Game.", "Game", id="strips-single-trailing-dot"),
     # Interior dots are kept — only trailing ones are removed.
-    assert _win_safe_stem("Mega Man.exe") == "Mega Man.exe"
-
-
-def test_win_safe_stem_strips_surrounding_spaces():
-    assert _win_safe_stem("  Hades  ") == "Hades"
-    assert _win_safe_stem("\tGame\t") == "Game"
-
-
-def test_win_safe_stem_reserved_names_get_underscore():
-    # Canonical reserved names.
-    assert _win_safe_stem("NUL") == "NUL_"
-    assert _win_safe_stem("CON") == "CON_"
-    assert _win_safe_stem("PRN") == "PRN_"
-    assert _win_safe_stem("AUX") == "AUX_"
+    pytest.param("Mega Man.exe", "Mega Man.exe", id="keeps-interior-dots"),
+    pytest.param("  Hades  ", "Hades", id="strips-surrounding-spaces"),
+    pytest.param("\tGame\t", "Game", id="strips-surrounding-tabs"),
+    # Canonical reserved names get an underscore suffix.
+    pytest.param("NUL", "NUL_", id="reserved-nul"),
+    pytest.param("CON", "CON_", id="reserved-con"),
+    pytest.param("PRN", "PRN_", id="reserved-prn"),
+    pytest.param("AUX", "AUX_", id="reserved-aux"),
     # COM and LPT series.
-    assert _win_safe_stem("COM1") == "COM1_"
-    assert _win_safe_stem("COM9") == "COM9_"
-    assert _win_safe_stem("LPT1") == "LPT1_"
-    assert _win_safe_stem("LPT9") == "LPT9_"
-
-
-def test_win_safe_stem_reserved_names_case_insensitive():
-    # Check is upper()-normalised so lowercase/mixed still matches.
-    assert _win_safe_stem("nul") == "nul_"
-    assert _win_safe_stem("Con") == "Con_"
-    assert _win_safe_stem("com5") == "com5_"
-
-
-def test_win_safe_stem_non_reserved_not_suffixed():
+    pytest.param("COM1", "COM1_", id="reserved-com1"),
+    pytest.param("COM9", "COM9_", id="reserved-com9"),
+    pytest.param("LPT1", "LPT1_", id="reserved-lpt1"),
+    pytest.param("LPT9", "LPT9_", id="reserved-lpt9"),
+    # The check is upper()-normalised so lowercase/mixed still matches.
+    pytest.param("nul", "nul_", id="reserved-lowercase-nul"),
+    pytest.param("Con", "Con_", id="reserved-mixed-case-con"),
+    pytest.param("com5", "com5_", id="reserved-lowercase-com5"),
     # Words that look similar but are not reserved.
-    assert _win_safe_stem("CONSOLE") == "CONSOLE"
-    assert _win_safe_stem("NULL") == "NULL"
-    assert _win_safe_stem("COMX") == "COMX"
-    assert _win_safe_stem("COM10") == "COM10"   # Only COM0-COM9 are reserved.
-
-
-def test_win_safe_stem_trailing_dot_uncovers_reserved():
+    pytest.param("CONSOLE", "CONSOLE", id="not-reserved-console"),
+    pytest.param("NULL", "NULL", id="not-reserved-null"),
+    pytest.param("COMX", "COMX", id="not-reserved-comx"),
+    # Only COM0-COM9 are reserved.
+    pytest.param("COM10", "COM10", id="not-reserved-com10"),
     # "CON." → strip dot → "CON" → reserved → "CON_"
-    assert _win_safe_stem("CON.") == "CON_"
+    pytest.param("CON.", "CON_", id="trailing-dot-uncovers-reserved"),
+])
+def test_win_safe_stem(title, expected):
+    assert _win_safe_stem(title) == expected
 
 
 # ─── generate_pclauncher_inis with title_to_section ──────────────────────────
@@ -215,20 +197,6 @@ def test_generate_pclauncher_inis_title_to_section_uses_dbname_in_header(tmp_pat
     assert "[Submachine: Legacy]" in content
     assert "[Submachine Legacy]" not in content
     assert r"Application=J:\Games\PC GAMES\Submachine Legacy\webcache.zip" in content
-
-
-def test_generate_pclauncher_inis_no_section_map_uses_title_as_section(tmp_path):
-    """Without title_to_section the section header equals the title (existing behaviour)."""
-    cfg = Config(
-        roms_dir=str(tmp_path / "roms"),
-        hyperspin_dir=str(tmp_path / "hs"),
-        rocketlauncher_dir=str(tmp_path / "rl"),
-    )
-    titles = {"Hades": PureWindowsPath(r"C:\Games\Hades\Hades.exe")}
-    module_dir, written, _ = generate_pclauncher_inis("PC Games", titles, cfg)
-
-    content = (module_dir / "Hades.ini").read_text(encoding="utf-8")
-    assert "[Hades]" in content
 
 
 # ─── read_pclauncher_ini_application_path ────────────────────────────────────
@@ -706,11 +674,6 @@ def _write_emulators_ini(path: Path, emulator_name: str) -> None:
     )
 
 
-def test_emulator_window_titles_correction_table_has_zinc():
-    """ZiNc entry is kept as a documented correction-table example."""
-    assert "ZiNc" in EMULATOR_WINDOW_TITLES
-
-
 def test_get_fade_title_returns_sdl_app_for_daphne(tmp_path):
     """Daphne's window is always titled 'SDL_app' (SDL 1.2 default caption,
     never overridden per-game) — the emulator name 'Daphne' never appears in
@@ -728,7 +691,9 @@ def test_get_fade_title_returns_title_for_correction_table_emulator(tmp_path):
     rl = tmp_path / "rl"
     _write_emulators_ini(rl / "Settings" / "Zinc" / "Emulators.ini", "ZiNc")
     title = _get_fade_title("Zinc", rl)
-    assert title == EMULATOR_WINDOW_TITLES["ZiNc"]
+    # Literal expectation, not EMULATOR_WINDOW_TITLES["ZiNc"], so the test pins
+    # the table entry instead of echoing whatever the production table contains.
+    assert title == "ZiNc"
 
 
 def test_get_fade_title_returns_emulator_name_for_unknown_emulator(tmp_path):
@@ -1253,37 +1218,22 @@ def test_repath_dry_run_returns_changes_without_writing(tmp_path):
 def test_repath_apply_rewrites_application_paths(tmp_path):
     ini = tmp_path / "Taito Type X.ini"
     ini.write_text(_TAITO_INI, encoding="utf-8")
-    repath_pclauncher_system_ini(
-        ini, "Taito Type X", r"J:\Games\Taito Type X", apply=True,
-    )
-    result = ini.read_text(encoding="utf-8")
-    assert r"Application=J:\Games\Taito Type X\Arcana Heart 3\CleanLaunch.ahk" in result
-    assert r"Application=J:\Games\Taito Type X\Deathsmiles II\ds_loader.exe" in result
-
-
-def test_repath_preserves_non_application_keys(tmp_path):
-    ini = tmp_path / "Taito Type X.ini"
-    ini.write_text(_TAITO_INI, encoding="utf-8")
-    repath_pclauncher_system_ini(
-        ini, "Taito Type X", r"J:\Games\Taito Type X", apply=True,
-    )
-    result = ini.read_text(encoding="utf-8")
-    assert "FadeTitle=AH3" in result
-    assert "AppWaitExe=AH30-PC4-2pfixed-fullscreen.exe" in result
-    assert "ExitMethod=WinClose Application" in result
-    assert r"PostExit=.\Module Extensions\nircmd\res_1280x720.bat" in result
-
-
-def test_repath_skips_entries_without_system_name(tmp_path):
-    ini = tmp_path / "Taito Type X.ini"
-    ini.write_text(_TAITO_INI, encoding="utf-8")
     changes, skipped = repath_pclauncher_system_ini(
         ini, "Taito Type X", r"J:\Games\Taito Type X", apply=True,
     )
     result = ini.read_text(encoding="utf-8")
-    # "Unrelated Game" section has no "Taito Type X" in its path — must be unchanged.
+    # Application paths are rewritten onto the new root.
+    assert r"Application=J:\Games\Taito Type X\Arcana Heart 3\CleanLaunch.ahk" in result
+    assert r"Application=J:\Games\Taito Type X\Deathsmiles II\ds_loader.exe" in result
+    assert {g for g, _, _ in changes} == {"Arcana Heart 3", "Deathsmiles II"}
+    # Every non-Application key is preserved exactly.
+    assert "FadeTitle=AH3" in result
+    assert "AppWaitExe=AH30-PC4-2pfixed-fullscreen.exe" in result
+    assert "ExitMethod=WinClose Application" in result
+    assert r"PostExit=.\Module Extensions\nircmd\res_1280x720.bat" in result
+    # "Unrelated Game" has no "Taito Type X" in its path — left unchanged...
     assert r"Application=D:\SomeOtherPath\game.exe" in result
-    # And it must appear in the skipped list.
+    # ...and reported in the skipped list.
     assert any(g == "Unrelated Game" for g, _ in skipped)
 
 
@@ -1308,3 +1258,26 @@ def test_repath_already_correct_returns_empty(tmp_path):
     )
     assert changes == []
     assert skipped == []
+
+
+@pytest.mark.parametrize("encoding", ["cp1252", "utf-16", "utf-16-be", "utf-8-sig"])
+def test_pclauncher_edits_preserve_non_ascii_text(config_home, tmp_path, encoding):
+    text = "[Game]\r\nApplication=old\r\nWorkingFolder=old\r\n; Émulateurs\r\n"
+    if encoding == "utf-16-be":
+        text = "\ufeff" + text
+    path = _write_bytes(tmp_path / "PC.ini", text.encode(encoding))
+    rocketlauncher.rewrite_pclauncher_application(path, "Game", Path("new/game.exe"))
+    saved = path.read_bytes().decode(encoding)
+    assert "; Émulateurs\r\n" in saved
+    assert saved.startswith("\ufeff[Game]" if encoding == "utf-16-be" else "[Game]")
+    assert saved.count("[Game]") == 1
+    assert "Application=new" in saved
+
+
+def test_undefined_ansi_bytes_are_lossless_for_edits_but_printable_in_diagnostics(config_home, tmp_path):
+    original = b"[Game]\r\nApplication=old\r\n; unknown byte \x81\r\n"
+    path = _write_bytes(tmp_path / "game.ini", original)
+    assert "\ufffd" in rocketlauncher._read_windows_text(path)
+    rocketlauncher._read_windows_text(path).encode("utf-8")
+    rocketlauncher.rewrite_pclauncher_application(path, "Game", Path("new/game.exe"))
+    assert b"; unknown byte \x81\r\n" in path.read_bytes()

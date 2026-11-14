@@ -1,11 +1,14 @@
 """Plan / apply / undo round-trips for the drive migration command."""
 from __future__ import annotations
+from tests.helpers import write_bytes as _write_bytes
+from tests.helpers import freeze_time as _freeze_time
+
+from spindoctor import migrate
 
 from pathlib import Path
 
 import pytest
 
-import spindoctor.config as config_mod
 import spindoctor.migrate as migrate_mod
 from spindoctor.config import Config, load_config, save_config
 from spindoctor.migrate import (
@@ -15,15 +18,9 @@ from spindoctor.migrate import (
 
 
 @pytest.fixture
-def isolated_config(tmp_path, monkeypatch):
-    home = tmp_path / "spindoctor_home"
-    monkeypatch.setattr(config_mod, "CONFIG_DIR", home)
-    monkeypatch.setattr(config_mod, "CONFIG_FILE", home / "config.json")
-    monkeypatch.setattr(migrate_mod, "MIGRATIONS_DIR", home / "migrations")
-    monkeypatch.setattr(migrate_mod, "CONFIG_DIR", home)
-    config_mod.reset_override_cache()
-    yield
-    config_mod.reset_override_cache()
+def isolated_config(config_home, monkeypatch):
+    monkeypatch.setattr(migrate_mod, "MIGRATIONS_DIR", config_home / "migrations")
+    monkeypatch.setattr(migrate_mod, "CONFIG_DIR", config_home)
 
 
 def _touch(p: Path, content: str = "x") -> None:
@@ -245,3 +242,19 @@ def test_find_latest_manifest_returns_newest(isolated_config, tmp_path):
     manifest = apply_migration(plan)
     latest = find_latest_manifest()
     assert latest == manifest
+
+
+def test_migration_verification_detects_missing_copy(isolated_config, tmp_path):
+    source = tmp_path / "source"
+    target = tmp_path / "target"
+    _write_bytes(source / "missing.zip")
+    target.mkdir()
+    assert migrate._verify_tree(source, target)
+
+
+def test_latest_manifest_uses_numeric_same_second_counter(isolated_config, tmp_path, monkeypatch):
+    _freeze_time(monkeypatch, migrate)
+    plan = migrate.MigrationPlan(str(tmp_path))
+    manifests = [migrate.apply_migration(plan) for _ in range(12)]
+    assert migrate.list_manifests() == manifests
+    assert migrate.find_latest_manifest() == manifests[-1]

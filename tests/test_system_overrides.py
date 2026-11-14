@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import pytest
 
-import spindoctor.config as config_mod
 from spindoctor.config import Config, get_rom_extensions, save_config
 from spindoctor.organize import required_layout
 from spindoctor.rocketlauncher import guess_emulator
@@ -12,13 +11,8 @@ from spindoctor.scraper import ScreenScraperClient
 
 
 @pytest.fixture
-def isolated_config(tmp_path, monkeypatch):
-    """Point CONFIG_FILE / CONFIG_DIR at tmp_path and reset the cache."""
-    monkeypatch.setattr(config_mod, "CONFIG_DIR", tmp_path)
-    monkeypatch.setattr(config_mod, "CONFIG_FILE", tmp_path / "config.json")
-    config_mod.reset_override_cache()
-    yield
-    config_mod.reset_override_cache()
+def isolated_config(config_home_factory, tmp_path):
+    config_home_factory(tmp_path)
 
 
 def _save_overrides(overrides):

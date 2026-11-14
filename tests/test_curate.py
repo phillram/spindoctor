@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import pytest
 
-import spindoctor.config as config_mod
 import spindoctor.curate as curate_mod
 from spindoctor.config import Config, save_config
 from spindoctor.curate import (
@@ -12,15 +11,8 @@ from spindoctor.curate import (
 
 
 @pytest.fixture
-def isolated_config(tmp_path, monkeypatch):
-    home = tmp_path / "spindoctor_home"
-    monkeypatch.setattr(config_mod, "CONFIG_DIR", home)
-    monkeypatch.setattr(config_mod, "CONFIG_FILE", home / "config.json")
-    # Curation manifests live under CONFIG_DIR/curation — mirror the patch.
-    monkeypatch.setattr(curate_mod, "CURATION_DIR", home / "curation")
-    config_mod.reset_override_cache()
-    yield
-    config_mod.reset_override_cache()
+def isolated_config(config_home, monkeypatch):
+    monkeypatch.setattr(curate_mod, "CURATION_DIR", config_home / "curation")
 
 
 def _cfg(roms_dir):

@@ -19,6 +19,7 @@ only moves where an unpatched path lands.
 import atexit
 import os
 import shutil
+import socket
 import sys
 import tempfile
 from pathlib import Path
@@ -46,15 +47,69 @@ def _remove_fake_home():
     shutil.rmtree(FAKE_HOME, ignore_errors=True)
 
 
-@pytest.fixture
-def home(tmp_path, monkeypatch):
-    """``~/.spindoctor`` inside the test's folder, so the run pointer
-    (``tests/active.json``) and ``config.json`` never leave it."""
-    import spindoctor.config as config_mod
+_LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
+_real_getaddrinfo = socket.getaddrinfo
 
-    h = tmp_path / "home"
-    monkeypatch.setattr(config_mod, "CONFIG_DIR", h)
-    monkeypatch.setattr(config_mod, "CONFIG_FILE", h / "config.json")
-    config_mod.reset_override_cache()
-    yield h
-    config_mod.reset_override_cache()
+
+@pytest.fixture(autouse=True)
+def _no_real_network(monkeypatch):
+    """Fail any test that resolves a non-loopback host.
+
+    Production code catches network errors and falls back, so an unmocked
+    request does not fail on its own: it waits on DNS (seconds per call) and
+    passes or fails depending on the network the suite runs on. The lookup
+    still raises like an offline machine would, and the test is failed at
+    teardown so the missing mock gets added.
+    """
+    attempts = []
+
+    def guarded_getaddrinfo(host, *args, **kwargs):
+        if host is None or str(host) in _LOOPBACK_HOSTS:
+            return _real_getaddrinfo(host, *args, **kwargs)
+        attempts.append(host)
+        raise socket.gaierror(f"real network access blocked in tests: {host!r}")
+
+    monkeypatch.setattr(socket, "getaddrinfo", guarded_getaddrinfo)
+    yield
+    if attempts:
+        pytest.fail(f"test attempted real network access: {sorted(set(map(str, attempts)))}")
+
+
+@pytest.fixture
+def config_home_factory(monkeypatch):
+    """Opt in to config isolation at a caller-selected path, without mkdir.
+
+    Specialized adapters can choose an existing tmp_path, a nonexistent
+    subdirectory, or return CONFIG_FILE instead. Module-specific constants
+    (manifest paths, imported CONFIG_DIR aliases) remain explicit adapters.
+    Import lazily so the process-wide home guard above always runs first.
+    """
+    from spindoctor import config
+
+    def configure(home):
+        monkeypatch.setattr(config, "CONFIG_DIR", home)
+        monkeypatch.setattr(config, "CONFIG_FILE", home / "config.json")
+        config.reset_override_cache()
+        return home
+
+    try:
+        yield configure
+    finally:
+        config.reset_override_cache()
+
+
+@pytest.fixture
+def config_home(tmp_path, config_home_factory):
+    """Return an isolated, initially nonexistent config directory."""
+    return config_home_factory(tmp_path / "spindoctor_home")
+
+
+@pytest.fixture
+def isolated_config(config_home):
+    """Legacy no-return-value adapter for tests that only need isolation."""
+
+
+@pytest.fixture
+def home(tmp_path, config_home_factory):
+    """Config home used by the game-launch test command fixtures."""
+    return config_home_factory(tmp_path / "home")

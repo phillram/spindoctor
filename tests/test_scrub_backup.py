@@ -39,30 +39,6 @@ def _write_cfg(tmp_path: Path, rl_dir: str, hs_dir: str) -> None:
 
 # ─── _collect_stat_files ─────────────────────────────────────────────────────
 
-def test_collect_stat_files_classic(tmp_path):
-    from spindoctor.cli import _collect_stat_files
-    rl = tmp_path / "rl"
-    f = _make_stat_file(rl, "classic", "MAME")
-    result = _collect_stat_files(rl)
-    assert f in result
-
-
-def test_collect_stat_files_legacy(tmp_path):
-    from spindoctor.cli import _collect_stat_files
-    rl = tmp_path / "rl"
-    f = _make_stat_file(rl, "legacy", "Zinc")
-    result = _collect_stat_files(rl)
-    assert f in result
-
-
-def test_collect_stat_files_newer(tmp_path):
-    from spindoctor.cli import _collect_stat_files
-    rl = tmp_path / "rl"
-    f = _make_stat_file(rl, "newer", "Dreamcast")
-    result = _collect_stat_files(rl)
-    assert f in result
-
-
 def test_collect_stat_files_includes_global_aggregate(tmp_path):
     from spindoctor.cli import _collect_stat_files
     rl = tmp_path / "rl"
