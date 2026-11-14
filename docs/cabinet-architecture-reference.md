@@ -265,6 +265,8 @@ MAME subsystem wheels ("4-Player Games", "Driving Games", "Gun Games", etc.) do 
 path=D:\Arcade\Media\MAME\Video\
 ```
 
+> **It hides the wheel's own videos.** With `path=` set, HyperSpin reads that wheel's videos *only* from that folder, with no per-game fallback: videos saved in `Media\<System>\Video\` (by a scraper, or by hand for the games that aren't MAME's) never play, and a folder that's gone (an old drive letter) plays none at all, without an error. Copying the videos the wheel uses into its own `Video\` folder and leaving `path=` blank is the safer setup. `doctor`'s **Video redirects** check reports both cases.
+
 **How SpinDoctor reads this** — `_read_hs_video_dir(settings_dir, system)` in `medialink.py` reads `[video defaults]` → `path=` and returns the path if it exists on disk. `plan_mirror` accepts a `video_dir_override` kwarg: when the source system has no `Video\` directory of its own, the override directory is scanned instead.
 
 This is called in `fav rebuild` (`favorites.py`) and `recent rebuild` / `stats build-wheel` (`recent.py`) with a per-system cache to avoid re-reading the same INI multiple times.
