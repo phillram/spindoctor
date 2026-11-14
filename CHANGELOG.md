@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **`doctor` checks that RocketLauncher's Casual Games module can find each PopCap / Big Fish game's program.** The module starts each game's own `.exe`: its `gamePath` setting, else `<Rom_Path>\<game>.exe` or `<Rom_Path>\<game>\<game>.exe`, and stops with "Could not locate … in your Rom Path or in the GamePath" when none of them is there, while every ROM check passes, since RocketLauncher finds the game's empty `<game>.txt`. On a real cabinet 11 of a PopCap wheel's 31 games failed this way: their `gamePath` was relative (`..\Games\PopCap\…`, which RocketLauncher resolves from its own folder) and pointed at a folder that had moved to another drive, and their programs aren't named after the game, so the fallbacks missed them too. A twelfth game had no `.txt` placeholder, so RocketLauncher took the `license.txt` in its folder as the game (`Rom_Match_Extension`), and the module looked for `license.exe`. The new **Casual Games** check repeats RocketLauncher's ROM search in its own order and the module's `gamePath` lookup (`Modules\Casual Games\<System>\<game>.ini`, then `<System>.ini`, then `Casual Games.ini`), and WARNs per wheel listing the games that won't start, the stray file RocketLauncher would take, or an archive the module refuses, with the INI section and key, or the placeholder, to fix it. A `gamePath` that is missing while the `Rom_Path` copy starts anyway is INFO. Covered by `tests/test_doctor_casual_games.py`.
+
 ## [3.2.0] - 2026-11-10
 
 ### Added

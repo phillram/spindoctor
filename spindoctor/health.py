@@ -22,7 +22,7 @@ from typing import Optional
 from .config import Config, get_systems
 from .database import find_database, load_database
 # The RocketLauncher Rom_Path lookup behind check_rom_paths, shared with `audit`.
-from .rl_rom_paths import _RomLookup, _RomSource, _raw_game_names, _wheel_games
+from .rl_rom_paths import _RomLookup, _RomPick, _RomSource, _raw_game_names, _resolve_rom_path, _wheel_games
 from .rocketlauncher import _read_rl_ini, _read_windows_text
 
 
@@ -1111,6 +1111,260 @@ def check_pc_launchability(config: Config) -> Check:
         node.status = _worst([c.status for c in node.children])
         parent.children.append(node)
 
+    parent.status = _worst(c.status for c in parent.children)
+    return parent
+
+
+# ─── Casual Games (PopCap / Big Fish Games) ──────────────────────────────────
+#
+# RocketLauncher's Casual Games module starts each game's own .exe: gamePath
+# under [<romName>] in its module INIs, else <romPath>\<romName>.exe, else
+# <romPath>\<romName>\<romName>.exe, with romPath and romName as RocketLauncher's
+# ROM search left them.
+
+_CASUAL_GAMES_MODULE = "casual games.ahk"
+
+# Extensions the module refuses before it looks for the program
+# (StringUtils.Contains(romExtension, "\.zip|\.7z|\.rar"), ignoring case).
+_CASUAL_ARCHIVES = ("zip", "7z", "rar")
+
+
+@dataclass
+class _CasualGame:
+    """One game's outcome in :func:`_casual_program`, kept for the report."""
+    name: str
+    outcome: str        # "ok", "fallback", "lost" or "unknown"
+    game_path: str      # gamePath as written ("" = not set)
+    ini: Optional[Path]  # the module INI it came from
+    full: Optional[Path]  # gamePath as a full path
+    module: Path
+
+
+def _casual_program(
+    look: _RomLookup, module: Path, system: str, game: str, rom_name: str, rom_dir: Optional[Path],
+) -> _CasualGame:
+    """What the Casual Games module (v2.0.x) does with one game.
+
+    It reads gamePath under ``[<romName>]`` (:meth:`_RomLookup.module_setting`;
+    a relative path starts from the RocketLauncher folder, as ``GetFullName``
+    resolves it).  When that file is missing it tries
+    ``<romPath>\\<romName>.exe`` and ``<romPath>\\<romName>\\<romName>.exe`` (its
+    middle try, ``<romPath>\\`` + the first one's full path, can't name a real
+    file).  The outcome is ``"ok"`` (gamePath is there), ``"fallback"`` (a
+    fallback is), ``"lost"`` (nothing is: "Could not locate …") or
+    ``"unknown"`` (gamePath can't be checked on this OS)."""
+    value, ini = look.module_setting(module, system, game, [rom_name], "gamePath")
+    full = _resolve_rom_path(value, look.rl_dir) if value else None
+    if value and full is None:
+        outcome = "unknown"
+    elif full is not None and look.exists(full):
+        outcome = "ok"
+    elif rom_dir is not None and any(
+        look.exists(p) for p in (rom_dir / f"{rom_name}.exe", rom_dir / rom_name / f"{rom_name}.exe")
+    ):
+        outcome = "fallback"
+    else:
+        outcome = "lost"
+    return _CasualGame(game, outcome, value, ini, full, module)
+
+
+def _is_casual_module(path: Optional[Path]) -> bool:
+    return path is not None and path.name.lower() == _CASUAL_GAMES_MODULE
+
+
+def _wheel_casual_games(system: str, look: _RomLookup, databases_dir: Path) -> Optional[Check]:
+    """One wheel's node for :func:`check_casual_games`; None when none of its
+    games starts through the Casual Games module."""
+
+    def casual(src: Optional[_RomSource]) -> bool:
+        return src is not None and not src.stops and _is_casual_module(look.module_file(src))
+
+    overrides = look.game_overrides(system)
+    own = look.source(system)
+    if not casual(own) and not any(
+        casual(look.source(other, emu) if other and other.lower() != system.lower()
+               else look.source(system, emu) or own)
+        for emu, other in overrides.values()
+    ):
+        return None
+
+    games, raw = _wheel_games(system, databases_dir)
+    node = Check(name=system, status=Status.OK)
+    checked = unfound = 0
+    uncheckable = False
+    trapped: list[tuple[str, _RomPick, list[str]]] = []  # (game, RL's pick, extensions)
+    archives: list[tuple[str, _RomPick]] = []
+    lost: list[_CasualGame] = []
+    stale: list[_CasualGame] = []
+    for name in games:
+        src, _other = look.game_source(system, name, overrides)
+        if src is None or src.stops:
+            continue  # RL stops before any module runs (the ROM paths check)
+        rl_name = raw.get(name, name)  # RL gets the XML name exactly as written
+        module = look.module_file(src, rl_name)
+        if not _is_casual_module(module):
+            continue
+        if not src.checkable():
+            uncheckable = True
+            continue
+        picked = look.pick(src, rl_name)
+        if picked is None:
+            if not look.skips_rom_check(src.system):
+                unfound += 1  # "Cannot find Rom": the ROM paths check reports it
+                continue
+            # Under Skipchecks RL carries on with romPath set to the whole
+            # Rom_Path, which names a folder only when it holds one.
+            only = [f for _el, f in src.folders]
+            result = _casual_program(look, module, src.system, rl_name, rl_name,
+                                     only[0] if len(only) == 1 else None)
+        else:
+            # The module refuses an archive before it looks for the program.
+            refused = picked.ext.lower().startswith(_CASUAL_ARCHIVES)
+            if refused and not picked.by_ext:
+                checked += 1
+                archives.append((name, picked))
+                continue
+            result = None if refused else _casual_program(
+                look, module, src.system, rl_name, picked.rom_name, picked.rom_dir)
+            if result is None or (picked.by_ext and result.outcome == "lost"):
+                # RL took another file in the game's folder as the game.  Found
+                # by its own name (a <game>.txt placeholder), would it start?
+                trapped.append((name, picked, src.exts))
+                result = _casual_program(look, module, src.system, rl_name, rl_name, picked.folder)
+        checked += 1
+        if result.outcome == "unknown":
+            uncheckable = True
+        elif result.outcome == "lost":
+            lost.append(result)
+        elif result.outcome == "fallback" and result.game_path:
+            stale.append(result)
+
+    rom_path = own.folders[0][1] if own is not None and len(own.folders) == 1 else None
+    each_game = (rom_path or Path("<Rom_Path>")) / "<game>"
+    if trapped:
+        first, pick, _exts = trapped[0]
+        took = ", ".join(f"{g}: {p.rom_name}.{p.ext}" for g, p, _e in trapped[:3])
+        more = f" and {len(trapped) - 3} more" if len(trapped) > 3 else ""
+        # A placeholder only helps if RL reaches it before the stray file:
+        # an extension no later in Rom_Extension than any game's stray one.
+        last = min(e.index(p.ext) for _g, p, e in trapped)
+        usable = [x for x in trapped[0][2][:last + 1] if not x.lower().startswith(_CASUAL_ARCHIVES)]
+        ext = "txt" if "txt" in usable else (usable[0] if usable else "")
+        steps = []
+        if ext:
+            steps.append(f"add an empty {pick.folder / f'<game>.{ext}'} for each (e.g. {first}.{ext}), "
+                         "so RocketLauncher finds the game by its own name")
+        if look.skips_rom_check(system):
+            steps.append("set Rom_Match_Extension=false under [Settings] in "
+                         f"{look.settings_dir / system / 'RocketLauncher.ini'}")
+        if not steps:
+            steps.append(f"move {pick.rom_name}.{pick.ext} out of {pick.rom_dir}")
+        node.children.append(Check(
+            name="ROM search", status=Status.WARN,
+            detail=(f"{len(trapped)}/{checked} games won't start: RocketLauncher takes another file in "
+                    f"the game's folder as the game (Rom_Match_Extension), and the module can't start "
+                    f"that ({took}{more})"),
+            fix=steps[0][0].upper() + steps[0][1:] + "".join(f"; or {s}" for s in steps[1:]),
+        ))
+    if archives:
+        names = [f"{g}.{p.ext}" for g, p in archives]
+        node.children.append(Check(
+            name="Archives", status=Status.WARN,
+            detail=(f"{len(archives)}/{checked} games are found as archives, which the module refuses "
+                    f"(\"Compressed games are not supported\"): {_some(names, 5)}"),
+            fix=(f"Extract each game into its own folder ({each_game}) and move its archive out of "
+                 "Rom_Path (RocketLauncher tries 7z_Extensions before Rom_Extension)"),
+        ))
+    if lost:
+        with_path = [g for g in lost if g.game_path]
+        if with_path:
+            g = with_path[0]
+            step = (f"Fix gamePath under each game's section in {g.ini} (a relative path starts from "
+                    f"the RocketLauncher folder: [{g.name}] gamePath={g.game_path} is {g.full}, "
+                    "which doesn't exist)")
+        else:
+            step = (f"Set gamePath=<the game's .exe> under [<game>] in "
+                    f"{lost[0].module.parent / (system + '.ini')}")
+        node.children.append(Check(
+            name="Programs", status=Status.WARN,
+            detail=(f"{len(lost)}/{checked} games won't start: no program at their gamePath or in "
+                    f"Rom_Path (\"Could not locate …\"): {_some([g.name for g in lost], 5)}"),
+            fix=f"{step}; or name each program {each_game / '<game>.exe'}",
+        ))
+    if stale:
+        g = stale[0]
+        node.children.append(Check(
+            name="gamePath", status=Status.INFO,
+            detail=(f"{len(stale)}/{checked} games' gamePath points at a missing file, so the module "
+                    f"starts the copy it finds in Rom_Path: {_some([s.name for s in stale], 5)}"),
+            fix=(f"Correct or remove gamePath under those games' sections in {g.ini} "
+                 f"(e.g. [{g.name}] gamePath={g.game_path} is {g.full})"),
+        ))
+
+    notes = []
+    if not any(c.status == Status.WARN for c in node.children) and checked:
+        notes.append(f"{checked} games OK")
+    if unfound:
+        notes.append(f"{unfound} not found by RocketLauncher (see ROM paths)")
+    if uncheckable:
+        notes.append("some paths use Windows drive letters; can't check them on this OS")
+    node.detail = "; ".join(notes)
+    node.status = _worst([c.status for c in node.children])
+    return node
+
+
+def check_casual_games(config: Config) -> Check:
+    """Will RocketLauncher's Casual Games module find each game's program?
+
+    The module (``Modules\\Casual Games\\Casual Games.ahk``, for PopCap and Big
+    Fish Games wheels) starts each game's own ``.exe``, found through its
+    ``gamePath`` setting or the game's ``Rom_Path`` folder, and stops with
+    "Could not locate "<name>" in your Rom Path or in the GamePath" when
+    neither holds it.  Every check before this one passes such a game: its
+    ROM (an empty ``<game>.txt`` or the ``.exe``) is found.  For every game on a
+    Main Menu wheel that launches with that module this follows RocketLauncher
+    the way the PC games check follows PCLauncher:
+
+    * the ROM search, in RocketLauncher's own order
+      (:meth:`_RomLookup.pick`), since the module looks the program up under
+      the ``romName`` it leaves.  With ``Rom_Match_Extension`` on, a game with
+      no file named after it gets any file of a listed extension from its
+      folder (a ``license.txt``), and the module then looks for
+      ``license.exe``: a WARN, fixed by an empty ``<game>.txt`` placeholder.
+      An archive is refused outright ("Compressed games are not supported");
+    * ``gamePath`` (:meth:`_RomLookup.module_setting`: the game's own
+      ``<System>\\<game>.ini``, then ``<System>.ini``, then ``Casual Games.ini``),
+      relative to the RocketLauncher folder, then the two ``Rom_Path``
+      fallbacks.  No program anywhere is a WARN listing the games; a
+      ``gamePath`` that is missing while a fallback copy starts is INFO.
+
+    Wheels switched off on the Main Menu are capped at INFO.  Diagnosis only:
+    each fix line names the INI section and key, or the placeholder to add.
+    """
+    name = "Casual Games"
+    if not config.hyperspin_dir or not Path(config.hyperspin_dir).is_dir():
+        return Check(name=name, status=Status.INFO, detail="hyperspin_dir not configured; skipping")
+    if not config.rocketlauncher_dir:
+        return Check(name=name, status=Status.INFO, detail="rocketlauncher_dir not configured; skipping")
+
+    from .rocketlauncher import SKIP_GENERATE_CONFIG
+
+    mm_path = Path(config.hyperspin_dir) / "Databases" / "Main Menu" / "Main Menu.xml"
+    look = _RomLookup(Path(config.rocketlauncher_dir))
+    hidden = _hidden_main_menu_wheels(mm_path)
+    parent = Check(name=name, status=Status.OK)
+    for system in _main_menu_wheels(mm_path):
+        if system in SKIP_GENERATE_CONFIG:
+            continue
+        node = _wheel_casual_games(system, look, config.databases_dir)
+        if node is None:
+            continue
+        if system in hidden:
+            node.name = f"{system} (hidden on the Main Menu)"
+            _cap_at_info(node)
+        parent.children.append(node)
+    if not parent.children:
+        return Check(name=name, status=Status.INFO, detail="no Casual Games (PopCap / Big Fish Games) systems")
     parent.status = _worst(c.status for c in parent.children)
     return parent
 
@@ -3157,6 +3411,7 @@ def run_health_checks(config: Config, fix: bool = False) -> HealthReport:
     _safe("HyperSpin databases", lambda: check_databases(config))
     _safe("Wheel wiring", lambda: check_wheel_wiring(config, fix, report.fixes_applied))
     _safe("PC games", lambda: check_pc_launchability(config))
+    _safe("Casual Games", lambda: check_casual_games(config))
     _safe("ROM paths", lambda: check_rom_paths(config))
     _safe("HyperSpin ROMs only", lambda: check_hyperspin_roms_only(config))
     _safe("Spaces in game names", lambda: check_game_name_spaces(config))

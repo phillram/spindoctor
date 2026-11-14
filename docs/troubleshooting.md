@@ -597,6 +597,49 @@ For MAME alternate names, recreate the empty `<name>.txt` files. Then re-run
 `spindoctor doctor` to confirm the wheel shows `N games OK`. See
 [Cabinet Architecture Reference → Multiple ROM folders and MAME alternate-name placeholders](cabinet-architecture-reference.md#multiple-rom-folders-and-mame-alternate-name-placeholders).
 
+### A PopCap or Big Fish game won't start: "Could not locate … in your Rom Path or in the GamePath"
+
+Choosing a game on a PopCap or Big Fish Games wheel shows RocketLauncher's
+fade screen, then drops back to the wheel, and RocketLauncher's log ends with
+**"Could not locate "`<name>`" in your Rom Path or in the GamePath (Module
+setting) for this game"**. The wheel's ROM checks pass: RocketLauncher found
+the game's empty `<game>.txt`.
+
+**Cause:** RocketLauncher's Casual Games module starts the game's own program.
+It reads `gamePath` from the game's section in
+`RocketLauncher\Modules\Casual Games\<System>.ini` (a
+`Modules\Casual Games\<System>\<game>.ini` comes first, `Casual Games.ini`
+last), and when that file isn't there it tries `<Rom_Path>\<game>.exe` and
+`<Rom_Path>\<game>\<game>.exe`. Two ways this breaks:
+
+- **`gamePath` points at a folder that moved.** A relative path starts from
+  the RocketLauncher folder: with RocketLauncher in `D:\Arcade\RocketLauncher`,
+  `gamePath=..\Games\PopCap\Cosmic Bugs\CosmicBugs.exe` means
+  `D:\Arcade\Games\PopCap\Cosmic Bugs\CosmicBugs.exe`. Once the games live
+  somewhere else (say `J:\Games\PopCap`), the games whose program is named
+  after the game still start through the second fallback, and the others
+  (`CosmicBugs.exe`, `WinMM.exe`) don't.
+- **The `.txt` placeholder is missing.** With `Rom_Extension=txt|exe` and
+  `Rom_Match_Extension=true`, RocketLauncher looks for `<game>.txt`, then
+  `<game>\<game>.txt`, then *any* `.txt` under the game's folder, all before it
+  tries `.exe`. Without the placeholder it takes the game's `license.txt` or
+  `readme.txt` as the game, the module looks for `license.exe`, and the error
+  names `"license"` instead of the game.
+
+**Find them:** run `spindoctor doctor`. Its **Casual Games** check lists, per
+wheel, the games with no program at their `gamePath` or in `Rom_Path` (with
+the full path a relative `gamePath` stands for), and the games whose ROM search
+would end on another file (`NingPo MahJong Deluxe: license.txt`).
+
+**Fix:** set `gamePath` under `[<game>]` in
+`RocketLauncher\Modules\Casual Games\<System>.ini` to the program's full path,
+such as `J:\Games\PopCap\Cosmic Bugs\CosmicBugs.exe`, or in RocketLauncherUI's
+module settings. For a missing placeholder, create an empty
+`<Rom_Path>\<game>.txt`, or set `Rom_Match_Extension=false` under `[Settings]`
+in `RocketLauncher\Settings\<System>\RocketLauncher.ini` (the module itself
+asks for `Skipchecks=Rom and Emu`, which lets RocketLauncher carry on without a
+ROM file). Then re-run `spindoctor doctor`.
+
 ### A game won't launch: AutoHotkey says "Failed attempt to launch program or document"
 
 A RocketLauncher User Functions file (`RocketLauncher\Lib\User Functions\...`)
