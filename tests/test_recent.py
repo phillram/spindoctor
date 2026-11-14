@@ -1,27 +1,21 @@
 """Recently-Played wheel: parse RL Statistics + rebuild synthetic system."""
 from __future__ import annotations
+from tests.helpers import write_bytes as _write_bytes
+
+from spindoctor import config
+from spindoctor import favorites
+from spindoctor import recent
 
 from datetime import datetime
 
 import pytest
 
-import spindoctor.config as config_mod
 from spindoctor.config import Config, save_config
 from spindoctor.medialink import LinkMode
 from spindoctor.recent import (
     PlayRecord, _parse_time, _read_stats_file, _read_global_statistics_ini,
     collect_play_records, rebuild, top_recent,
 )
-
-
-@pytest.fixture
-def isolated_config(tmp_path, monkeypatch):
-    home = tmp_path / "spindoctor_home"
-    monkeypatch.setattr(config_mod, "CONFIG_DIR", home)
-    monkeypatch.setattr(config_mod, "CONFIG_FILE", home / "config.json")
-    config_mod.reset_override_cache()
-    yield home
-    config_mod.reset_override_cache()
 
 
 def _write_stats_ini(path, sections):
@@ -44,7 +38,7 @@ def test_parse_time_handles_common_formats():
     assert _parse_time("") is None
 
 
-def test_ranked_builder_reuses_source_cache_and_preserves_metadata(isolated_config, tmp_path, monkeypatch):
+def test_ranked_builder_reuses_source_cache_and_preserves_metadata(config_home, tmp_path, monkeypatch):
     import xml.etree.ElementTree as ET
     from spindoctor import favorites, recent
 
@@ -81,7 +75,7 @@ def test_ranked_builder_reuses_source_cache_and_preserves_metadata(isolated_conf
 
 
 @pytest.mark.parametrize("ranked", [False, True])
-def test_shared_writer_does_not_prune_after_media_write_failure(isolated_config, tmp_path, monkeypatch, ranked):
+def test_shared_writer_does_not_prune_after_media_write_failure(config_home, tmp_path, monkeypatch, ranked):
     from spindoctor import favorites, recent
     from spindoctor._wheels import mark_synthetic
 
@@ -182,7 +176,7 @@ def test_top_recent_dedupes_and_sorts():
     assert top[0].play_count == 2  # the newer Tetris record won
 
 
-def test_collect_play_records_walks_global_dir(isolated_config, tmp_path):
+def test_collect_play_records_walks_global_dir(config_home, tmp_path):
     rl = tmp_path / "rl"
     _write_stats_ini(
         rl / "Settings" / "Global Statistics" / "Super Nintendo.ini",
@@ -195,7 +189,7 @@ def test_collect_play_records_walks_global_dir(isolated_config, tmp_path):
     assert records[0].system == "Super Nintendo"
 
 
-def test_rebuild_writes_recently_played_database(isolated_config, tmp_path):
+def test_rebuild_writes_recently_played_database(config_home, tmp_path):
     hs = tmp_path / "hs"
     roms = tmp_path / "roms"
     rl = tmp_path / "rl"
@@ -244,7 +238,7 @@ def test_rebuild_writes_recently_played_database(isolated_config, tmp_path):
     assert "hyperlaunch=true" in body
 
 
-def test_rebuild_prunes_when_records_drop_off(isolated_config, tmp_path):
+def test_rebuild_prunes_when_records_drop_off(config_home, tmp_path):
     hs = tmp_path / "hs"
     roms = tmp_path / "roms"
     rl = tmp_path / "rl"
@@ -284,7 +278,7 @@ def test_rebuild_prunes_when_records_drop_off(isolated_config, tmp_path):
     assert {w.stem for w in wheels} == {"Mario"}
 
 
-def test_rebuild_orders_by_recency_not_alphabetical(isolated_config, tmp_path):
+def test_rebuild_orders_by_recency_not_alphabetical(config_home, tmp_path):
     """Recently Played lists games most-recent first, even when that differs
     from alphabetical order — covering both the fresh write and a rebuild over
     an existing database file."""
@@ -341,7 +335,7 @@ def test_parse_time_handles_global_statistics_format():
     assert result == datetime(2026, 5, 22, 7, 19, 22)
 
 
-def test_collect_play_records_walks_data_statistics_dir(isolated_config, tmp_path):
+def test_collect_play_records_walks_data_statistics_dir(config_home, tmp_path):
     """Stats in Data/Statistics/<system>.ini (newer RL layout) are found."""
     rl = tmp_path / "rl"
     _write_stats_ini(
@@ -356,7 +350,7 @@ def test_collect_play_records_walks_data_statistics_dir(isolated_config, tmp_pat
     assert records[0].rom_name == "zingzip"
 
 
-def test_collect_play_records_skips_global_statistics_ini(isolated_config, tmp_path):
+def test_collect_play_records_skips_global_statistics_ini(config_home, tmp_path):
     """Global Statistics.ini in Data/Statistics/ is NOT parsed as a per-system file."""
     rl = tmp_path / "rl"
     # Write a real per-system file alongside the aggregate
@@ -381,7 +375,7 @@ def test_collect_play_records_skips_global_statistics_ini(isolated_config, tmp_p
 
 
 def test_collect_play_records_falls_back_to_global_statistics(
-    isolated_config, tmp_path,
+    config_home, tmp_path,
 ):
     """When no per-system files exist, the Global Statistics.ini fallback is used."""
     rl = tmp_path / "rl"
@@ -430,7 +424,7 @@ def test_read_global_statistics_ini_parses_last_played(tmp_path):
 
 # ─── synthetic system exclusion ──────────────────────────────────────────────
 
-def test_collect_play_records_excludes_toolkit_by_default(isolated_config, tmp_path):
+def test_collect_play_records_excludes_toolkit_by_default(config_home, tmp_path):
     """Toolkit stats are excluded by default so tool runs never appear in synthetic wheels."""
     rl = tmp_path / "rl"
     gs = rl / "Settings" / "Global Statistics"
@@ -451,7 +445,7 @@ def test_collect_play_records_excludes_toolkit_by_default(isolated_config, tmp_p
     assert "Toolkit" not in systems
 
 
-def test_collect_play_records_excludes_synthetic_systems_by_default(isolated_config, tmp_path):
+def test_collect_play_records_excludes_synthetic_systems_by_default(config_home, tmp_path):
     """Favorites / Recently Played / Most Played stats are excluded by default."""
     rl = tmp_path / "rl"
     gs = rl / "Settings" / "Global Statistics"
@@ -473,7 +467,7 @@ def test_collect_play_records_excludes_synthetic_systems_by_default(isolated_con
     assert "Most Played" not in systems
 
 
-def test_collect_play_records_includes_synthetic_when_exclusion_cleared(isolated_config, tmp_path):
+def test_collect_play_records_includes_synthetic_when_exclusion_cleared(config_home, tmp_path):
     """Passing exclude_systems=None returns all systems including synthetic."""
     rl = tmp_path / "rl"
     gs = rl / "Settings" / "Global Statistics"
@@ -491,7 +485,7 @@ def test_collect_play_records_includes_synthetic_when_exclusion_cleared(isolated
     assert "Favorites" in systems
 
 
-def test_collect_play_records_excludes_custom_target_system(isolated_config, tmp_path):
+def test_collect_play_records_excludes_custom_target_system(config_home, tmp_path):
     """A custom target_system name is also excluded when passed explicitly."""
     rl = tmp_path / "rl"
     gs = rl / "Settings" / "Global Statistics"
@@ -510,7 +504,7 @@ def test_collect_play_records_excludes_custom_target_system(isolated_config, tmp
     assert "My Custom Wheel" not in systems
 
 
-def test_rebuild_excludes_favorites_system_via_fallback(isolated_config, tmp_path):
+def test_rebuild_excludes_favorites_system_via_fallback(config_home, tmp_path):
     """Entries with system='Favorites' from Global Statistics.ini fallback must be excluded.
 
     When a game is played from the Favorites wheel, RocketLauncher records a
@@ -565,48 +559,7 @@ def test_rebuild_excludes_favorites_system_via_fallback(isolated_config, tmp_pat
     assert "Favorites" not in db_text
 
 
-def test_rebuild_writes_media_before_deleting_orphans(isolated_config, tmp_path):
-    """Regression: orphan media must be removed AFTER new media is written.
-
-    The previous ordering (delete orphans → write new files) meant a crash
-    between the two steps left the wheel with less media than before.  Run
-    two consecutive rebuilds and confirm the surviving media file is present
-    after the second one (not deleted as a false orphan before being re-written).
-    """
-    hs = tmp_path / "hs"
-    roms = tmp_path / "roms"
-    rl = tmp_path / "rl"
-    (roms / "MAME").mkdir(parents=True)
-    (hs / "Databases" / "MAME").mkdir(parents=True)
-    (hs / "Databases" / "MAME" / "MAME.xml").write_text(
-        "<menu><game name=\"1942\"><description>1942</description></game></menu>",
-        encoding="utf-8",
-    )
-    wheel_src = hs / "Media" / "MAME" / "Images" / "Wheel"
-    wheel_src.mkdir(parents=True)
-    (wheel_src / "1942.png").write_bytes(b"wheel-data")
-
-    _write_stats_ini(
-        rl / "Settings" / "Global Statistics" / "MAME.ini",
-        [("1942", "2026-05-01 12:00:00", 5)],
-    )
-    cfg = Config(
-        roms_dir=str(roms), hyperspin_dir=str(hs), rocketlauncher_dir=str(rl),
-    )
-    save_config(cfg)
-
-    rebuild(cfg, limit=20, media_mode=LinkMode.COPY)
-    dest = hs / "Media" / "Recently Played" / "Images" / "Wheel" / "1942.png"
-    assert dest.exists(), "media not written on first rebuild"
-
-    # Second rebuild — 1942 is still in the stats, so its media must survive.
-    rebuild(cfg, limit=20, media_mode=LinkMode.COPY)
-    assert dest.exists(), (
-        "media deleted on second rebuild — orphan cleanup ran before write"
-    )
-
-
-def test_rebuild_uses_description_not_rom_name(isolated_config, tmp_path):
+def test_rebuild_uses_description_not_rom_name(config_home, tmp_path):
     """Regression: wheel description must come from the DB description field, not the ROM filename."""
     hs = tmp_path / "hs"
     roms = tmp_path / "roms"
@@ -659,3 +612,66 @@ def test_standalone_version_flag_reports_version(capsys):
         recent_mod.main(["--version"])
     assert exc.value.code == 0
     assert __version__ in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("builder", ["favorites", "recent"])
+def test_wheel_rebuild_preserves_theme_contents_and_system_media(config_home, tmp_path, builder):
+    hs = tmp_path / "hs"
+    source = "SNES"
+    target = "Favorites" if builder == "favorites" else "Recently Played"
+    _write_bytes(hs / "Databases" / source / f"{source}.xml", b'<menu><game name="Tetris"/></menu>')
+    media = hs / "Media"
+    _write_bytes(media / source / "Themes" / "Tetris" / "Theme.xml")
+    _write_bytes(media / source / "Themes" / "Tetris" / "bg.png")
+    protected = [
+        _write_bytes(media / target / "Themes" / "default.zip", b"custom theme"),
+        _write_bytes(media / target / "Sound" / "Wheel Click.mp3", b"custom click"),
+        _write_bytes(media / target / "Images" / "Letters" / "A.png", b"letter"),
+    ]
+    stale = _write_bytes(media / target / "Images" / "Wheel" / "Removed.png")
+    cfg = config.Config(hyperspin_dir=str(hs))
+    entry = favorites.FavoriteEntry(source, "Tetris", "Tetris", "")
+    for _ in range(2):
+        if builder == "favorites":
+            favorites.rebuild(favorites.FavoriteStore([entry], target), cfg, skip_launchers=True)
+        else:
+            recent._build_synthetic_wheel(cfg, target, [entry], skip_launchers=True)
+    assert (media / target / "Themes" / "Tetris" / "Theme.xml").exists()
+    assert (media / target / "Themes" / "Tetris" / "bg.png").exists()
+    assert [p.read_bytes() for p in protected] == [b"custom theme", b"custom click", b"letter"]
+    assert not stale.exists()
+
+
+@pytest.mark.parametrize("name", ["", " ", "..", "../MAME", "MAME/child", "C:\\MAME"])
+def test_clear_wheel_rejects_invalid_target(config_home, tmp_path, name):
+    cfg = config.Config(hyperspin_dir=str(tmp_path))
+    with pytest.raises(ValueError):
+        recent.clear_wheel_artifacts(cfg, name, dry_run=True)
+
+
+@pytest.mark.parametrize("operation", ["clear", "favorites", "recent"])
+def test_real_pc_wheel_is_not_owned_because_it_has_launchers(tmp_path, operation):
+    cfg = config.Config(hyperspin_dir=str(tmp_path / "hs"), rocketlauncher_dir=str(tmp_path / "rl"))
+    name = "PC Games"
+    db = _write_bytes(cfg.databases_dir / name / f"{name}.xml", b"<menu/>")
+    ini = _write_bytes(tmp_path / "rl" / "Modules" / "PCLauncher" / name / "Game.ini")
+    art = _write_bytes(cfg.media_dir / name / "Images" / "Wheel" / "Game.png")
+    with pytest.raises(ValueError, match="non-synthetic"):
+        if operation == "clear":
+            recent.clear_wheel_artifacts(cfg, name, dry_run=False)
+        elif operation == "favorites":
+            favorites.rebuild(favorites.FavoriteStore([], name), cfg, skip_launchers=True)
+        else:
+            recent._build_synthetic_wheel(cfg, name, [], skip_launchers=True)
+    assert db.read_bytes() == b"<menu/>"
+    assert ini.read_bytes() == art.read_bytes() == b"original"
+    assert not (db.parent / ".spindoctor-synthetic").exists()
+
+
+def test_marked_custom_wheel_remains_rebuildable(tmp_path):
+    cfg = config.Config(hyperspin_dir=str(tmp_path / "hs"))
+    name = "My Favorites"
+    db = _write_bytes(cfg.databases_dir / name / f"{name}.xml", b"<menu/>")
+    _write_bytes(db.parent / ".spindoctor-synthetic", b"")
+    favorites.rebuild(favorites.FavoriteStore([], name), cfg, skip_launchers=True)
+    assert db.exists()

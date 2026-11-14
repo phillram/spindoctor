@@ -20,6 +20,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from click import unstyle
 from click.testing import CliRunner
 
 import spindoctor.cleanup as cleanup_mod
@@ -68,7 +69,7 @@ def _flat(output: str) -> str:
     without caring about how wide the runner's virtual terminal is.
     The path itself never contains newlines, so this is safe.
     """
-    return output.replace("\n", "")
+    return unstyle(output).replace("\n", "")
 
 
 def _make_hs(tmp_path: Path) -> Path:

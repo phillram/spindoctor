@@ -285,4 +285,4 @@ def test_doctor_runs_both_checks_after_rom_paths(tmp_path):
     cfg, _hs = _cabinet(tmp_path, AAE)
     names = [c.name for c in health.run_health_checks(cfg, fix=False).checks]
     i = names.index("ROM paths")
-    assert names[i + 1:i + 3] == ["HyperSpin ROMs only", "Spaces in game names"]
+    assert names[i + 1:i + 4] == ["HyperSpin ROMs only", "Video redirects", "Spaces in game names"]

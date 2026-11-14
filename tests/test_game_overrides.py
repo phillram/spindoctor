@@ -13,7 +13,6 @@ import types
 import pytest
 from click.testing import CliRunner
 
-import spindoctor.config as config_mod
 from spindoctor.cli import cli
 from spindoctor.config import (
     Config, get_game_override, get_game_overrides, save_config,
@@ -24,12 +23,8 @@ from spindoctor.scraper import (
 
 
 @pytest.fixture
-def isolated_config(tmp_path, monkeypatch):
-    monkeypatch.setattr(config_mod, "CONFIG_DIR", tmp_path)
-    monkeypatch.setattr(config_mod, "CONFIG_FILE", tmp_path / "config.json")
-    config_mod.reset_override_cache()
-    yield
-    config_mod.reset_override_cache()
+def isolated_config(config_home_factory, tmp_path):
+    config_home_factory(tmp_path)
 
 
 # ─── config storage / cache ────────────────────────────────────────────────

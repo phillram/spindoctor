@@ -4,6 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from click import unstyle
 from click.testing import CliRunner
 
 import spindoctor.config as config_mod
@@ -43,14 +44,10 @@ def _write_db(databases_dir: Path, system: str, entries: list[str]) -> None:
 
 
 @pytest.fixture
-def cabinet(tmp_path, monkeypatch):
+def cabinet(tmp_path, config_home_factory):
     home = tmp_path / "home"
     home.mkdir()
-    monkeypatch.setattr(config_mod, "CONFIG_DIR", home / ".spindoctor")
-    monkeypatch.setattr(
-        config_mod, "CONFIG_FILE", home / ".spindoctor" / "config.json",
-    )
-    config_mod.reset_override_cache()
+    config_home_factory(home / ".spindoctor")
 
     roms = tmp_path / "roms"
     hs = tmp_path / "hyperspin"
@@ -64,6 +61,7 @@ def cabinet(tmp_path, monkeypatch):
     _write_db(hs / "Databases", "MAME", [
         ("hotd", "House of the Dead"),
         ("pacman", "Pac-Man"),
+        ("pacplus", "Pac-Man Plus"),
     ])
     _write_db(hs / "Databases", "Sega Naomi", [
         ("hotd2", "House of the Dead 2"),
@@ -89,14 +87,18 @@ def test_find_global_returns_matches_across_systems(cabinet):
     assert "MAME" in res.output
     assert "Sega Naomi" in res.output
     assert "Sega Dreamcast" in res.output
-    assert "3 match" in res.output
+    assert "3 match" in unstyle(res.output)
 
 
 def test_find_global_substring_match(cabinet):
     runner = CliRunner()
     res = runner.invoke(cli, ["find-global", "pac"])
-    assert res.exit_code == 0
+    assert res.exit_code == 0, res.output
     assert "Pac-Man" in res.output
+    assert "Pac-Man Plus" in res.output
+    assert "pacman" in res.output
+    assert "pacplus" in res.output
+    assert "2 match" in unstyle(res.output)
 
 
 def test_find_global_no_matches(cabinet):
@@ -108,7 +110,15 @@ def test_find_global_no_matches(cabinet):
 
 def test_find_global_exact_flag(cabinet):
     runner = CliRunner()
-    # Substring would match many; --exact narrows to one.
+    substring = runner.invoke(cli, ["find-global", "Pac-Man"])
+    assert substring.exit_code == 0, substring.output
+    assert "2 match" in unstyle(substring.output)
+    assert "Pac-Man Plus" in substring.output
+    assert "pacman" in substring.output and "pacplus" in substring.output
     res = runner.invoke(cli, ["find-global", "Pac-Man", "--exact"])
-    assert res.exit_code == 0
-    assert "1 match" in res.output
+    assert res.exit_code == 0, res.output
+    assert "1 match" in unstyle(res.output)
+    assert "Pac-Man" in res.output
+    assert "pacman" in res.output
+    assert "Pac-Man Plus" not in res.output
+    assert "pacplus" not in res.output

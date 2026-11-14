@@ -14,7 +14,10 @@ import time
 import types
 from pathlib import Path
 
+from tests.helpers import encode_legacy_text as _encode_legacy_text
+
 import pytest
+from click import unstyle
 from click.testing import CliRunner
 
 from spindoctor import gui, health, ledblinky
@@ -151,7 +154,7 @@ def _run(*args):
     """Run ``spindoctor ledblinky <args>``; the output with table borders and wrapping removed."""
     result = CliRunner().invoke(cli, ["ledblinky", *args])
     assert result.exit_code == 0, result.output
-    return " ".join(re.sub(r"[│┃|]", " ", result.output).split())
+    return " ".join(re.sub(r"[│┃|]", " ", unstyle(result.output)).split())
 
 
 def _text(raw: bytes) -> str:
@@ -612,3 +615,31 @@ def test_gui_buttons_use_the_wheel_scope_unless_all_roms_is_ticked():
     gui._SpinDoctorGUI._run_led_generate(stub)
     gui._SpinDoctorGUI._run_led_prune(stub)
     assert stub.calls == [["ledblinky", "generate", "--all-roms", "--apply"], ["ledblinky", "prune", "--apply"]]
+
+
+@pytest.mark.parametrize("operation", ("remove", "replace"))
+def test_library_keeps_section_boundary_comment_banners(operation):
+    text = "[a]\r\nx=1\r\n\r\n; Next category\r\n# keep this too\r\n\r\n[b]\r\ny=2\r\n"
+    raw = ll.RawIni(text)
+    assert raw.render() == text
+    result = raw.render(**({"remove": ["a"]} if operation == "remove"
+                           else {"replace": {"a": "[a]\r\nx=3\r\n"}}))
+    assert "\r\n; Next category\r\n# keep this too\r\n\r\n[b]\r\ny=2\r\n" in result
+    assert result.count("Next category") == 1
+    assert "Next category" not in raw.entries()["a"]
+
+
+@pytest.mark.parametrize("encoding", ("utf-16", "utf-16-be"))
+def test_library_roundtrips_utf16_live_files(tmp_path, encoding):
+    path = tmp_path / "Controls.ini"
+    text = "; café\r\n[a]\r\nx=1\r\n"
+    path.write_bytes(_encode_legacy_text(text, encoding))
+    raw = ll.RawIni.load(path)
+    ll.write_raw(path, raw.render())
+    assert path.read_bytes() == _encode_legacy_text(text, encoding)
+
+
+def test_community_discovery_uses_numeric_oldest_and_checks_content(tmp_path):
+    for counter, content in ((10, "P1NumButtons=10"), (2, "P1NumButtons=2"), (1, "unrelated")):
+        (tmp_path / f"controls.ini.20260101_120000_{counter}.bak").write_bytes(content.encode())
+    assert ll.find_community_controls(tmp_path).name.endswith("_2.bak")

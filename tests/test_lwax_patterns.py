@@ -34,13 +34,18 @@ def test_generates_a_full_batch(generated):
 
 def test_every_file_is_valid_xml_and_in_range(generated):
     out_dir, written, _used = generated
+    checked_values = set()
     for filename, _frames, _desc in written:
         path = out_dir / filename
-        assert path.exists()
-        root = ET.fromstring(path.read_text(encoding="utf-8"))
-        for intensity in root.iter("Intensity"):
-            for value in intensity.get("Value").split(","):
-                assert 0 <= int(value) <= 48
+        # Read/parse each real output once; do not render it again. Repeated
+        # intensity vectors need only one integer/range conversion per batch.
+        root = ET.parse(path).getroot()
+        vectors = {intensity.attrib["Value"] for intensity in root.iter("Intensity")}
+        assert vectors, filename
+        for vector in vectors - checked_values:
+            for value in vector.split(","):
+                assert 0 <= int(value) <= 48, (filename, vector)
+        checked_values.update(vectors)
 
 
 def test_file_names_are_clean_and_unique(generated):
@@ -58,6 +63,15 @@ def test_palette_stays_globally_unique(generated):
     _out_dir, _written, palette_used = generated
     # Every fixed-colour variant consumed a distinct palette colour; must fit.
     assert 0 < palette_used <= len(lwax_patterns.MASTER_PALETTE)
+    palette = lwax_patterns.Palette(lwax_patterns.MASTER_PALETTE)
+    consumed = palette.take_n(palette_used)
+    assert consumed == lwax_patterns.MASTER_PALETTE[:palette_used]
+    assert palette.used == palette_used
+    assert len({rgb for _shade, _hue, rgb in consumed}) == palette_used
+    # Names alone are not sufficient: different shade/hue labels could resolve
+    # to identical LED intensities.
+    all_rgb = [rgb for _shade, _hue, rgb in lwax_patterns.MASTER_PALETTE]
+    assert len(set(all_rgb)) == len(all_rgb)
 
 
 def test_readme_index_written(generated):

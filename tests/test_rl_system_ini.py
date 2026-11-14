@@ -50,33 +50,22 @@ def _make_config(tmp_path: Path) -> tuple[Config, Path]:
 # ─── detect_rl_layout ────────────────────────────────────────────────────────
 
 
-def test_detect_folder_layout(tmp_path):
-    settings = tmp_path / "Settings"
-    (settings / "MAME").mkdir(parents=True)
-    (settings / "MAME" / "Emulators.ini").write_text("[ROMS]\n", encoding="utf-8")
-    assert detect_rl_layout(settings, "MAME") == "folder"
-
-
-def test_detect_flat_layout(tmp_path):
-    settings = tmp_path / "Settings"
-    settings.mkdir()
-    (settings / "MAME.ini").write_text("[Settings]\n", encoding="utf-8")
-    assert detect_rl_layout(settings, "MAME") == "flat"
-
-
-def test_detect_new_when_neither_exists(tmp_path):
+@pytest.mark.parametrize("folder_file, flat_file, expected", [
+    pytest.param(True, False, "folder", id="folder-layout"),
+    pytest.param(False, True, "flat", id="flat-layout"),
+    pytest.param(False, False, "new", id="new-when-neither-exists"),
+    # If both files exist, folder layout is reported (checked first).
+    pytest.param(True, True, "folder", id="folder-wins-when-both-exist"),
+])
+def test_detect_rl_layout(tmp_path, folder_file, flat_file, expected):
     settings = tmp_path / "Settings"
     settings.mkdir()
-    assert detect_rl_layout(settings, "MAME") == "new"
-
-
-def test_detect_folder_wins_when_both_exist(tmp_path):
-    """If both files exist, folder layout is reported (checked first)."""
-    settings = tmp_path / "Settings"
-    (settings / "MAME").mkdir(parents=True)
-    (settings / "MAME" / "Emulators.ini").write_text("[ROMS]\n", encoding="utf-8")
-    (settings / "MAME.ini").write_text("[Settings]\n", encoding="utf-8")
-    assert detect_rl_layout(settings, "MAME") == "folder"
+    if folder_file:
+        (settings / "MAME").mkdir()
+        (settings / "MAME" / "Emulators.ini").write_text("[ROMS]\n", encoding="utf-8")
+    if flat_file:
+        (settings / "MAME.ini").write_text("[Settings]\n", encoding="utf-8")
+    assert detect_rl_layout(settings, "MAME") == expected
 
 
 # ─── generate_rl_system_ini — folder layout, existing file ───────────────────
@@ -312,20 +301,14 @@ def test_new_system_writes_both_files(tmp_path):
     assert flat_ini in written
 
     # Folder file uses [ROMS]; flat file uses [Settings].
-    assert "[ROMS]" in emu_ini.read_text(encoding="utf-8")
-    assert "[Settings]" in flat_ini.read_text(encoding="utf-8")
-
-
-def test_new_system_both_files_have_correct_rom_path(tmp_path):
-    cfg, rl = _make_config(tmp_path)
-    generate_rl_system_ini("MAME", cfg)
-
+    emu_body = emu_ini.read_text(encoding="utf-8")
+    flat_body = flat_ini.read_text(encoding="utf-8")
+    assert "[ROMS]" in emu_body
+    assert "[Settings]" in flat_body
+    # Both files point at roms_dir/<system>.
     expected = str(Path(cfg.roms_dir) / "MAME")
-    for p in [
-        rl / "Settings" / "MAME" / "Emulators.ini",
-        rl / "Settings" / "MAME.ini",
-    ]:
-        assert f"Rom_Path={expected}" in p.read_text(encoding="utf-8")
+    assert f"Rom_Path={expected}" in emu_body
+    assert f"Rom_Path={expected}" in flat_body
 
 
 # ─── generate_rl_system_ini — custom rom_path preservation ───────────────────

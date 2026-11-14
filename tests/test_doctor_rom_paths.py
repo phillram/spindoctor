@@ -118,12 +118,6 @@ def test_wheel_without_rocketlauncher_settings_is_info(tmp_path):
     assert "no RocketLauncher settings" in node.detail
 
 
-def test_doctor_registers_rom_paths_check(tmp_path):
-    cfg, _rl = _cabinet(tmp_path, {"NES": ["Mario"]})
-    names = [c.name for c in health.run_health_checks(cfg, fix=False).checks]
-    assert "ROM paths" in names
-
-
 def test_read_rl_ini_is_lenient_and_case_insensitive(tmp_path):
     ini = _write(
         tmp_path / "x.ini",

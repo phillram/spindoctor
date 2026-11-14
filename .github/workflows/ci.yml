@@ -93,7 +93,7 @@ jobs:
       # normal env. Windows has a real windowstation, so no wrapper there.
       - name: Run tests (Linux, under xvfb)
         if: runner.os == 'Linux'
-        run: xvfb-run -a pytest -q -n auto
+        run: xvfb-run -a pytest -q -n auto --durations=15
 
       # actions/setup-python on Windows does not set TCL_LIBRARY, so Tcl
       # cannot locate init.tcl and tk.Tk() raises TclError at test time.
@@ -140,11 +140,11 @@ jobs:
       # parallel so the windowstation is always available for Tk.
       - name: Run non-GUI tests (Windows, parallel)
         if: runner.os == 'Windows'
-        run: pytest -q -n auto --ignore=tests/test_gui.py
+        run: pytest -q -n auto --ignore=tests/test_gui.py --durations=15
 
       - name: Run GUI tests (Windows, serial)
         if: runner.os == 'Windows'
-        run: pytest -q tests/test_gui.py
+        run: pytest -q tests/test_gui.py --durations=15
 
   build-smoke:
     name: PyInstaller build smoke test
@@ -180,7 +180,7 @@ jobs:
       # focused — the broader suite already runs on 3.8/Linux.
       - name: GUI smoke (Python 3.8 Tk surface)
         shell: cmd
-        run: pytest -q tests/test_gui.py
+        run: pytest -q tests/test_gui.py --durations=15
 
       - name: Build
         shell: bash

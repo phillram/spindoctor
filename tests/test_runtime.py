@@ -174,18 +174,72 @@ def test_stop_worker_ignores_finished_process():
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows process snapshot")
-def test_stop_worker_leaves_no_same_named_child():
+def test_stop_worker_leaves_no_same_named_child(tmp_path):
     """Real process: a venv python.exe is itself a launcher with a python.exe child."""
     import os
     import time
+    import ctypes
+    from ctypes import wintypes
 
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel.OpenProcess.restype = wintypes.HANDLE
+    kernel.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+    kernel.WaitForSingleObject.restype = wintypes.DWORD
+    kernel.TerminateProcess.argtypes = [wintypes.HANDLE, wintypes.UINT]
+    kernel.TerminateProcess.restype = wintypes.BOOL
+    kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel.CloseHandle.restype = wintypes.BOOL
+
+    ready = tmp_path / "worker-ready"
     proc = subprocess.Popen(
-        [sys.executable, "-c", "import time; print('ready', flush=True); time.sleep(120)"],
-        stdout=subprocess.PIPE, text=True,
+        [sys.executable, "-c",
+         "import pathlib, sys, time; pathlib.Path(sys.argv[1]).touch(); time.sleep(120)",
+         str(ready)],
+        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
     )
-    assert proc.stdout.readline().strip() == "ready"
-    _runtime.stop_worker(proc, timeout=20)
-    proc.wait(timeout=20)
-    assert proc.poll() is not None
-    time.sleep(0.5)
-    assert _runtime._child_pids(proc.pid, os.path.basename(sys.executable)) == []
+    children = {}
+    try:
+        deadline = time.monotonic() + 20
+        while not ready.exists():
+            assert proc.poll() is None, "worker exited before readiness"
+            assert time.monotonic() < deadline, "worker never became ready"
+            time.sleep(0.01)
+        child_pids = _runtime._child_pids(proc.pid, os.path.basename(sys.executable))
+        # A non-venv interpreter need not have the Windows redirector child.
+        if not child_pids:
+            pytest.skip("interpreter has no same-named launcher child")
+        for pid in child_pids:
+            # Hold handles BEFORE stopping, so reparenting and PID reuse cannot
+            # turn a surviving child into a false pass or target someone else.
+            handle = kernel.OpenProcess(0x00100001, False, pid)  # SYNCHRONIZE | TERMINATE
+            assert handle, f"cannot open child {pid}: {ctypes.get_last_error()}"
+            children[pid] = handle
+        _runtime.stop_worker(proc, timeout=20)
+        proc.wait(timeout=20)
+        deadline = time.monotonic() + 20
+        for pid, handle in children.items():
+            remaining_ms = max(0, int((deadline - time.monotonic()) * 1000))
+            assert kernel.WaitForSingleObject(handle, remaining_ms) == 0, (
+                f"original child {pid} survived stop_worker"
+            )
+    finally:
+        # Clean up our exact process identities even when readiness/assertions fail.
+        # On an early failure stop_worker has not run yet, so collect children
+        # while our launcher is still alive, before killing it.
+        if proc.poll() is None:
+            for pid in _runtime._child_pids(proc.pid, os.path.basename(sys.executable)):
+                if pid not in children:
+                    handle = kernel.OpenProcess(0x00100001, False, pid)
+                    if handle:
+                        children[pid] = handle
+        for handle in children.values():
+            try:
+                if kernel.WaitForSingleObject(handle, 0) == 258:  # WAIT_TIMEOUT
+                    kernel.TerminateProcess(handle, 1)
+                    kernel.WaitForSingleObject(handle, 5000)
+            finally:
+                kernel.CloseHandle(handle)
+        if proc.poll() is None:
+            proc.kill()
+        proc.wait(timeout=20)

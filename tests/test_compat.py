@@ -277,7 +277,13 @@ def test_package_avoids_python39_string_methods():
 
     found = []
     for path in pathlib.Path(spindoctor.__file__).parent.rglob("*.py"):
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        source = path.read_text(encoding="utf-8")
+        # Cheap gate: only pay for the AST parse when a banned name appears
+        # in the raw source at all. Substring false positives (comments,
+        # strings) just fall through to the precise attribute check below.
+        if not any(name in source for name in _PY39_METHODS):
+            continue
+        tree = ast.parse(source, filename=str(path))
         for node in ast.walk(tree):
             if isinstance(node, ast.Attribute) and node.attr in _PY39_METHODS:
                 found.append(f"{path.name}:{node.lineno} .{node.attr}()")

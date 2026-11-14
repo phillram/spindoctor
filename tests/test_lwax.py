@@ -188,12 +188,6 @@ def test_build_color_cycle_requires_two_colors(input_map_path):
         build_color_cycle(controllers, [(48, 0, 0)])
 
 
-def test_build_color_cycle_rejects_unknown_label(input_map_path):
-    controllers = parse_input_map(input_map_path)
-    with pytest.raises(ValueError, match="Unknown control label"):
-        build_color_cycle(controllers, [(48, 0, 0), (0, 48, 0)], labels=["NOPE"])
-
-
 # ─── build_wave ────────────────────────────────────────────────────────────────
 
 def test_build_wave_leading_edge_advances_through_groups(input_map_path):
@@ -241,18 +235,6 @@ def test_build_wave_reversed_groups_reverses_direction(input_map_path):
     assert backward_resolved[0]["COIN"] == red
 
 
-def test_build_wave_rejects_unknown_label(input_map_path):
-    controllers = parse_input_map(input_map_path)
-    with pytest.raises(ValueError, match="Unknown control label"):
-        build_wave(controllers, [["NOPE"]], lead_color=(48, 0, 0))
-
-
-def test_build_wave_rejects_empty_groups(input_map_path):
-    controllers = parse_input_map(input_map_path)
-    with pytest.raises(ValueError, match="at least 1 group"):
-        build_wave(controllers, [], lead_color=(48, 0, 0))
-
-
 # ─── build_rain ────────────────────────────────────────────────────────────────
 
 def test_build_rain_is_deterministic_given_seed(input_map_path):
@@ -285,12 +267,6 @@ def test_build_rain_rejects_empty_colors(input_map_path):
         build_rain(controllers, [["P1B1"]], colors=[])
 
 
-def test_build_rain_rejects_unknown_label(input_map_path):
-    controllers = parse_input_map(input_map_path)
-    with pytest.raises(ValueError, match="Unknown control label"):
-        build_rain(controllers, [["NOPE"]], colors=[(48, 0, 0)])
-
-
 # ─── build_rainbow_scroll ───────────────────────────────────────────────────────
 
 def test_build_rainbow_scroll_frame_count(input_map_path):
@@ -317,18 +293,6 @@ def test_build_rainbow_scroll_colocated_labels_share_hue(input_map_path):
     resolved = anim._resolved_colors()
     for frame_colors in resolved:
         assert frame_colors["P1B1"] == frame_colors["P1B2"]
-
-
-def test_build_rainbow_scroll_rejects_unknown_label(input_map_path):
-    controllers = parse_input_map(input_map_path)
-    with pytest.raises(ValueError, match="Unknown control label"):
-        build_rainbow_scroll(controllers, [["NOPE"]])
-
-
-def test_build_rainbow_scroll_rejects_empty_groups(input_map_path):
-    controllers = parse_input_map(input_map_path)
-    with pytest.raises(ValueError, match="at least 1 group"):
-        build_rainbow_scroll(controllers, [])
 
 
 # ─── build_fill ────────────────────────────────────────────────────────────────
@@ -364,18 +328,6 @@ def test_build_fill_flashes_then_holds(input_map_path):
     assert resolved[1]["P1B1"] == red        # holding
     assert resolved[3]["P1B1"] == white       # flash on
     assert resolved[5]["P1B1"] == (0, 0, 0)  # flash off
-
-
-def test_build_fill_rejects_empty_groups(input_map_path):
-    controllers = parse_input_map(input_map_path)
-    with pytest.raises(ValueError, match="at least 1 group"):
-        build_fill(controllers, [], fill_color=(48, 0, 0))
-
-
-def test_build_fill_rejects_unknown_label(input_map_path):
-    controllers = parse_input_map(input_map_path)
-    with pytest.raises(ValueError, match="Unknown control label"):
-        build_fill(controllers, [["NOPE"]], fill_color=(48, 0, 0))
 
 
 # ─── merge_animations ───────────────────────────────────────────────────────────
@@ -446,18 +398,6 @@ def test_build_drain_flashes_after_emptying(input_map_path):
     assert resolved[4]["P1B1"] == (0, 0, 0)  # flash off
 
 
-def test_build_drain_rejects_empty_groups(input_map_path):
-    controllers = parse_input_map(input_map_path)
-    with pytest.raises(ValueError, match="at least 1 group"):
-        build_drain(controllers, [], fill_color=(48, 0, 0))
-
-
-def test_build_drain_rejects_unknown_label(input_map_path):
-    controllers = parse_input_map(input_map_path)
-    with pytest.raises(ValueError, match="Unknown control label"):
-        build_drain(controllers, [["NOPE"]], fill_color=(48, 0, 0))
-
-
 # ─── build_alternate ────────────────────────────────────────────────────────────
 
 def test_build_alternate_swaps_colors_in_lockstep(input_map_path):
@@ -477,7 +417,48 @@ def test_build_alternate_swaps_colors_in_lockstep(input_map_path):
     assert resolved[2]["P1B2"] == blue
 
 
-def test_build_alternate_rejects_unknown_label(input_map_path):
+# ─── builder input validation (parametrized) ──────────────────────────────────
+
+_RED = (48, 0, 0)
+
+
+@pytest.mark.parametrize(
+    "builder,args,kwargs",
+    [
+        pytest.param(build_color_cycle, ([_RED, (0, 48, 0)],), {"labels": ["NOPE"]},
+                     id="color_cycle"),
+        pytest.param(build_wave, ([["NOPE"]],), {"lead_color": _RED},
+                     id="wave"),
+        pytest.param(build_rain, ([["NOPE"]], [_RED]), {},
+                     id="rain"),
+        pytest.param(build_rainbow_scroll, ([["NOPE"]],), {},
+                     id="rainbow_scroll"),
+        pytest.param(build_fill, ([["NOPE"]],), {"fill_color": _RED},
+                     id="fill"),
+        pytest.param(build_drain, ([["NOPE"]],), {"fill_color": _RED},
+                     id="drain"),
+        pytest.param(build_alternate, (),
+                     {"group_a": ["NOPE"], "group_b": ["P1B2"],
+                      "color_a": _RED, "color_b": (0, 0, 48)},
+                     id="alternate"),
+    ],
+)
+def test_builder_rejects_unknown_label(input_map_path, builder, args, kwargs):
     controllers = parse_input_map(input_map_path)
     with pytest.raises(ValueError, match="Unknown control label"):
-        build_alternate(controllers, group_a=["NOPE"], group_b=["P1B2"], color_a=(48, 0, 0), color_b=(0, 0, 48))
+        builder(controllers, *args, **kwargs)
+
+
+@pytest.mark.parametrize(
+    "builder,kwargs",
+    [
+        pytest.param(build_wave, {"lead_color": _RED}, id="wave"),
+        pytest.param(build_rainbow_scroll, {}, id="rainbow_scroll"),
+        pytest.param(build_fill, {"fill_color": _RED}, id="fill"),
+        pytest.param(build_drain, {"fill_color": _RED}, id="drain"),
+    ],
+)
+def test_builder_rejects_empty_groups(input_map_path, builder, kwargs):
+    controllers = parse_input_map(input_map_path)
+    with pytest.raises(ValueError, match="at least 1 group"):
+        builder(controllers, [], **kwargs)

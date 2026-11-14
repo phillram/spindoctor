@@ -6,32 +6,30 @@ different floor / decimal behaviour. These tests pin the unified
 implementation so a future refactor can't regress the bucketing.
 """
 from __future__ import annotations
+from pathlib import Path
+from spindoctor import _utils
+from spindoctor._text import write_windows_text
 
 import shutil
+
+from tests.helpers import write_bytes as _write_bytes
+
+import pytest
 
 from spindoctor._utils import dir_size, format_bytes, free_bytes, unique_path
 
 
-def test_format_bytes_zero():
-    assert format_bytes(0) == "0 B"
-
-
-def test_format_bytes_under_kb_renders_as_integer_b():
-    assert format_bytes(512) == "512 B"
-
-
-def test_format_bytes_kb_renders_with_one_decimal():
-    assert format_bytes(2048).startswith("2.0 KB")
-
-
-def test_format_bytes_mb_renders_with_one_decimal():
-    assert format_bytes(5 * 1024 * 1024).endswith(" MB")
-
-
-def test_format_bytes_clamps_at_tb_for_huge_inputs():
+@pytest.mark.parametrize("value,expected", [
+    (0, "0 B"),                       # zero renders as integer B
+    (512, "512 B"),                   # under KB renders as integer B
+    (2048, "2.0 KB"),                 # KB renders with one decimal
+    (5 * 1024 * 1024, "5.0 MB"),      # MB renders with one decimal
     # 5 PB worth of bytes — still renders as a TB string, not an
     # un-translated PB unit that didn't exist in the historical code.
-    assert format_bytes(5 * 1024**5).endswith(" TB")
+    (5 * 1024**5, "5120.0 TB"),
+], ids=["zero", "under-kb", "kb", "mb", "clamps-at-tb"])
+def test_format_bytes_units(value, expected):
+    assert format_bytes(value) == expected
 
 
 def test_format_bytes_backup_module_re_export_matches():
@@ -136,3 +134,46 @@ def test_dir_size_legacy_aliases_share_one_implementation():
     assert fileinfo._dir_size is dir_size
     assert migrate._dir_size is dir_size
     assert self_doctor._walk_size is dir_size
+
+
+def test_atomic_cleanup_does_not_hide_original_failure(config_home, tmp_path, monkeypatch):
+    from spindoctor import _utils
+    target = _write_bytes(tmp_path / "document", b"original")
+    def replace(*args):
+        raise OSError("original replace failure")
+    def unlink(*args):
+        raise PermissionError("cleanup failure")
+    monkeypatch.setattr(_utils.os, "replace", replace)
+    monkeypatch.setattr(_utils.os, "unlink", unlink)
+    with pytest.raises(OSError, match="original replace failure"):
+        _utils.atomic_write_bytes(target, b"replacement")
+    assert target.read_bytes() == b"original"
+
+
+def test_relative_overlap_check_handles_legacy_windows_resolve(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    real_resolve = Path.resolve
+
+    def legacy_resolve(path, *args, **kwargs):
+        if not path.is_absolute() and not path.exists():
+            return path
+        return real_resolve(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "resolve", legacy_resolve)
+    assert _utils.is_within(Path("live/backups/new"), tmp_path / "live")
+
+
+def test_atomic_edit_failure_leaves_live_bytes_and_no_temp_files(tmp_path, monkeypatch):
+    import spindoctor._utils as utils
+
+    path = tmp_path / "Settings.ini"
+    path.write_bytes(b"original")
+
+    def fail_replace(*args):
+        raise OSError("locked")
+
+    monkeypatch.setattr(utils.os, "replace", fail_replace)
+    with pytest.raises(OSError, match="locked"):
+        write_windows_text(path, "changed")
+    assert path.read_bytes() == b"original"
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["Settings.ini"]

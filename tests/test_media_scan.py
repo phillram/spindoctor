@@ -1,11 +1,14 @@
 """Local media scan & audit: detection, matching, import, undo."""
 from __future__ import annotations
+from tests.helpers import write_bytes as _write_bytes
+
+from spindoctor import config
+from spindoctor import media_scan
 
 from pathlib import Path
 
 import pytest
 
-import spindoctor.config as config_mod
 import spindoctor.media_scan as media_scan_mod
 from spindoctor.config import Config, save_config
 from spindoctor.media_scan import (
@@ -15,19 +18,8 @@ from spindoctor.media_scan import (
 
 
 @pytest.fixture
-def isolated_config(tmp_path, monkeypatch):
-    monkeypatch.setattr(config_mod, "CONFIG_DIR", tmp_path / "spindoctor_home")
-    monkeypatch.setattr(
-        config_mod, "CONFIG_FILE", tmp_path / "spindoctor_home" / "config.json"
-    )
-    # Redirect manifest dir into the temp tree as well
-    monkeypatch.setattr(
-        media_scan_mod, "MANIFEST_DIR",
-        tmp_path / "spindoctor_home" / "media_imports",
-    )
-    config_mod.reset_override_cache()
-    yield
-    config_mod.reset_override_cache()
+def isolated_config(config_home, monkeypatch):
+    monkeypatch.setattr(media_scan_mod, "MANIFEST_DIR", config_home / "media_imports")
 
 
 def _write_db(hs_dir: Path, system: str, games: list[str]) -> None:
@@ -86,28 +78,25 @@ def _build_layout(tmp_path: Path) -> tuple[Config, Path]:
 
 # ─── detection ────────────────────────────────────────────────────────────────
 
-def test_detect_type_from_folder_hint():
-    assert detect_media_type(Path("Wheels/Mario.png")) == "wheel"
-    assert detect_media_type(Path("logo/foo.jpg")) == "wheel"
-    assert detect_media_type(Path("Snaps/sub/x.png")) == "snap"
-    assert detect_media_type(Path("Backgrounds/bg.jpg")) == "background"
-    assert detect_media_type(Path("BoxArt/box.png")) == "artwork"
-    assert detect_media_type(Path("Titles/x.png")) == "title"
-
-
-def test_detect_type_from_extension_only():
-    assert detect_media_type(Path("anything/x.mp4")) == "video"
-    assert detect_media_type(Path("anything/x.mp3")) == "sound"
-    assert detect_media_type(Path("anything/x.zip")) == "theme"
-
-
-def test_detect_type_returns_none_for_ambiguous_image():
-    # A bare image with no folder hint is ambiguous → unknown.
-    assert detect_media_type(Path("random/x.png")) is None
-
-
-def test_detect_type_returns_none_for_unrecognised_extension():
-    assert detect_media_type(Path("Wheels/x.txt")) is None
+@pytest.mark.parametrize(
+    "path,expected",
+    [
+        pytest.param("Wheels/Mario.png", "wheel", id="folder-hint-wheels"),
+        pytest.param("logo/foo.jpg", "wheel", id="folder-hint-logo"),
+        pytest.param("Snaps/sub/x.png", "snap", id="folder-hint-snaps"),
+        pytest.param("Backgrounds/bg.jpg", "background", id="folder-hint-backgrounds"),
+        pytest.param("BoxArt/box.png", "artwork", id="folder-hint-boxart"),
+        pytest.param("Titles/x.png", "title", id="folder-hint-titles"),
+        pytest.param("anything/x.mp4", "video", id="extension-mp4"),
+        pytest.param("anything/x.mp3", "sound", id="extension-mp3"),
+        pytest.param("anything/x.zip", "theme", id="extension-zip"),
+        # A bare image with no folder hint is ambiguous → unknown.
+        pytest.param("random/x.png", None, id="ambiguous-image-no-hint"),
+        pytest.param("Wheels/x.txt", None, id="unrecognised-extension"),
+    ],
+)
+def test_detect_media_type(path, expected):
+    assert detect_media_type(Path(path)) == expected
 
 
 # ─── scanning ─────────────────────────────────────────────────────────────────
@@ -254,3 +243,18 @@ def test_import_move_then_undo_restores_source(isolated_config, tmp_path):
     summary = undo_import(result.manifest_path)
     assert summary["reverted"] == len(result.imported)
     assert mario_src.exists()
+
+
+def test_import_matching_indexes_exact_names_and_reuses_repeated_stems(isolated_config, tmp_path, monkeypatch):
+    hs = tmp_path / "hs"
+    _write_bytes(hs / "Databases" / "NES" / "NES.xml", b'<menu><game name="Mario (USA)"/></menu>')
+    source = tmp_path / "pack"
+    _write_bytes(source / "Wheels" / "Mario.png")
+    _write_bytes(source / "Snaps" / "Mario.png")
+    def fail(*args, **kwargs):
+        pytest.fail("normalized exact matches should use the precomputed index")
+    monkeypatch.setattr(media_scan, "_find_best_normalized_match", fail)
+    report = media_scan.match_to_database(media_scan.scan_local_media(source), "NES",
+                                          config.Config(hyperspin_dir=str(hs)))
+    assert len(report.matched) == 2
+    assert all(m.game_name == "Mario (USA)" for m in report.matched)

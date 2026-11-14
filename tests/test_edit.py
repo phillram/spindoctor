@@ -1,14 +1,20 @@
 """Batch metadata editor + atomic game rename / clone."""
 from __future__ import annotations
+from tests.helpers import write_bytes as _write_bytes
+
+from spindoctor import config
+from spindoctor import database
+from spindoctor import edit
 
 import json
 from pathlib import Path
 
 import pytest
 
-import spindoctor.config as config_mod
+from tests.helpers import build_nes_library
+
 import spindoctor.edit as edit_mod
-from spindoctor.config import Config, save_config
+from spindoctor.config import Config
 from spindoctor.database import GameEntry, HyperspinDatabase
 from spindoctor.edit import (
     EditChange, apply_batch_edit, apply_rename, build_filter,
@@ -21,52 +27,9 @@ from spindoctor.edit import (
 
 
 @pytest.fixture
-def isolated_config(tmp_path, monkeypatch):
-    home = tmp_path / "spindoctor_home"
-    monkeypatch.setattr(config_mod, "CONFIG_DIR", home)
-    monkeypatch.setattr(config_mod, "CONFIG_FILE", home / "config.json")
-    monkeypatch.setattr(edit_mod, "EDIT_DIR", home / "edits")
-    monkeypatch.setattr(edit_mod, "RENAME_DIR", home / "renames")
-    config_mod.reset_override_cache()
-    yield
-    config_mod.reset_override_cache()
-
-
-def _build_cfg(tmp_path: Path) -> Config:
-    """Create a synthetic NES system with 3 games + ROMs + a wheel/snap each."""
-    roms_dir = tmp_path / "roms"
-    hs_dir = tmp_path / "hs"
-    (roms_dir / "nes").mkdir(parents=True)
-    db_dir = hs_dir / "Databases" / "nes"
-    media_dir = hs_dir / "Media" / "nes"
-    db_dir.mkdir(parents=True)
-    media_dir.mkdir(parents=True)
-    (media_dir / "Images" / "Wheel").mkdir(parents=True)
-    (media_dir / "Images" / "Artwork3").mkdir(parents=True)
-
-    games = [
-        GameEntry(name="mario", description="Super Mario", manufacturer="Nintendo",
-                  year="1985", genre="Platformer", rating=""),
-        GameEntry(name="zelda", description="Zelda", manufacturer="Nintendo",
-                  year="1986", genre="Action", rating="5"),
-        GameEntry(name="contra", description="Contra", manufacturer="Konami",
-                  year="1988", genre="Action", rating=""),
-    ]
-    for g in games:
-        (roms_dir / "nes" / f"{g.name}.nes").write_text("rom", encoding="utf-8")
-        (media_dir / "Images" / "Wheel" / f"{g.name}.png").write_bytes(b"wheel")
-        (media_dir / "Images" / "Artwork3" / f"{g.name}.png").write_bytes(b"snap")
-
-    db = HyperspinDatabase("nes", db_dir / "nes.xml")
-    for g in games:
-        db.upsert_game(g)
-    db.save()
-
-    cfg = Config()
-    cfg.roms_dir = str(roms_dir)
-    cfg.hyperspin_dir = str(hs_dir)
-    save_config(cfg)
-    return cfg
+def isolated_config(config_home, monkeypatch):
+    monkeypatch.setattr(edit_mod, "EDIT_DIR", config_home / "edits")
+    monkeypatch.setattr(edit_mod, "RENAME_DIR", config_home / "renames")
 
 
 # ─── filter parsing ───────────────────────────────────────────────────────────
@@ -91,52 +54,30 @@ def test_parse_year_range_variants():
         parse_year_range("1990-1980")
 
 
-def test_build_filter_unknown_key_raises():
+@pytest.mark.parametrize("clauses", [
+    ["bogus=value"],
+    ["missing=cloneof"],
+], ids=["unknown-key", "unknown-missing-field"])
+def test_build_filter_unknown_clause_raises(clauses):
     with pytest.raises(ValueError):
-        build_filter("nes", ["bogus=value"])
-
-
-def test_build_filter_unknown_missing_field_raises():
-    with pytest.raises(ValueError):
-        build_filter("nes", ["missing=cloneof"])
+        build_filter("nes", clauses)
 
 
 # ─── filtered selection ───────────────────────────────────────────────────────
 
 
-def test_find_matching_games_filter_by_genre(isolated_config, tmp_path):
-    cfg = _build_cfg(tmp_path)
-    f = build_filter("nes", ["genre=Action"])
+@pytest.mark.parametrize("clauses,expected", [
+    (["genre=Action"], ["contra", "zelda"]),
+    (["missing=rating"], ["contra", "mario"]),
+    (["year=1985-1986"], ["mario", "zelda"]),
+    (["name=mar*"], ["mario"]),
+    (["genre=Action", "manufacturer=Nintendo"], ["zelda"]),
+], ids=["genre", "missing-field", "year-range", "name-glob", "combined"])
+def test_find_matching_games_filter(isolated_config, tmp_path, clauses, expected):
+    cfg = build_nes_library(tmp_path)
+    f = build_filter("nes", clauses)
     matches = sorted(g.name for g in find_matching_games(cfg, f))
-    assert matches == ["contra", "zelda"]
-
-
-def test_find_matching_games_filter_by_missing_field(isolated_config, tmp_path):
-    cfg = _build_cfg(tmp_path)
-    f = build_filter("nes", ["missing=rating"])
-    matches = sorted(g.name for g in find_matching_games(cfg, f))
-    assert matches == ["contra", "mario"]
-
-
-def test_find_matching_games_filter_by_year_range(isolated_config, tmp_path):
-    cfg = _build_cfg(tmp_path)
-    f = build_filter("nes", ["year=1985-1986"])
-    matches = sorted(g.name for g in find_matching_games(cfg, f))
-    assert matches == ["mario", "zelda"]
-
-
-def test_find_matching_games_filter_by_name_glob(isolated_config, tmp_path):
-    cfg = _build_cfg(tmp_path)
-    f = build_filter("nes", ["name=mar*"])
-    matches = sorted(g.name for g in find_matching_games(cfg, f))
-    assert matches == ["mario"]
-
-
-def test_find_matching_games_filter_combined(isolated_config, tmp_path):
-    cfg = _build_cfg(tmp_path)
-    f = build_filter("nes", ["genre=Action", "manufacturer=Nintendo"])
-    matches = sorted(g.name for g in find_matching_games(cfg, f))
-    assert matches == ["zelda"]
+    assert matches == expected
 
 
 # ─── batch edit apply / undo ──────────────────────────────────────────────────
@@ -175,7 +116,7 @@ def test_plan_batch_edit_no_op_skipped():
 
 
 def test_apply_batch_edit_round_trip(isolated_config, tmp_path):
-    cfg = _build_cfg(tmp_path)
+    cfg = build_nes_library(tmp_path)
     f = build_filter("nes", ["genre=Action"])
     games = find_matching_games(cfg, f)
     assert {g.name for g in games} == {"zelda", "contra"}
@@ -207,7 +148,7 @@ def test_apply_batch_edit_round_trip(isolated_config, tmp_path):
 
 def test_apply_batch_edit_sets_players_field(isolated_config, tmp_path):
     """``--set players=2`` writes the value and ``--undo`` clears it back."""
-    cfg = _build_cfg(tmp_path)
+    cfg = build_nes_library(tmp_path)
     games = find_matching_games(cfg, build_filter("nes", ["name=mario"]))
     assert games and games[0].players == ""
 
@@ -236,7 +177,7 @@ def test_apply_batch_edit_sets_players_field(isolated_config, tmp_path):
 
 
 def test_list_edit_manifests_after_apply(isolated_config, tmp_path):
-    cfg = _build_cfg(tmp_path)
+    cfg = build_nes_library(tmp_path)
     games = find_matching_games(cfg, build_filter("nes", ["name=mario"]))
     apply_batch_edit(cfg, "nes", games, [EditChange("rating", "4", "set")])
     manifests = list_edit_manifests()
@@ -248,7 +189,7 @@ def test_list_edit_manifests_after_apply(isolated_config, tmp_path):
 
 
 def test_plan_rename_lists_rom_db_and_media(isolated_config, tmp_path):
-    cfg = _build_cfg(tmp_path)
+    cfg = build_nes_library(tmp_path)
     plan = plan_rename(cfg, "nes", "mario", "mario_v2")
     kinds = {ch.kind for ch in plan.file_changes}
     assert {"rom", "db", "media"}.issubset(kinds)
@@ -258,13 +199,13 @@ def test_plan_rename_lists_rom_db_and_media(isolated_config, tmp_path):
 
 
 def test_plan_rename_rejects_existing_target(isolated_config, tmp_path):
-    cfg = _build_cfg(tmp_path)
+    cfg = build_nes_library(tmp_path)
     with pytest.raises(ValueError):
         plan_rename(cfg, "nes", "mario", "zelda")
 
 
 def test_apply_rename_moves_rom_db_and_media(isolated_config, tmp_path):
-    cfg = _build_cfg(tmp_path)
+    cfg = build_nes_library(tmp_path)
     plan = plan_rename(cfg, "nes", "mario", "super_mario_bros")
     applied, manifest = apply_rename(plan, cfg)
     assert manifest is not None and manifest.exists()
@@ -286,7 +227,7 @@ def test_apply_rename_moves_rom_db_and_media(isolated_config, tmp_path):
 
 
 def test_apply_rename_undo_round_trip(isolated_config, tmp_path):
-    cfg = _build_cfg(tmp_path)
+    cfg = build_nes_library(tmp_path)
     plan = plan_rename(cfg, "nes", "mario", "super_mario_bros")
     _, manifest = apply_rename(plan, cfg)
 
@@ -306,7 +247,7 @@ def test_apply_rename_undo_round_trip(isolated_config, tmp_path):
 
 
 def test_apply_clone_preserves_original(isolated_config, tmp_path):
-    cfg = _build_cfg(tmp_path)
+    cfg = build_nes_library(tmp_path)
     plan = plan_rename(cfg, "nes", "mario", "mario (Hack)", clone=True)
     applied, manifest = apply_rename(plan, cfg)
     assert manifest is not None and manifest.exists()
@@ -331,7 +272,7 @@ def test_apply_clone_preserves_original(isolated_config, tmp_path):
 
 
 def test_apply_clone_undo_removes_only_copies(isolated_config, tmp_path):
-    cfg = _build_cfg(tmp_path)
+    cfg = build_nes_library(tmp_path)
     plan = plan_rename(cfg, "nes", "mario", "mario (Hack)", clone=True)
     _, manifest = apply_rename(plan, cfg)
 
@@ -351,7 +292,7 @@ def test_apply_clone_undo_removes_only_copies(isolated_config, tmp_path):
 
 
 def test_list_rename_manifests_after_apply(isolated_config, tmp_path):
-    cfg = _build_cfg(tmp_path)
+    cfg = build_nes_library(tmp_path)
     plan = plan_rename(cfg, "nes", "mario", "renamed")
     apply_rename(plan, cfg)
     manifests = list_rename_manifests()
@@ -451,16 +392,18 @@ def test_apply_rename_rewrites_pclauncher_section_header(isolated_config, tmp_pa
 
 @pytest.mark.parametrize("clone", [False, True])
 def test_undo_preserves_shared_media_stems(isolated_config, tmp_path, clone):
-    cfg = _build_cfg(tmp_path)
+    cfg = build_nes_library(tmp_path)
     cfg.roms_dir = str(tmp_path / "no_roms")
     theme = cfg.media_dir / "nes" / "Themes" / "mario"
     theme.mkdir(parents=True)
     (theme / "theme.xml").write_bytes(b"original theme")
     wheel = cfg.media_dir / "nes" / "Images" / "Wheel" / "mario.png"
     if clone:
-        # New clone plans refuse sanitized-name collisions outright.
+        # New clone plans refuse sanitized-name collisions outright —
+        # and the colliding media file must be untouched by the refusal.
         with pytest.raises(ValueError, match="same file"):
             plan_rename(cfg, "nes", "mario", "mario:", clone=True)
+        assert wheel.read_bytes() == b"wheel"
         return
     _, manifest = apply_rename(plan_rename(cfg, "nes", "mario", "mario:", clone=clone), cfg)
     undo_rename(manifest, cfg)
@@ -490,7 +433,7 @@ def test_undo_rename_restores_launcher_section(isolated_config, tmp_path, new_na
 
 
 def test_rename_undo_refuses_occupied_original_and_retries(isolated_config, tmp_path):
-    cfg = _build_cfg(tmp_path)
+    cfg = build_nes_library(tmp_path)
     _, manifest = apply_rename(plan_rename(cfg, "nes", "mario", "renamed"), cfg)
     original = Path(cfg.roms_dir) / "nes" / "mario.nes"
     original.write_bytes(b"new user data")
@@ -517,7 +460,7 @@ def test_rename_undo_refuses_occupied_original_and_retries(isolated_config, tmp_
 def test_rename_undo_retries_database_failure_without_replaying_files(
     isolated_config, tmp_path, monkeypatch, failure,
 ):
-    cfg = _build_cfg(tmp_path)
+    cfg = build_nes_library(tmp_path)
     _, manifest = apply_rename(plan_rename(cfg, "nes", "mario", "renamed"), cfg)
     real_save = HyperspinDatabase.save
     with monkeypatch.context() as patcher:
@@ -541,7 +484,7 @@ def test_rename_undo_retries_database_failure_without_replaying_files(
 
 
 def test_apply_rename_rechecks_database_target_before_moving_files(isolated_config, tmp_path):
-    cfg = _build_cfg(tmp_path)
+    cfg = build_nes_library(tmp_path)
     plan = plan_rename(cfg, "nes", "mario", "renamed")
     db = edit_mod.load_database("nes", cfg.databases_dir)
     db.upsert_game(GameEntry(name="renamed", description="New user entry"))
@@ -553,7 +496,7 @@ def test_apply_rename_rechecks_database_target_before_moving_files(isolated_conf
 
 
 def test_undo_legacy_clone_manifest_preserves_shared_media(isolated_config, tmp_path):
-    cfg = _build_cfg(tmp_path)
+    cfg = build_nes_library(tmp_path)
     _, manifest = apply_rename(plan_rename(cfg, "nes", "mario", "mario_hack", clone=True), cfg)
     original = cfg.media_dir / "nes" / "Images" / "Wheel" / "mario.png"
     data = json.loads(manifest.read_text(encoding="utf-8"))
@@ -562,3 +505,81 @@ def test_undo_legacy_clone_manifest_preserves_shared_media(isolated_config, tmp_
     undo_rename(manifest, cfg)
     assert original.read_bytes() == b"wheel"
     assert not manifest.exists()
+
+
+def _collision_cabinet(tmp_path):
+    hs = tmp_path / "hs"
+    db = hs / "Databases" / "PC" / "PC.xml"
+    db.parent.mkdir(parents=True)
+    db.write_text('<menu><game name="Foo: Bar"/><game name="Foo Bar"/></menu>')
+    return config.Config(hyperspin_dir=str(hs), roms_dir=str(tmp_path / "roms"))
+
+
+def test_rename_matches_literal_rom_stem(isolated_config, tmp_path):
+    name = "Tetris [T+Fre]"
+    hs = tmp_path / "hs"
+    _write_bytes(hs / "Databases" / "SNES" / "SNES.xml",
+          f'<menu><game name="{name}"/></menu>'.encode())
+    roms = tmp_path / "roms"
+    _write_bytes(roms / "SNES" / f"{name}.zip")
+    _write_bytes(roms / "SNES" / f"{name}.Extra.zip")
+    cfg = config.Config(hyperspin_dir=str(hs), roms_dir=str(roms))
+    plan = edit.plan_rename(cfg, "SNES", name, "New name")
+    rom_changes = [c for c in plan.file_changes if c.kind == "rom"]
+    assert len(rom_changes) == 1
+    assert rom_changes[0].src.name == f"{name}.zip"
+
+
+@pytest.mark.parametrize("clone", [False, True])
+def test_rename_and_clone_preserve_custom_xml_attributes(isolated_config, tmp_path, clone):
+    hs = tmp_path / "hs"
+    _write_bytes(hs / "Databases" / "PC" / "PC.xml",
+          b'<menu><game name="Old" exe="true" custom="value"><description>Game</description></game></menu>')
+    cfg = config.Config(hyperspin_dir=str(hs), roms_dir=str(tmp_path / "roms"))
+    plan = edit.plan_rename(cfg, "PC", "Old", "New", clone=clone)
+    edit.apply_rename(plan, cfg, manifest_dir=tmp_path / "manifests")
+    db = database.load_database("PC", cfg.databases_dir)
+    assert db.get("New").extra_attrs == {"exe": "true", "custom": "value"}
+    assert (db.get("Old") is not None) == clone
+
+
+@pytest.mark.parametrize("clone", [False, True])
+def test_rename_and_clone_use_safe_media_destinations(isolated_config, tmp_path, clone):
+    hs = tmp_path / "hs"
+    _write_bytes(hs / "Databases" / "PC" / "PC.xml", b'<menu><game name="Old"/></menu>')
+    wheel = _write_bytes(hs / "Media" / "PC" / "Images" / "Wheel" / "Old.png")
+    theme = _write_bytes(hs / "Media" / "PC" / "Themes" / "Old" / "Theme.xml")
+    cfg = config.Config(hyperspin_dir=str(hs), roms_dir=str(tmp_path / "roms"))
+    plan = edit.plan_rename(cfg, "PC", "Old", "New: Name", clone=clone)
+    edit.apply_rename(plan, cfg, manifest_dir=tmp_path / "manifests")
+    assert (wheel.parent / "New Name.png").exists()
+    assert (theme.parent.parent / "New Name" / "Theme.xml").exists()
+    assert database.load_database("PC", cfg.databases_dir).get("New: Name")
+
+
+def test_rom_rename_preserves_windows_case_insensitivity(isolated_config, tmp_path, monkeypatch):
+    hs = tmp_path / "hs"
+    _write_bytes(hs / "Databases" / "Arcade" / "Arcade.xml", b'<menu><game name="Pacman"/></menu>')
+    rom = _write_bytes(tmp_path / "roms" / "Arcade" / "pacman.zip")
+    cfg = config.Config(hyperspin_dir=str(hs), roms_dir=str(tmp_path / "roms"))
+    monkeypatch.setattr(edit.os.path, "normcase", lambda name: name.casefold())
+    plan = edit.plan_rename(cfg, "Arcade", "Pacman", "New")
+    assert [change.src for change in plan.file_changes if change.kind == "rom"] == [rom]
+
+
+@pytest.mark.parametrize("directory", [False, True])
+def test_legacy_clone_undo_never_deletes_original(tmp_path, directory):
+    cfg = _collision_cabinet(tmp_path)
+    path = tmp_path / "original"
+    if directory:
+        path.mkdir()
+        (path / "data").write_bytes(b"original")
+    else:
+        path.write_bytes(b"original")
+    manifest = tmp_path / "rename.json"
+    manifest.write_text(json.dumps({
+        "system": "PC", "old_name": "Foo: Bar", "new_name": "Foo Bar", "clone": True,
+        "moves": [{"src": str(path), "dest": str(path), "kind": "media"}],
+    }))
+    edit.undo_rename(manifest, cfg)
+    assert (path / "data" if directory else path).read_bytes() == b"original"

@@ -8,20 +8,14 @@ from pathlib import Path
 import pytest
 
 from spindoctor import _undo, config, curate, database, edit, media_scan, migrate, misplaced, organize
-from spindoctor import favorites, recent, medialink
-
-
-def write(path, content=b"original"):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(content)
-    return path
+from spindoctor import backup, favorites, recent, medialink
+from tests.helpers import write_bytes as write
 
 
 @pytest.fixture
-def cabinet(tmp_path, monkeypatch):
+def cabinet(tmp_path, config_home_factory, monkeypatch):
     home = tmp_path / "home"
-    monkeypatch.setattr(config, "CONFIG_DIR", home)
-    monkeypatch.setattr(config, "CONFIG_FILE", home / "config.json")
+    config_home_factory(home)
     monkeypatch.setattr(migrate, "MIGRATIONS_DIR", tmp_path / "manifests")
     cfg = config.Config(roms_dir=str(tmp_path / "roms"), hyperspin_dir=str(tmp_path / "hs"))
     config.save_config(cfg)
@@ -386,3 +380,50 @@ def test_import_backup_failure_skips_only_that_item(tmp_path, monkeypatch):
     assert media_scan.undo_import(result.manifest_path)["errors"] == []
     assert not second.exists()
     assert first.read_bytes() == b"previous first"
+
+
+@pytest.mark.parametrize("operation", ["backup", "migration"])
+def test_planning_rejects_destination_inside_source(config_home, tmp_path, operation):
+    src = tmp_path / "live"
+    write(src / "game.zip")
+    cfg = config.Config(roms_dir=str(src))
+    if operation == "backup":
+        plan = backup.plan_backup(cfg, src / "backups", ["roms"])
+    else:
+        plan = migrate.plan_migration(cfg, src / "new", ["roms"])
+    assert plan.empty
+    assert plan.skipped
+    assert not (src / "new").exists()
+    assert not (src / "backups").exists()
+
+
+@pytest.mark.parametrize("kind", ["migration", "organize", "misplaced", "curate", "import"])
+def test_undo_keeps_conflicting_files_and_recovery_record(config_home, tmp_path, kind):
+    original = write(tmp_path / "original.zip", b"new user data")
+    moved = write(tmp_path / "moved.zip", b"archived data")
+    entry = {"src": str(original), "dest": str(moved)}
+    payload = {"moves": [entry]}
+    if kind == "migration":
+        entry["component"] = "roms"
+        undo = migrate.undo_migration
+    elif kind == "organize":
+        undo = organize.undo_restructure
+    elif kind == "misplaced":
+        undo = misplaced.undo_moves
+    elif kind == "curate":
+        undo = curate.undo_curation
+    else:
+        entry["action"] = "move"
+        payload = {"imports": [entry]}
+        undo = media_scan.undo_import
+    manifest = write(tmp_path / "manifest.json", json.dumps(payload).encode())
+    result = undo(manifest)
+    assert result["errors"]
+    assert original.read_bytes() == b"new user data"
+    assert moved.read_bytes() == b"archived data"
+    assert manifest.exists()
+    original.unlink()
+    result = undo(manifest)
+    assert not result["errors"]
+    assert original.read_bytes() == b"archived data"
+    assert not manifest.exists()

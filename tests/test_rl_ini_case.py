@@ -12,6 +12,9 @@ These lookups, the ``doctor`` ROM paths check and ``audit`` share one reader
 where a section name ends.
 """
 from __future__ import annotations
+from tests.helpers import write_bytes as _write_bytes
+
+from spindoctor import rocketlauncher
 
 import pytest
 
@@ -131,3 +134,22 @@ def test_section_name_runs_to_the_last_bracket(tmp_path):
     src = look.source("NES")
     assert (src.emulator, src.exts) == ("Nestopia", ["nes", "zip"])
     assert look.game_overrides("NES") == {"super game [!]": ("Mesen", "")}
+
+
+@pytest.mark.parametrize("encoding", ["cp1252", "utf-16", "utf-8-sig"])
+def test_ini_rom_path_update_preserves_encoding(config_home, tmp_path, encoding):
+    path = _write_bytes(tmp_path / "Emulators.ini",
+                 "[ROMS]\r\nRom_Path=old\r\n; Émulateurs\r\n".encode(encoding))
+    assert rocketlauncher._update_rom_path_in_ini(path, "new")
+    assert path.read_bytes().decode(encoding) == "[ROMS]\r\nRom_Path=new\r\n; Émulateurs\r\n"
+
+
+@pytest.mark.parametrize("encoding", ["utf-16-le", "utf-16-be"])
+def test_damaged_utf16_is_readable_but_not_losslessly_editable(tmp_path, encoding):
+    path = tmp_path / "Emulators.ini"
+    content = ("\ufeff[ROMS]\r\nDefault_Emulator=MAME\r\n").encode(encoding) + b"x"
+    path.write_bytes(content)
+    assert rocketlauncher._read_rl_ini(path)["roms"]["default_emulator"] == "MAME"
+    with pytest.raises(UnicodeDecodeError):
+        rocketlauncher._read_windows_text_with_encoding(path)
+    assert path.read_bytes() == content

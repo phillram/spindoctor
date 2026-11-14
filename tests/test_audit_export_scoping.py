@@ -9,23 +9,10 @@ from __future__ import annotations
 
 import csv
 
-import pytest
 
-import spindoctor.config as config_mod
 from spindoctor.audit import GameAuditEntry, MediaStatus, SystemAuditResult
 from spindoctor.cli import _auto_export_audit, _write_audit_csv
 from spindoctor.config import Config
-
-
-@pytest.fixture
-def isolated_config(tmp_path, monkeypatch):
-    monkeypatch.setattr(config_mod, "CONFIG_DIR", tmp_path / "spindoctor_home")
-    monkeypatch.setattr(
-        config_mod, "CONFIG_FILE", tmp_path / "spindoctor_home" / "config.json"
-    )
-    config_mod.reset_override_cache()
-    yield
-    config_mod.reset_override_cache()
 
 
 def _build_layout(tmp_path):

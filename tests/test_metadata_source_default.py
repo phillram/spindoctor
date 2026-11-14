@@ -55,12 +55,8 @@ def test_old_explicit_thegamesdb_is_not_migrated():
 
 
 @pytest.fixture
-def isolated_config(tmp_path, monkeypatch):
-    monkeypatch.setattr(config_mod, "CONFIG_DIR", tmp_path)
-    monkeypatch.setattr(config_mod, "CONFIG_FILE", tmp_path / "config.json")
-    config_mod.reset_override_cache()
-    yield tmp_path
-    config_mod.reset_override_cache()
+def isolated_config(config_home_factory, tmp_path):
+    return config_home_factory(tmp_path)
 
 
 def test_config_set_rejects_unknown_source(isolated_config):
