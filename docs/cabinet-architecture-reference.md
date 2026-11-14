@@ -265,6 +265,8 @@ MAME subsystem wheels ("4-Player Games", "Driving Games", "Gun Games", etc.) do 
 path=D:\Arcade\Media\MAME\Video\
 ```
 
+> **It hides the wheel's own videos.** With `path=` set, HyperSpin reads that wheel's videos *only* from that folder, with no per-game fallback: videos saved in `Media\<System>\Video\` (by a scraper, or by hand for the games that aren't MAME's) never play, and a folder that's gone (an old drive letter) plays none at all, without an error. Copying the videos the wheel uses into its own `Video\` folder and leaving `path=` blank is the safer setup. `doctor`'s **Video redirects** check reports both cases.
+
 **How SpinDoctor reads this** — `_read_hs_video_dir(settings_dir, system)` in `medialink.py` reads `[video defaults]` → `path=` and returns the path if it exists on disk. `plan_mirror` accepts a `video_dir_override` kwarg: when the source system has no `Video\` directory of its own, the override directory is scanned instead.
 
 This is called in `fav rebuild` (`favorites.py`) and `recent rebuild` / `stats build-wheel` (`recent.py`) with a per-system cache to avoid re-reading the same INI multiple times.
@@ -2851,13 +2853,26 @@ The INI has two relevant sections:
   `Program_To_Run_Working_Dir_N` / `Program_To_Run_MaxMinHide_N` triples,
   launched in order when HyperSpin opens.
 - `[Exit]` — a numbered list of `Process_Name_To_Close_N` entries to kill,
-  plus its own optional `Program_To_Run_Target_1` (typically an exit `.bat`),
-  run when HyperSpin closes.
+  plus its own numbered `Program_To_Run_Target_N` / `_Working_Dir_N` /
+  `_MaxMinHide_N` list (typically an exit `.bat` first), run when HyperSpin
+  closes.
 
 Each list is read from 1 up to the first missing number, so an entry after a
 gap never runs. SpinDoctor's [idle tour](idle-tour.md) is one `[Startup]`
 entry (`install-tools --tool idle-tour --apply` adds it at the next free
 number).
+
+Two things to know about the script itself:
+
+- **`[Exit]` kills, it doesn't ask.** A helper ended through
+  `Process_Name_To_Close_N` never removes its tray icon, so a helper with one
+  (HyperSearch, for example) leaves a ghost icon behind after every session.
+  See [Ghost tray icons pile up after HyperSpin
+  closes](troubleshooting.md#ghost-tray-icons-pile-up-after-hyperspin-closes)
+  for an `[Exit]` program that clears them.
+- **It's a 32-bit program.** A `.bat` in either list runs in 32-bit `cmd`,
+  where `System32` means `SysWOW64`. Use `%SystemRoot%\Sysnative\…` for the
+  64-bit `powershell.exe` and other 64-bit system programs.
 
 This is what "starts my tools and kills them when I quit" on a cabinet — it's
 HyperSpin launching one orchestrator script at boot/exit, not per-game
@@ -2909,7 +2924,7 @@ Arcade panel (Mini-PAC) ──────────────────�
 
 | Tool | Purpose | Needed? |
 |---|---|---|
-| **DS4Windows** | Maps a PS4 pad to XInput, and (via Auto Profiles) keystrokes in HyperSpin's menus | Only if using a PS4 controller. Recommended: start at Windows login, **not** from this script — see [Controller input](controller-input.md). Don't run it from both places, or it won't stay minimized. |
+| **DS4Windows** | Maps a PS4 pad to XInput, and (via Auto Profiles) keystrokes in HyperSpin's menus | Only if using a PS4 controller. Recommended: start at Windows login, **not** from this script — see [Controller input](controller-input.md). Don't run it from both places, or it won't stay minimized. Untick its **Minimize to Taskbar** setting too, or its window can pop back up ([Troubleshooting](troubleshooting.md#the-ds4windows-window-keeps-popping-up-although-start-minimized-is-on)). |
 | **Xpadder** | Controller → keyboard mapper (paid) | Only needed if not using DS4Windows Auto Profiles for menu navigation. Redundant with, and superseded on the example cabinet by, Auto Profiles — see [Controller input §1](controller-input.md#1-why-not-the-two-obvious-alternatives). |
 | **antimicro / antimicroX** | Controller → keyboard mapper (free) | Same as Xpadder — redundant with Auto Profiles, keep at most one mapper active regardless of which tool. |
 | **CabVol** | On-screen cabinet volume bar | Optional — skip if a Windows-volume keybind is enough. |

@@ -103,6 +103,25 @@ the launch settings (PCLauncher and `Skipchecks` can launch without a ROM
 file). See *"Cannot find Rom … in any Rom_Paths provided", or a wheel opens
 but no game launches* under [Wheels](#wheels).
 
+### `find-dupes --by-content` pairs two ROMs whose sizes or SHA1s differ
+
+A content group lists files of different sizes, and some of them are marked
+`(ROM header ignored)`.
+
+**Cause:** the files hold the same game data, and the marked ones also start
+with a ROM header: a 512-byte SNES copier header (`.smc`, `.sfc`, `.swc`,
+`.fig`), an iNES header (`.nes`) or a fwNES header (`.fds`). Fan translations
+and hack sets often have one, while other sets of the same games have none or a
+different one. `find-dupes` leaves the header out, so these copies pair up;
+older versions compared whole files and missed them. The `sha1:` in the group's
+label is the SHA1 of the data after the header.
+
+**Which copy to keep:** SNES emulators skip a copier header themselves, so
+either copy plays. Most NES emulators read the game's mapper, mirroring and
+battery save from the iNES header, so keep a `.nes` copy that has one. Two
+headers can disagree on one of those flags: keep the copy that plays and saves
+correctly in your emulator. `find-dupes` only reports; it never removes a file.
+
 ## Metadata / scraping
 
 ### Reading `scraper.log`
@@ -352,6 +371,37 @@ If you believe you have zero-byte stubs from an older version, run `audit` and l
 
 **Fix:** update SpinDoctor; the header is now found wherever it sits. A clip that still shows `—` has no readable movie header (a cut-short download, for example) or is in another format: `.flv` and `.avi` lengths need `ffprobe` (see [Video plays but has no sound](#video-plays-but-has-no-sound) for getting it).
 
+### A wheel plays no videos, or some games' videos never play, though the files are in its Video folder
+
+A whole wheel plays no videos (often after a drive move), or the videos you
+added to `Media\<System>\Video` for some games never play, while `audit` counts
+them as present and the files play fine in Windows.
+
+**Cause:** `path=` under `[video defaults]` in HyperSpin's
+`Settings\<System>.ini`. When it's set, HyperSpin reads that wheel's videos
+from that folder **only**, with no fallback to the wheel's own `Video` folder,
+game by game or otherwise. Many setups point the MAME sub-wheels (4-Player
+Games, Driving Games, Gun Games) at `Media\MAME\Video` this way, so the videos
+of the wheel's other games (console ports, light-gun games from other
+systems) never play from its own folder. If the folder no longer exists (for
+example `R:\Arcade\Media\Nintendo Wii\Video\` after the drive letter changed),
+the wheel plays no videos at all, and HyperSpin shows no error.
+
+**Find it:** run `spindoctor doctor`. Its **Video redirects** check lists every
+Main Menu wheel with `path=` set: a WARN for a folder that doesn't exist, or
+for another folder while games whose videos sit in the wheel's own `Video`
+folder have none there (with how many); an INFO for a relative `path=`, and
+for own videos that are hidden while the other folder has a video for each of
+those games.
+
+**Fix:** with HyperSpin closed, copy the videos the wheel's games use from the
+`path=` folder into `Media\<System>\Video` (skip files already there, so the
+wheel's own videos are kept), then clear the value in
+`Settings\<System>.ini`, leaving `path=` with nothing after it. HyperSpin then
+reads `Media\<System>\Video`, so every video saved there plays. Back the INI up
+first. Repointing `path=` at the right folder also works, but any video saved
+in the wheel's own folder stays hidden.
+
 ---
 
 ## Wheels
@@ -597,6 +647,49 @@ For MAME alternate names, recreate the empty `<name>.txt` files. Then re-run
 `spindoctor doctor` to confirm the wheel shows `N games OK`. See
 [Cabinet Architecture Reference → Multiple ROM folders and MAME alternate-name placeholders](cabinet-architecture-reference.md#multiple-rom-folders-and-mame-alternate-name-placeholders).
 
+### A PopCap or Big Fish game won't start: "Could not locate … in your Rom Path or in the GamePath"
+
+Choosing a game on a PopCap or Big Fish Games wheel shows RocketLauncher's
+fade screen, then drops back to the wheel, and RocketLauncher's log ends with
+**"Could not locate "`<name>`" in your Rom Path or in the GamePath (Module
+setting) for this game"**. The wheel's ROM checks pass: RocketLauncher found
+the game's empty `<game>.txt`.
+
+**Cause:** RocketLauncher's Casual Games module starts the game's own program.
+It reads `gamePath` from the game's section in
+`RocketLauncher\Modules\Casual Games\<System>.ini` (a
+`Modules\Casual Games\<System>\<game>.ini` comes first, `Casual Games.ini`
+last), and when that file isn't there it tries `<Rom_Path>\<game>.exe` and
+`<Rom_Path>\<game>\<game>.exe`. Two ways this breaks:
+
+- **`gamePath` points at a folder that moved.** A relative path starts from
+  the RocketLauncher folder: with RocketLauncher in `D:\Arcade\RocketLauncher`,
+  `gamePath=..\Games\PopCap\Cosmic Bugs\CosmicBugs.exe` means
+  `D:\Arcade\Games\PopCap\Cosmic Bugs\CosmicBugs.exe`. Once the games live
+  somewhere else (say `J:\Games\PopCap`), the games whose program is named
+  after the game still start through the second fallback, and the others
+  (`CosmicBugs.exe`, `WinMM.exe`) don't.
+- **The `.txt` placeholder is missing.** With `Rom_Extension=txt|exe` and
+  `Rom_Match_Extension=true`, RocketLauncher looks for `<game>.txt`, then
+  `<game>\<game>.txt`, then *any* `.txt` under the game's folder, all before it
+  tries `.exe`. Without the placeholder it takes the game's `license.txt` or
+  `readme.txt` as the game, the module looks for `license.exe`, and the error
+  names `"license"` instead of the game.
+
+**Find them:** run `spindoctor doctor`. Its **Casual Games** check lists, per
+wheel, the games with no program at their `gamePath` or in `Rom_Path` (with
+the full path a relative `gamePath` stands for), and the games whose ROM search
+would end on another file (`NingPo MahJong Deluxe: license.txt`).
+
+**Fix:** set `gamePath` under `[<game>]` in
+`RocketLauncher\Modules\Casual Games\<System>.ini` to the program's full path,
+such as `J:\Games\PopCap\Cosmic Bugs\CosmicBugs.exe`, or in RocketLauncherUI's
+module settings. For a missing placeholder, create an empty
+`<Rom_Path>\<game>.txt`, or set `Rom_Match_Extension=false` under `[Settings]`
+in `RocketLauncher\Settings\<System>\RocketLauncher.ini` (the module itself
+asks for `Skipchecks=Rom and Emu`, which lets RocketLauncher carry on without a
+ROM file). Then re-run `spindoctor doctor`.
+
 ### A game won't launch: AutoHotkey says "Failed attempt to launch program or document"
 
 A RocketLauncher User Functions file (`RocketLauncher\Lib\User Functions\...`)
@@ -654,6 +747,40 @@ when the game exits. **Fix (Supermodel):** add a `KEY_` to `InputCoin1` /
 `InputStart1` in the game's section of `Config\Supermodel.ini`, or delete the
 line so `[ Global ]` applies. Back the files up first; a device that comes
 back later needs its old bindings.
+
+### Every game in one MAME (or HBMAME) ignores the panel; coin is 5 and start is 1 again
+
+No panel button works in any game of that emulator, while MAME's own keys
+(5 for coin, 1 for start, Ctrl / Alt / Space) do on a keyboard. Other
+emulators are fine, and the games still launch, so launch tests pass.
+
+**Cause:** MAME rewrites `cfg\default.cfg`, the folder-wide key map, as every
+game exits. It empties the file first and writes the new map once it has
+built it, so a crash in between leaves the file at 0 bytes. The next run can't
+read it and, without a word, starts from MAME's own keys; at exit it saves an
+empty map, `<system name="default" />` with no `<input>` (180 bytes). MAME
+0.145 to 0.179 crash that way when `default.cfg` names a pad input by the
+pad's own name, such as `JOYCODE_1_HATSWITCHU` (MAME 0.160's name for a
+DirectInput pad's d-pad), while that pad isn't connected: MAME can't place the
+code and crashes turning it back into text. Its own crash handler catches it,
+so Windows logs nothing. It was seen with HBMAME 0.160 and a key map that also
+bound the d-pads of four pads; MAME 0.180 and later drop such codes instead. A
+`ctrlr\default.cfg` in the emulator's folder is often an older copy of the
+map: MAME reads it only when `mame.ini`'s `ctrlr` option names it
+(`ctrlr default`).
+
+**Find it:** run `spindoctor doctor`. Its **MAME key maps** check flags a
+0-byte or unreadable `default.cfg`, an empty one beside a copy that still
+holds a map, and, on MAME 0.145 to 0.179, the pad codes it will crash on.
+
+**Fix:** close MAME. Put the map back in `cfg\default.cfg` from the copy the
+check names or from a backup, or set the keys again in MAME's menu (Tab >
+Input (general)). On MAME 0.145 to 0.179, first take out the pad codes the
+check lists, each with the `OR` in front of it. Codes for a pad that isn't
+always plugged in come back as `JOYCODE_n_UNKNOWN_*` after one save, which
+those versions can't read either, so a keyboard-encoder panel is safest with
+keys only. Then start and quit one game, and check that `default.cfg` still
+holds the map.
 
 ### A volume key quits or pauses a Daphne or Singe game (laserdisc, American Laser Games, Action Max)
 
@@ -730,6 +857,76 @@ name.
 `<description>`) in `Databases\<System>\<System>.xml`, then rename the ROM file
 to match (`Some Hack V2 .nes` → `Some Hack V2.nes`), and any media saved under
 the old name. Back up the XML first.
+
+### Games in the database don't show on the wheel, or show as plain text
+
+Games you added to a wheel's database (or extra disks of a game) never appear
+in HyperSpin, though they launch from RocketLauncher and `audit` finds their
+ROMs. Or they appear as their name in HyperSpin's default font.
+
+**Cause:** they have no wheel art,
+`Media\<System>\Images\Wheel\<name>.png` (or `.swf`), under the database name
+as written. HyperSpin shows such a game as plain text, unless the wheel's
+`<hyperspin_dir>\Settings\<System>.ini` has `wheels_only=true` under
+`[filters]`: then HyperSpin lists only the games that have wheel art, and the
+rest can't be seen or picked.
+
+**Find it:** run `spindoctor doctor`. Its **Wheel art** check counts, per
+wheel, the games hidden by `wheels_only=true` and the games shown as plain
+text, and names the first few. With `parents_only=true` clones are hidden
+anyway, so they aren't counted.
+
+**Fix:** add the art, by hand or with
+`spindoctor fetch-media --system "<System>" --types wheel --apply`, or set
+`wheels_only=false` under `[filters]` (with HyperSpin closed) to list the
+games as text. Leaving `wheels_only=true` on keeps games you don't want, such
+as a second disk or side of a game whose first disk has art, off the wheel.
+
+### Jumping to the next letter shows no letter
+
+On some wheels HyperSpin's skip keys (often the joystick's left and right)
+show no big letter when you jump to the next letter, or show none for games
+starting with a digit or a symbol such as `$` or `.`.
+
+**Cause:** the letter comes from
+`Media\<System>\Images\Letters\<char>.png`, for the first character of the
+game's description. The wheel has no `Letters` folder, an empty one, or no
+picture for that character.
+
+**Find it:** run `spindoctor doctor`. Its **Letter art** check lists the
+wheels with no letter art at all, and the characters each other wheel has no
+picture for. It skips SpinDoctor's Recently Played and Most Played wheels,
+which aren't in A–Z order.
+
+**Fix:** copy a letter set from another wheel's `Images\Letters` folder (or
+one made to match the wheel), and add a picture for each character listed,
+such as `$.png`, `..png` or `1.png`. A character no file can be named after,
+such as `"`, can't have a letter.
+
+### A wheel starts on a different game (or letter) every time you open it
+
+Each time you open the wheel, HyperSpin lands somewhere else in its list,
+not on its first game or where you left it. Other wheels don't do it.
+
+**Cause:** the wheel is set to start on a random game: `random_game=true`
+under `[navigation]` in `<hyperspin_dir>\Settings\<System>.ini`. HyperHQ sets
+it per wheel, so a build can have it on for some wheels only.
+
+**Find it:** run `spindoctor wheel-start`, or open the GUI's **Systems** →
+**Where wheels start**. Both list where every wheel on the main menu starts.
+
+**Fix:** close HyperSpin, then set the wheel to start on its first game, or on
+the game it was on last time:
+
+```bat
+spindoctor wheel-start -s "<System>" --set first --apply
+spindoctor wheel-start -s "<System>" --set last --apply
+```
+
+`--all` instead of `-s` sets every wheel on the main menu. In the GUI, select
+the wheels, pick **Start on**, then **Set selected wheels** or **Set all
+wheels**, with Apply on. Each file is backed up first. To do it by hand, set `random_game=false` in that file (and
+`use_last_game=true` for the last game), with HyperSpin closed.
 
 ### Refresh All (or Refresh Favorites) does nothing after upgrading SpinDoctor
 
@@ -952,6 +1149,91 @@ hold HyperSpin's idle mode off.
 `log.txt` to show its effect, and never send Exit unless the log shows
 HyperSpin is inside a console. See [Idle tour → Scripting
 HyperSpin](idle-tour.md#scripting-hyperspin-what-to-know).
+
+### Ghost tray icons pile up after HyperSpin closes
+
+After a few HyperSpin sessions, the notification area's overflow (the **^** by
+the clock) holds several copies of the same icon, such as HyperSearch's
+("HyperSearch - Double click to open log"). Each one vanishes when the mouse
+pointer passes over it.
+
+**Cause:** the HyperSpin Startup Script's `[Exit]` list
+(`Process_Name_To_Close_N`) ends each helper by killing it, so a helper with a
+tray icon never gets to remove it. Windows notices that an icon's program is
+gone only when the pointer passes over the icon, so on a cabinet nobody points
+at, one more icon stays behind after every session. LEDBlinky leaves one the
+same way when it has to be ended by force because its quit hangs. Helpers that
+close themselves, and AutoHotkey helpers with `#NoTrayIcon`, leave none.
+
+**Fix by hand:** open the **^** and move the pointer over the icons. They are
+only leftovers: nothing behind them is still running.
+
+**Fix for good:** add a program to the Startup Script's `[Exit]` list (the next
+free `Program_To_Run_Target_N`, with no gaps) that removes only the icons whose
+program is gone, which is what a mouse-over does:
+
+1. Find the two toolbars that hold the icons: `Shell_TrayWnd` →
+   `TrayNotifyWnd` → `SysPager` → `ToolbarWindow32` (the icons by the clock)
+   and `NotifyIconOverflowWindow` → `ToolbarWindow32` (the ones under **^**).
+2. For each button (`TB_BUTTONCOUNT`, then `TB_GETBUTTON` into a buffer
+   allocated in Explorer with `VirtualAllocEx`), read the button from
+   Explorer's memory with `ReadProcessMemory`. Its `dwData` points at a block
+   that starts with the icon's owner window and its `uID`. On 64-bit
+   Windows 10 that's offset 16 of the 32-byte `TBBUTTON`, and the block holds
+   the 8-byte window handle, then the 4-byte `uID`. This layout is Explorer's
+   own and undocumented; Windows 11's new taskbar may not use these toolbars.
+3. If `IsWindow(owner)` is false, call `Shell_NotifyIcon(NIM_DELETE)` with
+   that window handle and `uID`. Leave every icon whose window still exists
+   alone. Work from the last button to the first, so a removal doesn't shift
+   the buttons still to check.
+
+Run the pass once the killed helpers' processes have ended, and again after
+anything that ends LEDBlinky late. Let only one copy run at a time (a named
+mutex), since a quick HyperSpin restart can make two exits overlap.
+
+**The Startup Script is 32-bit.** A `.bat` it runs gets 32-bit `cmd`, where
+`System32` is really `SysWOW64`, so `powershell.exe` there is the 32-bit one,
+which can't read the 64-bit Explorer's memory. Call 64-bit PowerShell through
+`Sysnative`, keeping `System32` for when the `.bat` already runs 64-bit. For a
+clean-up script `ClearTrayGhosts.ps1` beside the `.bat`:
+
+```bat
+set "PS=%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe"
+if exist "%SystemRoot%\Sysnative\WindowsPowerShell\v1.0\powershell.exe" set "PS=%SystemRoot%\Sysnative\WindowsPowerShell\v1.0\powershell.exe"
+"%PS%" -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "%~dp0ClearTrayGhosts.ps1"
+```
+
+**If a ghost still shows after an exit:** on one cabinet the Startup Script
+skipped its last `[Exit]` program on about one exit in four, though it ran the
+one before it. The next exit clears what was left, so at most one ghost waits
+until then.
+
+### The DS4Windows window keeps popping up, although Start Minimized is on
+
+DS4Windows starts hidden, but later its window comes up over HyperSpin or the
+desktop: when a game or HyperSpin closes, after Alt+Tab, or when a launcher
+hands the focus back.
+
+**Cause:** with **Minimize to Taskbar** ticked on DS4Windows' **Settings** tab
+(`<minimizeToTaskbar>True</minimizeToTaskbar>` in its `Profiles.xml`),
+DS4Windows 3.x doesn't hide its window when it minimizes. It keeps it as a
+minimized window on the taskbar. HyperSpin hides the taskbar, but the window
+is still one Windows can switch to, so anything that switches windows can
+bring it back up.
+
+**Find it:** exit HyperSpin to the desktop. A DS4Windows button on the
+taskbar means Minimize to Taskbar is on. (A second DS4Windows window that
+won't minimize at all is a second copy: start it only once, as in
+[Controller input §3](controller-input.md#3-ds4windows-configuration).)
+
+**Fix:** on the **Settings** tab, untick **Minimize to Taskbar**, and keep
+**Start Minimized** and **Close Minimizes** ticked. Minimized then means
+hidden: only the tray icon shows (under the **^** by the clock; `Win+B`
+reaches it while HyperSpin hides the taskbar), and closing the window hides it
+instead of quitting. The pads and profiles aren't affected. If you edit
+`Profiles.xml` instead (beside `DS4Windows.exe` in a portable install, else in
+`%APPDATA%\DS4Windows`), close DS4Windows first, as it saves its settings back
+to that file.
 
 ## Intro Video Randomizer
 

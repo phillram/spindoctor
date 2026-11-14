@@ -6,7 +6,10 @@ folders; relative ones resolve from the RocketLauncher folder) and its
 ``<folder>\\<name>\\<name>.<ext>``, with the game's name exactly as the
 database XML writes it.  Shared by the ``doctor`` ROM paths check
 (:mod:`spindoctor.health`) and ``audit`` (:mod:`spindoctor.audit`), so both
-look for a wheel's games exactly where RocketLauncher does.
+look for a wheel's games exactly where RocketLauncher does.  The ``doctor``
+Casual Games check also follows the search to the file RocketLauncher settles
+on (:meth:`_RomLookup.pick`) and reads module settings the way RocketLauncher's
+modules do (:meth:`_RomLookup.module_setting`).
 """
 from __future__ import annotations
 
@@ -92,6 +95,25 @@ class _RomSource:
         return all(folder is not None for _el, folder in self.folders)
 
 
+@dataclass
+class _RomPick:
+    """The file RocketLauncher's ROM search settles on for one game: the
+    ``Rom_Path`` *folder* it was found in, and RL's ``romPath`` (the file's
+    folder), ``romName`` and extension.  *by_ext* means it was only matched by
+    its extension (``Rom_Match_Extension``), so ``romName`` is that file's name,
+    not the game's."""
+    folder: Path
+    rom_dir: Path
+    rom_name: str
+    ext: str
+    by_ext: bool
+
+
+# How deep the Rom_Match_Extension search follows subfolders (a guard against
+# folder loops through junctions; RocketLauncher itself has no limit).
+_MATCH_EXT_MAX_DEPTH = 32
+
+
 class _RomLookup:
     """Settings and folder listings shared by every wheel in one run.
 
@@ -112,6 +134,7 @@ class _RomLookup:
         self._launch: dict[str, tuple[str, bool]] = {}
         self._rl_inis: dict[str, dict[str, dict[str, str]]] = {}
         self._mame_names: Optional[dict[str, str]] = None
+        self._by_ext: dict[str, dict[str, Path]] = {}
 
     def system(self, system: str) -> Optional[tuple[Path, str, dict[str, dict[str, str]]]]:
         """``(settings file, Rom_Path section, parsed file)`` for *system*: folder
@@ -294,6 +317,77 @@ class _RomLookup:
         """Whether RL finds a game under any of *names* through *src* (:meth:`find`)."""
         return self.find(src, names) is not None
 
+    def exists(self, path: Path) -> bool:
+        """Whether *path* is there, file or folder (as AutoHotkey's ``FileExist``
+        sees it), looked up case-insensitively in its folder's cached listing."""
+        lst = self.listing(path.parent)
+        low = path.name.lower()
+        return lst is not None and (low in lst[0] or low in lst[1])
+
+    def pick(self, src: _RomSource, name: str) -> Optional[_RomPick]:
+        """The file RocketLauncher's ``CheckPaths`` settles on for the game
+        *name* (the database name exactly as written) through *src*, or None.
+
+        RL's own order: each ``Rom_Path`` folder, and in it each extension in
+        turn, as ``<folder>\\<name>.<ext>``, then ``<folder>\\<name>\\<name>.<ext>``,
+        then, with ``Rom_Match_Extension=true``, the first ``*.<ext>`` file
+        anywhere under ``<folder>\\<name>\\`` (that folder's files before its
+        subfolders'), whose name RL then takes as ``romName``."""
+        match = self.launch_settings(src.system)[1]
+        low = name.lower()
+        for _el, folder in src.folders:
+            lst = self.listing(folder) if folder is not None else None
+            if lst is None:
+                continue
+            sub = lst[1].get(low)
+            inner = self.listing(folder / sub) if sub is not None else None
+            for ext in src.exts:
+                want = f"{low}.{ext}" if ext else low
+                if want in lst[0] or want in lst[1]:
+                    return _RomPick(folder, folder, name, ext, False)
+                if inner is not None and (want in inner[0] or want in inner[1]):
+                    return _RomPick(folder, folder / sub, name, ext, False)
+                hit = self._first_by_ext(folder / sub, ext) if match and sub is not None else None
+                if hit is not None:
+                    stem = hit.name[:-len(ext) - 1] if ext else hit.name
+                    return _RomPick(folder, hit.parent, stem, ext, True)
+        return None
+
+    def _first_by_ext(self, folder: Path, ext: str) -> Optional[Path]:
+        """The first file AutoHotkey's ``Loop, <folder>\\*.<ext>,,1`` returns:
+        *folder* is walked once per run and the first file of each extension
+        kept, in the order NTFS lists them (by name, ignoring case), files
+        before subfolders."""
+        key = os.path.normcase(str(folder))
+        if key not in self._by_ext:
+            first: dict[str, Path] = {}
+
+            def walk(here: Path, depth: int) -> None:
+                try:
+                    with os.scandir(here) as it:
+                        entries = sorted(it, key=lambda e: e.name.upper())
+                except OSError:
+                    return
+                subdirs = []
+                for entry in entries:
+                    try:
+                        is_dir = entry.is_dir()
+                    except OSError:
+                        continue
+                    if is_dir:
+                        subdirs.append(entry.name)
+                    else:
+                        dot = entry.name.rfind(".")
+                        first.setdefault(entry.name[dot + 1:].lower() if dot >= 0 else "",
+                                         here / entry.name)
+                if depth < _MATCH_EXT_MAX_DEPTH:
+                    for sub in subdirs:
+                        walk(here / sub, depth + 1)
+
+            walk(folder, 0)
+            self._by_ext[key] = first
+        return self._by_ext[key].get(ext.lower())
+
     def launch_settings(self, system: str) -> tuple[str, bool]:
         """``(Skipchecks, Rom_Match_Extension)`` from ``Settings/<System>/RocketLauncher.ini``
         ``[Settings]``.  RL reads Skipchecks from the system file only;
@@ -348,10 +442,7 @@ class _RomLookup:
         section (``source`` already reports that as a stop).
 
         RL skips the program check with ``Skipchecks=Rom and Emu``, and
-        PCLauncher needs no ``Emu_Path``.  The module is ``Module=`` (a
-        ``.\\x`` or ``C:\\x`` path is used as is, anything else is relative to
-        ``Modules\\<emulator>``), else ``<emulator>.ahk``; a game module in
-        ``Modules\\Game Modules\\<game>\\<game>.ahk`` replaces it."""
+        PCLauncher needs no ``Emu_Path``.  The module is :meth:`module_file`'s."""
         if not src.emu_where:
             return []
         out: list[tuple[str, str]] = []
@@ -364,18 +455,53 @@ class _RomLookup:
                     out.append((f"emulator not found: {program}", f"Fix Emu_Path in {src.emu_where}"))
             elif not pc:
                 out.append((f"no Emu_Path for {src.emulator}", f"Set Emu_Path in {src.emu_where}"))
-        modules = self.modules_dir()
-        if (modules / "Game Modules" / game / f"{game}.ahk").is_file():
-            return out
-        module = src.module or f"{src.emulator}.ahk"
-        if module[1:2] in ("\\", ":"):
-            path = _resolve_rom_path(module, self.rl_dir)
-        else:
-            path = Path(os.path.normpath(modules / src.emulator / Path(*PureWindowsPath(module).parts)))
+        path = self.module_file(src, game)
         if path is not None and not path.is_file():
             out.append((f"RocketLauncher module not found: {path}",
                         f"Install the {src.emulator} module, or fix Module= in {src.emu_where}"))
         return out
+
+    def module_file(self, src: _RomSource, game: Optional[str] = None) -> Optional[Path]:
+        """The module RL runs for *game* (its database name) through *src*: a
+        game module in ``Modules\\Game Modules\\<game>\\<game>.ahk`` when there
+        is one, else ``Module=`` (a ``.\\x`` or ``C:\\x`` path is used as is,
+        anything else is relative to ``Modules\\<emulator>``), else
+        ``<emulator>.ahk``.  Without *game*, the emulator's module.  None when
+        it can't be resolved on this OS."""
+        modules = self.modules_dir()
+        if game:
+            games = self.listing(modules / "Game Modules")
+            sub = games[1].get(game.lower()) if games is not None else None
+            inner = self.listing(modules / "Game Modules" / sub) if sub is not None else None
+            if inner is not None and f"{game.lower()}.ahk" in inner[0]:
+                return modules / "Game Modules" / sub / inner[0][f"{game.lower()}.ahk"]
+        module = src.module or f"{src.emulator}.ahk"
+        if module[1:2] in ("\\", ":"):
+            return _resolve_rom_path(module, self.rl_dir)
+        return Path(os.path.normpath(modules / src.emulator / Path(*PureWindowsPath(module).parts)))
+
+    def module_setting(
+        self, module: Path, system: str, game: str, sections: list[str], key: str,
+    ) -> tuple[str, Optional[Path]]:
+        """A module setting as ``moduleIni.Read(sections, key)`` returns it in a
+        RocketLauncher 1.x module: ``(value, file it came from)``, or ``("", None)``.
+
+        RL's ``RIniFile`` looks through ``<module folder>\\<System>\\<game>.ini``
+        (named after the database name), then ``<module folder>\\<System>.ini``,
+        then ``<module folder>\\<module name>.ini``, and in each file through
+        *sections* in turn, returning the first value that isn't blank."""
+        folder = module.parent
+        per_game = self.listing(folder / system)
+        name = f"{game.lower()}.ini"
+        inis = [folder / system / per_game[0][name]] if per_game is not None and name in per_game[0] else []
+        inis += [folder / f"{system}.ini", folder / f"{module.stem}.ini"]
+        for ini in inis:
+            data = self._rl_ini(ini)
+            for section in sections:
+                value = data.get(section.lower(), {}).get(key.lower(), "")
+                if value:
+                    return value, ini
+        return "", None
 
     def mame_rom_names(self) -> dict[str, str]:
         """Lower-cased alternate name → ``MameRomName`` from the RL MAME module INI."""

@@ -38,6 +38,41 @@ Compare timings with the same interpreter, dependencies, display, and
 worker count. Serial and parallel timings are different measurements.
 Use pytest's duration report to distinguish fixture setup from test calls.
 
+### GitHub timing evidence
+
+Compare completed runs of the same workflow and distinguish test steps from
+installation, building, packaging smoke tests, and the overall critical path.
+The pre-cleanup [v3.2.0 run](https://github.com/phillram/spindoctor/actions/runs/42923471537)
+and [test-cleanup run](https://github.com/phillram/spindoctor/actions/runs/43162857384)
+had identical production code, with these observed step durations:
+
+| Step | Before | After |
+| --- | ---: | ---: |
+| Linux / Python 3.8 tests | 26 s | 19 s |
+| Linux / Python 3.12 tests | 25 s | 24 s |
+| Windows / Python 3.12 non-GUI tests | 74 s | 58 s |
+| Windows / Python 3.12 GUI tests | 64 s | 38 s |
+| Windows / Python 3.8 GUI smoke | 65 s | 41 s |
+| Windows / Python 3.8 standalone EXE smoke | 74 s | 74 s |
+| Entire CI workflow | 4m42s | 4m36s |
+
+These are individual runner observations, not a controlled average. The
+Windows test steps saved 42 seconds (about 30%), but the whole workflow did
+not improve by the 61% measured in the earlier local serial benchmark.
+Builds and standalone smoke tests dominate its critical path. CI prints
+the 15 slowest pytest phases so future comparisons can identify real work
+rather than inferring it from test counts.
+
+The standalone smoke harness waits for a visible, laid-out Tk window that
+Windows does not report as hung, continuously present for one second, and
+an interactive worker prompt, rather than sleeping for assumed startup
+times. This checks startup readiness, not a 20-second burn-in or an explicit
+window-message round trip; Windows' hung-window flag has its own delay.
+The harness holds original worker handles before Stop and checks their exit
+plus cleanup in a private extraction directory observed before stopping.
+Timeouts remain bounded; a
+slow or failed startup is not silently treated as a passing smoke test.
+
 ## Keep tests isolated and focused
 
 - `tests/conftest.py` re-homes the process before importing SpinDoctor so

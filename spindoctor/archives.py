@@ -38,6 +38,8 @@ import zlib
 from pathlib import Path
 from typing import Any, Optional
 
+from .romheaders import HeaderlessSHA1
+
 # Extensions we know about. Matched case-insensitively.
 _KIND_BY_EXT = {
     ".zip": "zip",
@@ -89,8 +91,12 @@ def support_status() -> dict[str, tuple[bool, Optional[str]]]:
 _CHUNK = 1 << 20  # 1 MiB streaming chunk
 
 
-def _hash_stream(stream) -> tuple[str, str, int]:
-    """Stream a binary file-like into ``(sha1_hex, crc32_hex, size)``."""
+def _hash_stream(stream, body: Optional[HeaderlessSHA1] = None) -> tuple[str, str, int]:
+    """Stream a binary file-like into ``(sha1_hex, crc32_hex, size)``.
+
+    *body*, when given, is fed the same bytes (see ``extract_inner_hash``'s
+    ``headerless``).
+    """
     sha1 = hashlib.sha1()
     crc = 0
     size = 0
@@ -101,43 +107,59 @@ def _hash_stream(stream) -> tuple[str, str, int]:
         sha1.update(buf)
         crc = zlib.crc32(buf, crc)
         size += len(buf)
+        if body is not None:
+            body.update(buf)
     return sha1.hexdigest(), f"{crc & 0xFFFFFFFF:08x}", size
 
 
-def _zip_entries(path: Path) -> list[dict[str, Any]]:
+def _body_hasher(name: str, headerless: bool) -> Optional[HeaderlessSHA1]:
+    return HeaderlessSHA1(name) if headerless else None
+
+
+def _with_body(entry: dict[str, Any], body: Optional[HeaderlessSHA1]) -> dict[str, Any]:
+    """Add ``sha1_headerless`` to *entry* when its data starts with a ROM header."""
+    sha1_hex = body.hexdigest() if body is not None else None
+    if sha1_hex:
+        entry["sha1_headerless"] = sha1_hex
+    return entry
+
+
+def _zip_entries(path: Path, headerless: bool = False) -> list[dict[str, Any]]:
     entries: list[dict[str, Any]] = []
     with zipfile.ZipFile(path) as zf:
         for info in zf.infolist():
             if info.is_dir():
                 continue
+            body = _body_hasher(info.filename, headerless)
             with zf.open(info) as f:
-                sha1_hex, crc_hex, size = _hash_stream(f)
+                sha1_hex, crc_hex, size = _hash_stream(f, body)
             # zipfile already exposes a CRC32 field; trust ours since we just
             # streamed the bytes.
-            entries.append({
+            entries.append(_with_body({
                 "name": info.filename,
                 "size": size,
                 "sha1": sha1_hex,
                 "crc32": crc_hex,
-            })
+            }, body))
     return entries
 
 
-def _gz_entries(path: Path) -> list[dict[str, Any]]:
+def _gz_entries(path: Path, headerless: bool = False) -> list[dict[str, Any]]:
     # gzip wraps a single file; the original name lives in the header but is
     # optional. Fall back to stripping the ``.gz`` suffix when missing.
     inner_name = path.stem
+    body = _body_hasher(inner_name, headerless)
     with gzip.open(path, "rb") as f:
-        sha1_hex, crc_hex, size = _hash_stream(f)
-    return [{
+        sha1_hex, crc_hex, size = _hash_stream(f, body)
+    return [_with_body({
         "name": inner_name,
         "size": size,
         "sha1": sha1_hex,
         "crc32": crc_hex,
-    }]
+    }, body)]
 
 
-def _sevenz_entries(path: Path) -> list[dict[str, Any]]:
+def _sevenz_entries(path: Path, headerless: bool = False) -> list[dict[str, Any]]:
     py7zr = _try_import("py7zr")
     if py7zr is None:
         raise ModuleNotFoundError("py7zr")
@@ -149,15 +171,18 @@ def _sevenz_entries(path: Path) -> list[dict[str, Any]]:
     # still ships ``readall()`` returning name -> BytesIO. We try the modern
     # path first and fall back when the kwarg is rejected.
     class _Hasher:
-        def __init__(self) -> None:
+        def __init__(self, name: str) -> None:
             self.sha1 = hashlib.sha1()
             self.crc = 0
             self.length = 0
+            self.body = _body_hasher(name, headerless)
 
         def write(self, s: bytes) -> int:  # noqa: D401 - Py7zIO contract
             self.sha1.update(s)
             self.crc = zlib.crc32(s, self.crc)
             self.length += len(s)
+            if self.body is not None:
+                self.body.update(s)
             return len(s)
 
         def read(self, size: Optional[int] = None) -> bytes:
@@ -180,7 +205,7 @@ def _sevenz_entries(path: Path) -> list[dict[str, Any]]:
             self.hashers: dict[str, _Hasher] = {}
 
         def create(self, filename: str):
-            h = _Hasher()
+            h = _Hasher(filename)
             self.hashers[filename] = h
             return h
 
@@ -195,23 +220,23 @@ def _sevenz_entries(path: Path) -> list[dict[str, Any]]:
             zf.reset()
             data = zf.readall() or {}
             for name, buf in data.items():
-                h = _Hasher()
+                h = _Hasher(name)
                 for chunk in iter(lambda: buf.read(1 << 20), b""):
                     h.write(chunk)
                 hashers[name] = h
 
     entries: list[dict[str, Any]] = []
     for name, h in hashers.items():
-        entries.append({
+        entries.append(_with_body({
             "name": name,
             "size": h.length,
             "sha1": h.sha1.hexdigest(),
             "crc32": f"{h.crc & 0xFFFFFFFF:08x}",
-        })
+        }, h.body))
     return entries
 
 
-def _rar_entries(path: Path) -> list[dict[str, Any]]:
+def _rar_entries(path: Path, headerless: bool = False) -> list[dict[str, Any]]:
     rarfile = _try_import("rarfile")
     if rarfile is None:
         raise ModuleNotFoundError("rarfile")
@@ -220,14 +245,15 @@ def _rar_entries(path: Path) -> list[dict[str, Any]]:
         for info in rf.infolist():
             if info.isdir():
                 continue
+            body = _body_hasher(info.filename, headerless)
             with rf.open(info) as f:
-                sha1_hex, crc_hex, size = _hash_stream(f)
-            entries.append({
+                sha1_hex, crc_hex, size = _hash_stream(f, body)
+            entries.append(_with_body({
                 "name": info.filename,
                 "size": size,
                 "sha1": sha1_hex,
                 "crc32": crc_hex,
-            })
+            }, body))
     return entries
 
 
@@ -293,7 +319,7 @@ def _chd_entries(path: Path) -> list[dict[str, Any]]:
 # ─── public dispatch ──────────────────────────────────────────────────────────
 
 
-def extract_inner_hash(path: Path) -> Optional[dict[str, Any]]:
+def extract_inner_hash(path: Path, headerless: bool = False) -> Optional[dict[str, Any]]:
     """Read *path* and return ``{kind, entries, error}`` (or None for non-archives).
 
     ``entries`` is a list of ``{name, size, sha1, crc32}`` dicts:
@@ -302,6 +328,10 @@ def extract_inner_hash(path: Path) -> Optional[dict[str, Any]]:
     * for ``gz``  it has exactly one entry (the wrapped file)
     * for ``chd`` it has exactly one entry whose ``sha1`` is the CHD's
       ``rawsha1`` (uncompressed disc data) read from the header
+
+    With ``headerless=True`` an entry whose data starts with a ROM header (an
+    SNES copier, iNES or fwNES header; see :mod:`spindoctor.romheaders`) also
+    gets ``sha1_headerless``, the SHA1 of the data after it, in the same pass.
 
     On a soft-dependency miss (``py7zr``/``rarfile``) ``entries`` is empty and
     ``error`` is populated. On a hard parse failure ``entries`` is empty and
@@ -315,12 +345,12 @@ def extract_inner_hash(path: Path) -> Optional[dict[str, Any]]:
 
     try:
         if kind == "zip":
-            result["entries"] = _zip_entries(path)
+            result["entries"] = _zip_entries(path, headerless)
         elif kind == "gz":
-            result["entries"] = _gz_entries(path)
+            result["entries"] = _gz_entries(path, headerless)
         elif kind == "7z":
             try:
-                result["entries"] = _sevenz_entries(path)
+                result["entries"] = _sevenz_entries(path, headerless)
             except ModuleNotFoundError:
                 result["error"] = (
                     "py7zr not installed — install with "
@@ -328,7 +358,7 @@ def extract_inner_hash(path: Path) -> Optional[dict[str, Any]]:
                 )
         elif kind == "rar":
             try:
-                result["entries"] = _rar_entries(path)
+                result["entries"] = _rar_entries(path, headerless)
             except ModuleNotFoundError:
                 result["error"] = (
                     "rarfile not installed — install with "
