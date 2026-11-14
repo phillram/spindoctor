@@ -12,7 +12,7 @@ Most destructive commands write a manifest under `~/.spindoctor/<category>/` and
 
 - [Core library](#core-library) — `systems`, `audit`, `inspect`, `update-db`, `fetch-meta`, `fetch-media`, `media-add`, `media-scan`, `report`, `find-global`
 - [Editing](#editing) — `batch-edit`, `rename`, `clone`, `game`
-- [Library generation](#library-generation) — `generate-config`, `mainmenu`, `organize`, `add-system`, `add-pc-system`, `pc-rename`, `pc-fix-exe`, `migrate`, `backup`
+- [Library generation](#library-generation) — `generate-config`, `mainmenu`, `wheel-start`, `organize`, `add-system`, `add-pc-system`, `pc-rename`, `pc-fix-exe`, `migrate`, `backup`
 - [Health & integrity](#health--integrity) — `find-dupes`, `find-misplaced`, `curate`, `find-orphan-media`, `check-discs`, `check-archive-ext`, `verify`, `stats`, `preview`
 - [Launch tests](#launch-tests) — `test`
 - [Custom wheels](#custom-wheels) — `fav`, `recent`, `install-tools`, `uninstall-tools`, `toolkit`
@@ -529,6 +529,46 @@ For larger reshuffles, the interactive editor accepts commands like `up 3`, `mov
 ```bat
 spindoctor mainmenu edit
 ```
+
+### `wheel-start`
+
+Show or change where each HyperSpin wheel starts when you open it: on its first game, on the game it was on last time, or on a random game. A wheel set to random lands on a different letter every time. HyperSpin reads two keys from the `[navigation]` section of the wheel's `Settings\<System>.ini`, the same keys HyperHQ changes:
+
+| `--set` | Starts on | `random_game` | `use_last_game` |
+|---|---|---|---|
+| `first` | the first game | `false` | `false` |
+| `last` | the game it was on last time (HyperSpin keeps it in `last_game=`) | `false` | `true` |
+| `random` | a random game | `true` | `false` |
+
+A missing key counts as `false`.
+
+```text
+spindoctor wheel-start
+
+             Where each wheel starts
+  Wheel                           Starts on
+ ─────────────────────────────────────────────────────────
+  MAME                            the first game
+  Nintendo Entertainment System   a random game
+  Sega Genesis                    the last game it was on
+
+1 first, 1 last, 1 random
+```
+
+With no `--system` it lists every wheel on the main menu, hidden ones too. Entries that run a program instead, such as Search, are left out. `--set` is a dry run by default; pass `--apply` to write:
+
+```bat
+spindoctor wheel-start -s "Nintendo Entertainment System" --set first --apply
+spindoctor wheel-start -s "Sega Genesis" -s "Sega CD" --set last --apply
+spindoctor wheel-start --all --set first --apply      :: every wheel on the main menu
+```
+
+- **Only those two values change.** Every other byte of the file stays: the other keys, comments, encoding and line ends. A missing key is added to `[navigation]`, and a missing section goes at the end of the file.
+- **Each changed file is backed up first,** as `<System>.ini.YYYYMMDD_HHMMSS.bak` in `backup_dir\HyperSpin` (or beside the file when `backup_dir` isn't set). [`backup sidecar`](#backup-sidecar--per-file-rollback) lists and restores them.
+- **Close HyperSpin first.** With `--apply` it refuses while HyperSpin is running, because HyperSpin writes these files itself and could put the old setting back. The change shows the next time HyperSpin starts.
+- **Wheels with no settings file** are listed as "no settings file", and `--all` skips them. Naming one with `--set` is an error, as is naming HyperSpin's own `Settings` or `Main Menu` file.
+
+> **GUI alternative:** **Systems** → **Where wheels start** shows the same table. Select wheels, pick **Start on**, then **Set selected wheels** or **Set all wheels**; it runs this command, with `--apply` when Apply is on. See [GUI walkthrough](gui.md).
 
 ### `organize`
 
