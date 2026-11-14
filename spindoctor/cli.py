@@ -1586,7 +1586,8 @@ def _write_inspect_csv(reports, path) -> None:
 @click.option("--cross-systems", is_flag=True,
               help="Also report titles that appear under more than one system.")
 @click.option("--by-content", is_flag=True,
-              help="Hash file bytes (slow) to catch identical files renamed differently.")
+              help="Hash file bytes (slow) to catch identical files renamed differently. "
+                   "SNES copier, iNES and fwNES headers are left out.")
 def find_dupes(system, all_systems, cross_systems, by_content):
     """Scan for duplicated games within a system (and optionally across systems).
 
@@ -1594,7 +1595,8 @@ def find_dupes(system, all_systems, cross_systems, by_content):
     Two ROMs are considered duplicates by default when their stems
     collapse to the same normalised title (region/version/disc tags
     stripped). Use --by-content to additionally pair files that share
-    bytes; --cross-systems to find a title filed under multiple systems.
+    bytes, apart from a ROM header; --cross-systems to find a title filed
+    under multiple systems.
     """
     from .dupes import find_cross_system_duplicates, find_duplicates_in_system
 
@@ -1614,7 +1616,8 @@ def find_dupes(system, all_systems, cross_systems, by_content):
             label = "title" if g.reason == "title" else f"sha1:{g.key}"
             console.print(f"  [cyan]{label}[/cyan] [dim]({g.count} files)[/dim]")
             for p in g.files:
-                console.print(f"    [yellow]·[/yellow] {p}")
+                note = " [dim](ROM header ignored)[/dim]" if p in g.headers_ignored else ""
+                console.print(f"    [yellow]·[/yellow] {escape(str(p))}{note}")
         total += len(groups)
 
     if cross_systems and len(systems) > 1:
@@ -1626,7 +1629,7 @@ def find_dupes(system, all_systems, cross_systems, by_content):
             for m in matches:
                 console.print(f"  [cyan]{m.key}[/cyan] [dim]→ {', '.join(m.systems)}[/dim]")
                 for sys_name, p in m.occurrences:
-                    console.print(f"    [yellow]·[/yellow] [dim]{sys_name}:[/dim] {p}")
+                    console.print(f"    [yellow]·[/yellow] [dim]{sys_name}:[/dim] {escape(str(p))}")
             total += len(matches)
         else:
             console.print("[green]✓[/green] no cross-system overlap")
