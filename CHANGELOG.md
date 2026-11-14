@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **`doctor` flags HyperSpin `[video defaults] path=` redirects that leave a wheel without its videos.** With `path=` set in `Settings\<System>.ini`, HyperSpin plays the wheel's videos from that folder only, with no per-game fallback, and says nothing when it's wrong: a folder that's gone (an old drive letter after a drive move) plays no video on the whole wheel, and a redirect to another folder (MAME sub-wheels pointed at `Media\MAME\Video`) hides every video saved in the wheel's own `Media\<System>\Video`, while `audit` counts them as present. A new **Video redirects** check reads `path=` for each Main Menu wheel and the Main Menu itself. A folder that doesn't exist is a WARN, noting the videos in the wheel's own folder; when the same folder exists under the HyperSpin folder the fix line offers copying its videos in or repointing `path=`. Another folder while the wheel's own `Video` holds videos named after its games is a WARN counting them and the games that play none because of it (INFO when each of those games has a video in the other folder too); the fix is to copy the wheel's videos in, keeping the ones there, and leave `path=` blank. A relative `path=` (`.\Video\`) is INFO, since which folder HyperSpin reads it from isn't clear. A redirect with nothing in the wheel's own folder is OK. Hidden wheels are only INFO; diagnosis only. The **Spaces in game names** check now shares the check's `path=` reader, and `medialink._read_hs_video_dir`'s docstring and `docs/cabinet-architecture-reference.md` say the redirect hides the wheel's own videos. Covered by `tests/test_doctor_video_redirects.py`.
+
 ## [3.2.0] - 2026-11-10
 
 ### Added

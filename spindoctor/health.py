@@ -1664,6 +1664,205 @@ def check_hyperspin_roms_only(config: Config) -> Check:
     return parent
 
 
+# Files HyperSpin plays as a game's video (a .png in the video folder is a still).
+_HS_VIDEO_EXTS = (".mp4", ".flv")
+
+
+def _hs_video_path(hs_dir: Path, system: str) -> str:
+    """``[video defaults] path=`` in HyperSpin's ``Settings\\<system>.ini``,
+    unquoted; "" when blank or unset (HyperSpin then reads
+    ``Media\\<system>\\Video``)."""
+    return _read_rl_ini(hs_dir / "Settings" / f"{system}.ini").get(
+        "video defaults", {}).get("path", "").strip().strip('"').strip()
+
+
+def _hs_video_names(folder: Path) -> Optional[set[str]]:
+    """Lower-cased names of the video files directly in *folder* (HyperSpin
+    doesn't look in subfolders); None when it doesn't exist or can't be listed."""
+    try:
+        with os.scandir(folder) as it:
+            return {e.name.lower() for e in it
+                    if e.name.lower().endswith(_HS_VIDEO_EXTS) and e.is_file()}
+    except OSError:
+        return None
+
+
+def _wheel_video_redirect(
+    system: str,
+    value: str,
+    hs_dir: Path,
+    games: list[str],
+    index,
+) -> Check:
+    """One wheel's node for :func:`check_video_redirects`: *value* is its
+    ``path=``, *games* the names HyperSpin looks videos up under (as written
+    in the database), *index* :func:`_hs_video_names`, cached."""
+    from pathlib import PureWindowsPath
+
+    ini = hs_dir / "Settings" / f"{system}.ini"
+    own = hs_dir / "Media" / system / "Video"
+    n = len(games)
+    item = "wheel" if system == "Main Menu" else "game"  # the Main Menu's videos are its wheels'
+    node = Check(name=system, status=Status.OK)
+
+    def key(p: Path) -> str:
+        return os.path.normcase(os.path.normpath(str(p)))
+
+    def count(num: int, word: str) -> str:
+        return f"{num} {word}{'s' if num != 1 else ''}"
+
+    def with_video(folder: Optional[Path]) -> list[str]:
+        """The games with a video directly in *folder*."""
+        names = index(folder) if folder is not None else None
+        if not names:
+            return []
+        return [g for g in games if any(f"{g.lower()}{ext}" in names for ext in _HS_VIDEO_EXTS)]
+
+    def blank_fix(source: Optional[Path], copies: int) -> str:
+        if source is not None and copies:
+            return (f"Copy the {count(copies, 'video')} of this wheel's {item}s in {source} into {own} "
+                    f"(keep the ones already there), then leave path= blank under "
+                    f"[video defaults] in {ini}")
+        return f"In {ini}, leave path= blank under [video defaults], so HyperSpin reads {own}"
+
+    own_videos = with_video(own)
+    k = len(own_videos)
+    own_held = f"; its own {own} holds videos for {k} of its {count(n, item)}" if k else ""
+
+    if not PureWindowsPath(value).drive and not Path(value).is_absolute():
+        # .\Video\ on one cabinet's Main Menu meant Media\Main Menu\Video, and
+        # .\Atari 5200\Video\ on its Atari 5200 wheel Media\Atari 5200\Video.
+        node.status = Status.INFO
+        node.detail = (f"path={value} is relative, and which folder HyperSpin reads it from "
+                       f"isn't clear (its own folder, Media or Media\\{system}){own_held}")
+        rel = PureWindowsPath(value).parts
+        best: tuple[int, Optional[Path]] = (0, None)
+        for base in (hs_dir / "Media", hs_dir, own.parent):
+            folder = Path(os.path.normpath(base.joinpath(*rel)))
+            if key(folder) != key(own):
+                found = len(with_video(folder))
+                if found > best[0]:
+                    best = (found, folder)
+        node.fix = blank_fix(best[1], best[0])
+        return node
+
+    folder = _setting_folder(value, hs_dir, False)
+    if folder is None:
+        node.status = Status.INFO
+        node.detail = f"path={value} can't be checked on this OS"
+        return node
+    if key(folder) == key(own):
+        node.detail = "path= names the wheel's own video folder, as a blank path= would"
+        return node
+
+    if not _dir_exists(folder):
+        node.status = Status.WARN
+        node.detail = (f"path={value} doesn't exist, so HyperSpin plays no video on this "
+                       f"wheel, and shows no error{own_held}")
+        node.fix = blank_fix(None, 0)
+        # The same folder under the HyperSpin folder (R:\Arcade\Media\MAME\Video
+        # after a drive move): its videos can be copied in, or path= repointed.
+        moved = _rebased_setting(value, folder, str(hs_dir), False)
+        if moved and key(Path(moved)) != key(own):
+            found = len(with_video(Path(moved)))
+            if found:
+                node.fix = blank_fix(Path(moved), found) + f"; or set path={moved} there"
+        return node
+
+    there = with_video(folder)
+    if not k:
+        node.detail = f"videos from {value}"
+        if n:
+            node.detail += (f": {len(there)} of its {count(n, item)} "
+                            f"{'has' if len(there) == 1 else 'have'} one there")
+        return node
+    node.detail = (f"path={value} sends HyperSpin elsewhere, so {count(k, 'video')} in {own} "
+                   f"named after its {item}s never play{'s' if k == 1 else ''} "
+                   "(HyperSpin has no per-game fallback)")
+    lost = k - len(set(own_videos) & set(there))
+    if lost:
+        node.status = Status.WARN
+        node.detail += (f"; {lost} of those {item}s {'has' if lost == 1 else 'have'} no video in "
+                        f"{value}, so {'it plays' if lost == 1 else 'they play'} none")
+    else:
+        # Each still plays a video, just not the wheel's own copy.
+        node.status = Status.INFO
+        who = f"that {item} plays its" if k == 1 else f"those {item}s play their"
+        node.detail += f"; {who} video from {value} instead"
+    node.fix = blank_fix(folder, len(there))
+    return node
+
+
+def check_video_redirects(config: Config) -> Check:
+    """Wheels whose ``[video defaults] path=`` hides or loses their videos.
+
+    ``path=`` under ``[video defaults]`` in ``<hyperspin_dir>\\Settings\\<System>.ini``
+    sends HyperSpin to another folder for a wheel's videos (``<name>.mp4`` /
+    ``.flv``), classically the MAME wheel's ``Media\\MAME\\Video`` for MAME
+    sub-wheels.  HyperSpin then reads that folder only, with no per-game
+    fallback: videos in the wheel's own ``Media\\<System>\\Video`` never play,
+    and a folder that doesn't exist (an old drive letter) plays none at all,
+    without an error, while ``audit`` counts the videos as present.
+
+    Per Main Menu wheel with ``path=`` set (and the Main Menu's own
+    ``Settings\\Main Menu.ini``): a WARN when the folder doesn't exist, or when
+    it's another folder while the wheel's own ``Video`` holds videos named
+    after its games (counted) and some of those games have none in the other
+    folder, so they play none (INFO when each has one there); an INFO for a
+    relative ``path=``, whose base folder isn't clear.  The fix is to copy
+    the videos in and leave ``path=`` blank.  A redirect with nothing in the
+    wheel's own folder is OK.  Wheels switched off on the Main Menu are only
+    INFO; wheels with a blank ``path=`` aren't listed.  Diagnosis only.
+    """
+    name = "Video redirects"
+    if not config.hyperspin_dir or not Path(config.hyperspin_dir).is_dir():
+        return Check(name=name, status=Status.INFO,
+                     detail="hyperspin_dir not configured; skipping")
+    hs_dir = Path(config.hyperspin_dir)
+    mm_path = hs_dir / "Databases" / "Main Menu" / "Main Menu.xml"
+    wheels = _main_menu_wheels(mm_path)
+    if not wheels:
+        return Check(name=name, status=Status.INFO, detail="no wheels on the Main Menu")
+    hidden = _hidden_main_menu_wheels(mm_path)
+    listings: dict[str, Optional[set[str]]] = {}
+
+    def index(folder: Path) -> Optional[set[str]]:
+        """:func:`_hs_video_names`, once per folder per run (wheels share folders)."""
+        k = os.path.normcase(os.path.normpath(str(folder)))
+        if k not in listings:
+            listings[k] = _hs_video_names(folder)
+        return listings[k]
+
+    parent = Check(name=name, status=Status.OK)
+    for system in ["Main Menu"] + wheels:
+        value = _hs_video_path(hs_dir, system)
+        if not value:
+            continue
+        if system == "Main Menu":
+            games = [w for w in wheels if w not in hidden]
+        else:
+            stripped, raw = _wheel_games(system, config.databases_dir)
+            games = list(dict.fromkeys(raw.get(g, g) for g in stripped))
+        node = _wheel_video_redirect(system, value, hs_dir, games, index)
+        if system in hidden:
+            node.name = f"{system} (hidden on the Main Menu)"
+            _cap_at_info(node)
+        parent.children.append(node)
+
+    n = len(parent.children)
+    warned = sum(1 for c in parent.children if c.status == Status.WARN)
+    with_path = f"wheel{'s' if n != 1 else ''} with [video defaults] path="
+    if not n:
+        parent.detail = ("no Main Menu wheel sets [video defaults] path=: each plays "
+                         "its videos from Media\\<wheel>\\Video")
+    elif warned:
+        parent.detail = f"{warned} of {n} {with_path} lose{'s' if warned == 1 else ''} videos in HyperSpin"
+    else:
+        parent.detail = f"{n} {with_path}; see each for where HyperSpin reads videos"
+    parent.status = _worst(c.status for c in parent.children)
+    return parent
+
+
 def _wheel_name_spaces(
     system: str,
     raw: dict[str, str],
@@ -1677,8 +1876,7 @@ def _wheel_name_spaces(
     xml = find_database(system, config.databases_dir)
     spaced = sorted(raw.items(), key=lambda kv: kv[0].lower())  # (trimmed, as written)
     media = config.media_dir / system
-    redirect = _read_rl_ini(hs_dir / "Settings" / f"{system}.ini").get(
-        "video defaults", {}).get("path", "").strip().strip('"')
+    redirect = _hs_video_path(hs_dir, system)
     redirected = _setting_folder(redirect, hs_dir, False) if redirect else None
 
     def has(dirs: list[Path], stem: str, exts) -> bool:
@@ -3159,6 +3357,7 @@ def run_health_checks(config: Config, fix: bool = False) -> HealthReport:
     _safe("PC games", lambda: check_pc_launchability(config))
     _safe("ROM paths", lambda: check_rom_paths(config))
     _safe("HyperSpin ROMs only", lambda: check_hyperspin_roms_only(config))
+    _safe("Video redirects", lambda: check_video_redirects(config))
     _safe("Spaces in game names", lambda: check_game_name_spaces(config))
     _safe("Match cache", lambda: check_match_cache(config, fix, report.fixes_applied))
     _safe("Global Emulators.ini", lambda: check_global_emulators(config, fix, report.fixes_applied))
