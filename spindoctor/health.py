@@ -1918,6 +1918,205 @@ def check_hyperspin_roms_only(config: Config) -> Check:
     return parent
 
 
+# Files HyperSpin plays as a game's video (a .png in the video folder is a still).
+_HS_VIDEO_EXTS = (".mp4", ".flv")
+
+
+def _hs_video_path(hs_dir: Path, system: str) -> str:
+    """``[video defaults] path=`` in HyperSpin's ``Settings\\<system>.ini``,
+    unquoted; "" when blank or unset (HyperSpin then reads
+    ``Media\\<system>\\Video``)."""
+    return _read_rl_ini(hs_dir / "Settings" / f"{system}.ini").get(
+        "video defaults", {}).get("path", "").strip().strip('"').strip()
+
+
+def _hs_video_names(folder: Path) -> Optional[set[str]]:
+    """Lower-cased names of the video files directly in *folder* (HyperSpin
+    doesn't look in subfolders); None when it doesn't exist or can't be listed."""
+    try:
+        with os.scandir(folder) as it:
+            return {e.name.lower() for e in it
+                    if e.name.lower().endswith(_HS_VIDEO_EXTS) and e.is_file()}
+    except OSError:
+        return None
+
+
+def _wheel_video_redirect(
+    system: str,
+    value: str,
+    hs_dir: Path,
+    games: list[str],
+    index,
+) -> Check:
+    """One wheel's node for :func:`check_video_redirects`: *value* is its
+    ``path=``, *games* the names HyperSpin looks videos up under (as written
+    in the database), *index* :func:`_hs_video_names`, cached."""
+    from pathlib import PureWindowsPath
+
+    ini = hs_dir / "Settings" / f"{system}.ini"
+    own = hs_dir / "Media" / system / "Video"
+    n = len(games)
+    item = "wheel" if system == "Main Menu" else "game"  # the Main Menu's videos are its wheels'
+    node = Check(name=system, status=Status.OK)
+
+    def key(p: Path) -> str:
+        return os.path.normcase(os.path.normpath(str(p)))
+
+    def count(num: int, word: str) -> str:
+        return f"{num} {word}{'s' if num != 1 else ''}"
+
+    def with_video(folder: Optional[Path]) -> list[str]:
+        """The games with a video directly in *folder*."""
+        names = index(folder) if folder is not None else None
+        if not names:
+            return []
+        return [g for g in games if any(f"{g.lower()}{ext}" in names for ext in _HS_VIDEO_EXTS)]
+
+    def blank_fix(source: Optional[Path], copies: int) -> str:
+        if source is not None and copies:
+            return (f"Copy the {count(copies, 'video')} of this wheel's {item}s in {source} into {own} "
+                    f"(keep the ones already there), then leave path= blank under "
+                    f"[video defaults] in {ini}")
+        return f"In {ini}, leave path= blank under [video defaults], so HyperSpin reads {own}"
+
+    own_videos = with_video(own)
+    k = len(own_videos)
+    own_held = f"; its own {own} holds videos for {k} of its {count(n, item)}" if k else ""
+
+    if not PureWindowsPath(value).drive and not Path(value).is_absolute():
+        # .\Video\ on one cabinet's Main Menu meant Media\Main Menu\Video, and
+        # .\Atari 5200\Video\ on its Atari 5200 wheel Media\Atari 5200\Video.
+        node.status = Status.INFO
+        node.detail = (f"path={value} is relative, and which folder HyperSpin reads it from "
+                       f"isn't clear (its own folder, Media or Media\\{system}){own_held}")
+        rel = PureWindowsPath(value).parts
+        best: tuple[int, Optional[Path]] = (0, None)
+        for base in (hs_dir / "Media", hs_dir, own.parent):
+            folder = Path(os.path.normpath(base.joinpath(*rel)))
+            if key(folder) != key(own):
+                found = len(with_video(folder))
+                if found > best[0]:
+                    best = (found, folder)
+        node.fix = blank_fix(best[1], best[0])
+        return node
+
+    folder = _setting_folder(value, hs_dir, False)
+    if folder is None:
+        node.status = Status.INFO
+        node.detail = f"path={value} can't be checked on this OS"
+        return node
+    if key(folder) == key(own):
+        node.detail = "path= names the wheel's own video folder, as a blank path= would"
+        return node
+
+    if not _dir_exists(folder):
+        node.status = Status.WARN
+        node.detail = (f"path={value} doesn't exist, so HyperSpin plays no video on this "
+                       f"wheel, and shows no error{own_held}")
+        node.fix = blank_fix(None, 0)
+        # The same folder under the HyperSpin folder (R:\Arcade\Media\MAME\Video
+        # after a drive move): its videos can be copied in, or path= repointed.
+        moved = _rebased_setting(value, folder, str(hs_dir), False)
+        if moved and key(Path(moved)) != key(own):
+            found = len(with_video(Path(moved)))
+            if found:
+                node.fix = blank_fix(Path(moved), found) + f"; or set path={moved} there"
+        return node
+
+    there = with_video(folder)
+    if not k:
+        node.detail = f"videos from {value}"
+        if n:
+            node.detail += (f": {len(there)} of its {count(n, item)} "
+                            f"{'has' if len(there) == 1 else 'have'} one there")
+        return node
+    node.detail = (f"path={value} sends HyperSpin elsewhere, so {count(k, 'video')} in {own} "
+                   f"named after its {item}s never play{'s' if k == 1 else ''} "
+                   "(HyperSpin has no per-game fallback)")
+    lost = k - len(set(own_videos) & set(there))
+    if lost:
+        node.status = Status.WARN
+        node.detail += (f"; {lost} of those {item}s {'has' if lost == 1 else 'have'} no video in "
+                        f"{value}, so {'it plays' if lost == 1 else 'they play'} none")
+    else:
+        # Each still plays a video, just not the wheel's own copy.
+        node.status = Status.INFO
+        who = f"that {item} plays its" if k == 1 else f"those {item}s play their"
+        node.detail += f"; {who} video from {value} instead"
+    node.fix = blank_fix(folder, len(there))
+    return node
+
+
+def check_video_redirects(config: Config) -> Check:
+    """Wheels whose ``[video defaults] path=`` hides or loses their videos.
+
+    ``path=`` under ``[video defaults]`` in ``<hyperspin_dir>\\Settings\\<System>.ini``
+    sends HyperSpin to another folder for a wheel's videos (``<name>.mp4`` /
+    ``.flv``), classically the MAME wheel's ``Media\\MAME\\Video`` for MAME
+    sub-wheels.  HyperSpin then reads that folder only, with no per-game
+    fallback: videos in the wheel's own ``Media\\<System>\\Video`` never play,
+    and a folder that doesn't exist (an old drive letter) plays none at all,
+    without an error, while ``audit`` counts the videos as present.
+
+    Per Main Menu wheel with ``path=`` set (and the Main Menu's own
+    ``Settings\\Main Menu.ini``): a WARN when the folder doesn't exist, or when
+    it's another folder while the wheel's own ``Video`` holds videos named
+    after its games (counted) and some of those games have none in the other
+    folder, so they play none (INFO when each has one there); an INFO for a
+    relative ``path=``, whose base folder isn't clear.  The fix is to copy
+    the videos in and leave ``path=`` blank.  A redirect with nothing in the
+    wheel's own folder is OK.  Wheels switched off on the Main Menu are only
+    INFO; wheels with a blank ``path=`` aren't listed.  Diagnosis only.
+    """
+    name = "Video redirects"
+    if not config.hyperspin_dir or not Path(config.hyperspin_dir).is_dir():
+        return Check(name=name, status=Status.INFO,
+                     detail="hyperspin_dir not configured; skipping")
+    hs_dir = Path(config.hyperspin_dir)
+    mm_path = hs_dir / "Databases" / "Main Menu" / "Main Menu.xml"
+    wheels = _main_menu_wheels(mm_path)
+    if not wheels:
+        return Check(name=name, status=Status.INFO, detail="no wheels on the Main Menu")
+    hidden = _hidden_main_menu_wheels(mm_path)
+    listings: dict[str, Optional[set[str]]] = {}
+
+    def index(folder: Path) -> Optional[set[str]]:
+        """:func:`_hs_video_names`, once per folder per run (wheels share folders)."""
+        k = os.path.normcase(os.path.normpath(str(folder)))
+        if k not in listings:
+            listings[k] = _hs_video_names(folder)
+        return listings[k]
+
+    parent = Check(name=name, status=Status.OK)
+    for system in ["Main Menu"] + wheels:
+        value = _hs_video_path(hs_dir, system)
+        if not value:
+            continue
+        if system == "Main Menu":
+            games = [w for w in wheels if w not in hidden]
+        else:
+            stripped, raw = _wheel_games(system, config.databases_dir)
+            games = list(dict.fromkeys(raw.get(g, g) for g in stripped))
+        node = _wheel_video_redirect(system, value, hs_dir, games, index)
+        if system in hidden:
+            node.name = f"{system} (hidden on the Main Menu)"
+            _cap_at_info(node)
+        parent.children.append(node)
+
+    n = len(parent.children)
+    warned = sum(1 for c in parent.children if c.status == Status.WARN)
+    with_path = f"wheel{'s' if n != 1 else ''} with [video defaults] path="
+    if not n:
+        parent.detail = ("no Main Menu wheel sets [video defaults] path=: each plays "
+                         "its videos from Media\\<wheel>\\Video")
+    elif warned:
+        parent.detail = f"{warned} of {n} {with_path} lose{'s' if warned == 1 else ''} videos in HyperSpin"
+    else:
+        parent.detail = f"{n} {with_path}; see each for where HyperSpin reads videos"
+    parent.status = _worst(c.status for c in parent.children)
+    return parent
+
+
 def _wheel_name_spaces(
     system: str,
     raw: dict[str, str],
@@ -1931,8 +2130,7 @@ def _wheel_name_spaces(
     xml = find_database(system, config.databases_dir)
     spaced = sorted(raw.items(), key=lambda kv: kv[0].lower())  # (trimmed, as written)
     media = config.media_dir / system
-    redirect = _read_rl_ini(hs_dir / "Settings" / f"{system}.ini").get(
-        "video defaults", {}).get("path", "").strip().strip('"')
+    redirect = _hs_video_path(hs_dir, system)
     redirected = _setting_folder(redirect, hs_dir, False) if redirect else None
 
     def has(dirs: list[Path], stem: str, exts) -> bool:
@@ -2391,6 +2589,152 @@ def check_coin_start(config: Config) -> Check:
     return parent
 
 
+def _mame_emulator_folders(config: Config) -> dict[tuple[Path, str], list[str]]:
+    """``(folder, exe)`` -> RocketLauncher emulator names, for each MAME-family build.
+
+    An emulator counts when its ``Emu_Path`` names an existing ``mame*`` or
+    ``hbmame*`` program (MAME, HBMAME and builds named after them, as the
+    Coin/Start check reads them), from ``Global Emulators.ini`` and each
+    system's own ``Emulators.ini``; when neither has one, the folders one
+    level under ``emulators_dir`` holding such a program (no names).
+    """
+    def mame(name: str) -> bool:
+        return name.lower().startswith(("mame", "hbmame"))
+
+    found: dict[tuple[Path, str], list[str]] = {}
+    for section, exe, candidates in _rl_emulator_entries(config):
+        if not mame(exe):
+            continue
+        candidate = next((c for c in candidates if c.is_file()), None)
+        if candidate is not None:
+            names = found.setdefault((candidate.parent, candidate.name), [])
+            if section not in names:
+                names.append(section)
+    if not found and config.emulators_dir:
+        for folder in _subfolders(Path(config.emulators_dir)):
+            try:
+                with os.scandir(folder) as it:
+                    exes = sorted(e.name for e in it if e.is_file() and mame(e.name)
+                                  and e.name.lower().endswith(".exe"))
+            except OSError:
+                continue
+            if exes:
+                found[(folder, exes[0])] = []
+    return found
+
+
+def check_mame_key_maps(config: Config) -> Check:
+    """MAME key maps that a crash while saving has emptied, or will.
+
+    MAME saves ``cfg\\default.cfg`` as every game exits, and a crash while it
+    does leaves the file at 0 bytes.  The next run ignores it and starts from
+    MAME's own keys (5, 1, Ctrl / Alt / Space), then saves an empty map, so
+    the panel's map is gone while every launch still works (see
+    :mod:`spindoctor.mame_keymaps`).  Per MAME folder RocketLauncher lists:
+
+    * ``default.cfg`` of 0 bytes, or one MAME can't read: WARN.
+    * No key map in ``default.cfg`` (or none there) while ``ctrlr\\default.cfg``
+      or ``cfg\\default.BAK.cfg`` holds one MAME never reads (``mame.ini``'s
+      ``ctrlr`` doesn't name it): WARN, the map was probably lost.  With no
+      such copy, an empty map is fine: MAME's own keys or each game's cfg.
+    * MAME 0.145-0.179 with pad codes in ``default.cfg`` that it can place
+      only while that pad is connected: WARN, it crashes saving them.
+    * Game cfgs of 0 bytes (the same crash while saving a game's own
+      settings): INFO.
+
+    Diagnosis only.
+    """
+    from .mame_keymaps import exe_product_version, read_key_maps
+
+    name = "MAME key maps"
+    folders = _mame_emulator_folders(config)
+    if not folders:
+        return Check(name=name, status=Status.INFO, detail="no MAME or HBMAME emulator found")
+
+    parent = Check(name=name, status=Status.OK)
+    for (folder, exe), emulators in folders.items():
+        maps = read_key_maps(folder, exe)
+        default = maps.default
+        node = Check(name=f"{', '.join(emulators) or folder.name}: {folder}", status=Status.OK)
+        restore = ""
+        if maps.spares:
+            spare = maps.spares[0]
+            restore = (f"With MAME closed, copy {spare.label} over {default.label} ({spare.ports} "
+                       "bindings), start and quit one game, and check that the file still holds them")
+            if spare.unplaceable and maps.crashes_saving:
+                restore += (f"; first take {_some(spare.unplaceable)} out of the copy (each with the "
+                            f"OR before it): MAME {maps.version} crashes saving them when the pad "
+                            "isn't connected")
+        else:
+            restore = (f"With MAME closed, put the panel's key map back in {default.label} from a "
+                       "backup, or set the keys again in MAME's menu (Tab > Input (general))")
+        controller = maps.controller if maps.controller is not None and maps.controller.has_map else None
+        if controller is not None:
+            keys = f"only the map in {controller.label} ({maps.ini_name}'s ctrlr)"
+        else:
+            keys = "MAME's own keys (5 coin, 1 start, Ctrl / Alt / Space)"
+        lost = f"the next run ignores it, starts from {keys} and saves an empty map at exit"
+
+        if default.path is not None and default.size == 0:
+            node.children.append(Check(
+                name=default.label, status=Status.WARN,
+                detail=f"0 bytes: MAME crashed while saving it, so {lost}",
+                fix=restore))
+        elif default.path is not None and not default.loads:
+            node.children.append(Check(
+                name=default.label, status=Status.WARN,
+                detail=("MAME can't read it (no <mameconfig> with a \"default\" system), so MAME "
+                        f"ignores it, starts from {keys} and saves an empty map over it at exit"),
+                fix=restore))
+        elif not default.has_map and maps.spares and controller is None:
+            spare = maps.spares[0]
+            where = "isn't there" if default.path is None else "holds no key map"
+            ctrlr = (f"{maps.ini_name}'s ctrlr is blank" if not maps.controller_option
+                     else f"{maps.ini_name}'s ctrlr names {maps.controller_option}")
+            node.children.append(Check(
+                name=default.label, status=Status.WARN,
+                detail=(f"{where}, while {spare.label} holds {spare.ports} bindings MAME never "
+                        f"reads ({ctrlr}): the panel's map was probably lost, and MAME uses its "
+                        "own keys"),
+                fix=restore))
+
+        if default.has_map and default.unplaceable and maps.crashes_saving:
+            node.children.append(Check(
+                name=f"{default.label} pad codes", status=Status.WARN,
+                detail=(f"MAME {maps.version} can place {_some(default.unplaceable)} only while "
+                        "their pad is connected; without it, MAME crashes saving this file as "
+                        f"the game exits, leaving it 0 bytes, and {lost}"),
+                fix=(f"With MAME closed, take those codes out of {default.label} (each with the OR "
+                     "before it), keeping the keys, or connect the pad before MAME starts")))
+
+        if maps.empty_games:
+            n = len(maps.empty_games)
+            node.children.append(Check(
+                name="game cfgs", status=Status.INFO,
+                detail=(f"{n} game cfg file{'s are' if n != 1 else ' is'} 0 bytes "
+                        f"({_some(maps.empty_games, 5)}): MAME crashed while saving "
+                        f"{'them' if n != 1 else 'it'}, so those games start from "
+                        f"{default.label} and their own settings are gone")))
+
+        if node.children:
+            version = maps.version or exe_product_version(folder / exe)
+            node.detail = f"{exe}, MAME {version}" if version else exe
+            node.status = _worst(c.status for c in node.children)
+            parent.children.append(node)
+
+    total = len(folders)
+    warned = sum(1 for c in parent.children if c.status == Status.WARN)
+    plural = "s" if total != 1 else ""
+    if warned:
+        parent.detail = f"{warned} of {total} MAME folder{plural} lost or can lose the panel's key map"
+    elif parent.children:
+        parent.detail = f"{total} MAME folder{plural}: key maps fine; some game cfgs are empty"
+    else:
+        parent.detail = f"{total} MAME folder{plural}: no key map lost or at risk"
+    parent.status = _worst(c.status for c in parent.children)
+    return parent
+
+
 @dataclass(frozen=True)
 class _EmuFolderSetting:
     """One emulator config value that names a ROM or save folder.
@@ -2704,6 +3048,40 @@ def check_emulator_rom_paths(config: Config) -> Check:
     return parent
 
 
+def _rl_emulator_entries(config: Config) -> list[tuple[str, str, list[Path]]]:
+    """``(emulator name, exe name lower-cased, candidate exe paths)`` per emulator.
+
+    From ``Global Emulators.ini`` and each system's own
+    ``Settings\\<System>\\Emulators.ini`` (their ``[ROMS]`` sections aside),
+    with ``Emu_Path`` resolved as :func:`_resolve_emu_path` does.
+    """
+    from pathlib import PureWindowsPath
+
+    if not config.rocketlauncher_dir:
+        return []
+    rl_dir = Path(config.rocketlauncher_dir)
+    settings = rl_dir / "Settings"
+    inis = [settings / "Global Emulators.ini"]
+    inis += [d / "Emulators.ini" for d in _subfolders(settings)]
+    out = []
+    for ini in inis:
+        try:
+            entries = _read_ini_entries(ini) if ini.is_file() else []
+        except OSError:
+            continue
+        sections: dict[str, tuple[str, dict[str, str]]] = {}
+        for section, key, value in entries:
+            if section.lower() != "roms":
+                sections.setdefault(section.lower(), (section, {}))[1].setdefault(
+                    key.lower(), value)
+        for section, keys in sections.values():
+            emu_path = next((keys[k] for k in _EMU_PATH_KEYS if keys.get(k)), "").strip('"')
+            if emu_path:
+                out.append((section, PureWindowsPath(emu_path).name.lower(),
+                            _resolve_emu_path(emu_path, rl_dir)))
+    return out
+
+
 def _daphne_emulator_folders(config: Config) -> dict[Path, list[str]]:
     """Folder -> RocketLauncher emulator names, for each Daphne or Singe build.
 
@@ -2713,37 +3091,18 @@ def _daphne_emulator_folders(config: Config) -> dict[Path, list[str]]:
     ``Settings\\<System>\\Emulators.ini``; when neither has one, from the
     folders one level under ``emulators_dir`` holding either file (no names).
     """
-    from pathlib import PureWindowsPath
-
     from .daphne_keys import KEY_FILE
 
     found: dict[Path, list[str]] = {}
-    if config.rocketlauncher_dir:
-        rl_dir = Path(config.rocketlauncher_dir)
-        settings = rl_dir / "Settings"
-        inis = [settings / "Global Emulators.ini"]
-        inis += [d / "Emulators.ini" for d in _subfolders(settings)]
-        for ini in inis:
-            try:
-                entries = _read_ini_entries(ini) if ini.is_file() else []
-            except OSError:
-                continue
-            sections: dict[str, tuple[str, dict[str, str]]] = {}
-            for section, key, value in entries:
-                if section.lower() != "roms":
-                    sections.setdefault(section.lower(), (section, {}))[1].setdefault(
-                        key.lower(), value)
-            for section, keys in sections.values():
-                emu_path = next((keys[k] for k in _EMU_PATH_KEYS if keys.get(k)), "").strip('"')
-                exe = PureWindowsPath(emu_path).name.lower()
-                for candidate in (_resolve_emu_path(emu_path, rl_dir) if emu_path else []):
-                    folder = candidate.parent
-                    if ((exe == "daphne.exe" and candidate.is_file())
-                            or (folder / KEY_FILE).is_file()):
-                        names = found.setdefault(folder, [])
-                        if section not in names:
-                            names.append(section)
-                        break
+    for section, exe, candidates in _rl_emulator_entries(config):
+        for candidate in candidates:
+            folder = candidate.parent
+            if ((exe == "daphne.exe" and candidate.is_file())
+                    or (folder / KEY_FILE).is_file()):
+                names = found.setdefault(folder, [])
+                if section not in names:
+                    names.append(section)
+                break
     if not found and config.emulators_dir:
         for folder in _subfolders(Path(config.emulators_dir)):
             if (folder / KEY_FILE).is_file() or (folder / "daphne.exe").is_file():
@@ -3414,6 +3773,7 @@ def run_health_checks(config: Config, fix: bool = False) -> HealthReport:
     _safe("Casual Games", lambda: check_casual_games(config))
     _safe("ROM paths", lambda: check_rom_paths(config))
     _safe("HyperSpin ROMs only", lambda: check_hyperspin_roms_only(config))
+    _safe("Video redirects", lambda: check_video_redirects(config))
     _safe("Spaces in game names", lambda: check_game_name_spaces(config))
     _safe("Match cache", lambda: check_match_cache(config, fix, report.fixes_applied))
     _safe("Global Emulators.ini", lambda: check_global_emulators(config, fix, report.fixes_applied))
@@ -3423,6 +3783,7 @@ def run_health_checks(config: Config, fix: bool = False) -> HealthReport:
     _safe("Daphne keys", lambda: check_daphne_keys(config))
     _safe("User Functions", lambda: check_user_functions(config))
     _safe("Coin/Start", lambda: check_coin_start(config))
+    _safe("MAME key maps", lambda: check_mame_key_maps(config))
     _safe("LEDBlinky", lambda: check_ledblinky(config))
     _safe("LED coverage", lambda: check_led_coverage(config))
     _safe("Intro video", lambda: check_intro_video(config))
