@@ -790,7 +790,7 @@ _READ_ONLY_COMMANDS: frozenset[str] = frozenset({
     "mainmenu show", "mainmenu edit",
     "test --list-runs",
     "ledblinky audit", "ledblinky check", "ledblinky inspect-rom",
-    "ledblinky colors list",
+    "ledblinky colors list", "ledblinky lwax flash-check",
     "lightgun audit", "lightgun detect",
     "doctor",
     "toolkit",  # cabinet actions (shutdown, …): no --apply, a countdown instead
@@ -1125,6 +1125,10 @@ _CUSTOM_COMMAND_PRESETS: tuple[str, ...] = (
     "ledblinky lwax fade --color FF0000 --color 0000FF --apply",
     "ledblinky lwax batch",
     "ledblinky lwax batch --apply",
+    "ledblinky lwax cute --list",
+    "ledblinky lwax cute --theme <THEME>",
+    "ledblinky lwax cute --theme <THEME> --apply",
+    "ledblinky lwax flash-check <PATH>",
     # ── Lightgun ──────────────────────────────────────────────────────────────
     "─── Lightgun ───",
     "lightgun audit",
