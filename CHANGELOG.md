@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Docs
+
+- **Ghost tray icons after HyperSpin exits, and the DS4Windows window popping up, are documented.** The HyperSpin Startup Script's `[Exit]` list (`Process_Name_To_Close_N`) kills each helper, so a helper with a tray icon, such as HyperSearch, never removes it, and Windows drops a dead icon only when the pointer passes over it: one more piles up under the notification area's **^** after every session (LEDBlinky leaves one too when it has to be ended by force). `docs/troubleshooting.md` describes an `[Exit]` program that removes only the icons whose owner window is gone (read each button of both tray toolbars from Explorer's memory, then `Shell_NotifyIcon(NIM_DELETE)` with that window and `uID` when `IsWindow` is false), and why a `.bat` the 32-bit Startup Script runs must call `%SystemRoot%\Sysnative\…\powershell.exe` to get the 64-bit PowerShell this needs. A second entry covers DS4Windows 3.x with **Minimize to Taskbar** ticked: it keeps its window minimized on the taskbar instead of hiding it, so a game or HyperSpin closing, or Alt+Tab, brings it back although **Start Minimized** is on; untick it and keep **Start Minimized** and **Close Minimizes**. `docs/controller-input.md` adds that to its DS4Windows steps, and `docs/cabinet-architecture-reference.md`'s Startup/Exit section notes that `[Exit]` kills and that the script is 32-bit.
+
 ## [3.2.0] - 2026-11-10
 
 ### Added
