@@ -794,6 +794,14 @@ spindoctor find-dupes --system NES --by-content     :: SHA1 match (catches renam
 
 Two ROMs are duplicates by default when their stems collapse to the same normalised title (region/version tags stripped). `--by-content` adds byte-level pairing — archive-aware, so `mario.zip` and `mario.7z` containing the same payload pair up (install `[archives]` for `.7z` / `.rar` peeking).
 
+`--by-content` leaves ROM headers out of the comparison, in raw files and inside archives alike, because they aren't game data:
+
+- a 512-byte SNES copier header, on an `.smc`, `.sfc`, `.swc` or `.fig` file whose size is 512 bytes over a whole KiB;
+- the 16-byte iNES header on a `.nes` file starting `NES\x1A`;
+- the 16-byte fwNES header on an `.fds` file starting `FDS\x1A`.
+
+So a headered `.smc` and an unheadered `.sfc` of one game pair up, as do two `.nes` copies whose headers differ. In a group whose copies aren't byte-for-byte the same, the files whose header was left out are marked `(ROM header ignored)`. Other files are compared whole, whatever their size.
+
 ### `find-misplaced`
 
 Flag ROMs whose extension doesn't match the folder's system (e.g. a `.nes` inside `snes/`). Generic containers (`.zip`, `.iso`, `.bin`) are skipped because they're ambiguous.
