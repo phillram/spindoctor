@@ -395,15 +395,9 @@ def apply_plan(
     return result
 
 
-def undo_plan(manifest_path: Path) -> dict:
-    """Restore every backup recorded in *manifest_path*.
-
-    Returns ``{"restored": int, "errors": list[str]}``.
-    Missing backups and files that cannot be restored are reported in ``errors``.
-    """
-    data = json.loads(manifest_path.read_text(encoding="utf-8"))
+def _restore_swaps(entries) -> dict:
     result: dict = {"restored": 0, "errors": []}
-    for entry in data.get("swaps", []):
+    for entry in entries:
         backup = Path(entry["backup"])
         target = Path(entry["target"])
         if not backup.exists():
@@ -416,6 +410,16 @@ def undo_plan(manifest_path: Path) -> dict:
         except OSError as exc:
             result["errors"].append(f"could not restore {target}: {exc}")
     return result
+
+
+def undo_plan(manifest_path: Path) -> dict:
+    """Restore every backup recorded in *manifest_path*.
+
+    Returns ``{"restored": int, "errors": list[str]}``.
+    Missing backups and files that cannot be restored are reported in ``errors``.
+    """
+    data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    return _restore_swaps(data.get("swaps", []))
 
 
 def list_manifests(manifest_dir: Optional[Path] = None) -> list[Path]:
@@ -456,22 +460,10 @@ def undo_plan_system(manifest_path: Path, system: str) -> dict:
     Returns ``{"restored": int, "errors": list[str]}``.
     """
     data = json.loads(manifest_path.read_text(encoding="utf-8"))
-    result: dict = {"restored": 0, "errors": []}
-    for entry in data.get("swaps", []):
-        if entry.get("target_scope") != system:
-            continue
-        backup = Path(entry["backup"])
-        target = Path(entry["target"])
-        if not backup.exists():
-            result["errors"].append(f"backup file missing, cannot restore: {target}")
-            continue
-        try:
-            target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(backup, target)
-            result["restored"] += 1
-        except OSError as exc:
-            result["errors"].append(f"could not restore {target}: {exc}")
-    return result
+    return _restore_swaps(
+        entry for entry in data.get("swaps", [])
+        if entry.get("target_scope") == system
+    )
 
 
 def list_systems_in_manifest(manifest_path: Path) -> list[str]:

@@ -909,6 +909,16 @@ def _keep_tcl_alive():
         pass
 
 
+@pytest.fixture(autouse=True)
+def _inline_background_work(monkeypatch):
+    """Run GUI background work inline so a test's patched boundaries
+    (e.g. ``autostart.task_exists``) are still in effect when it executes."""
+    monkeypatch.setattr(
+        gui._SpinDoctorGUI, "_run_background",
+        lambda self, work, on_done, on_error: _run_now(work, on_done, on_error),
+    )
+
+
 # ─── Tk-construction smoke test ───────────────────────────────────────────────
 
 
@@ -2113,6 +2123,15 @@ class _StubStatusLabel:
         self.style = kw.get("style", self.style)
 
 
+def _run_now(work, on_done, on_error):
+    try:
+        result = work()
+    except Exception as exc:  # noqa: BLE001
+        on_error(exc)
+    else:
+        on_done(result)
+
+
 def test_autorefresh_status_never_reads_enabled_on_failed_enable(monkeypatch):
     """A failed Enable can't overwrite a task left from an earlier attempt, so
     task_exists() still reports it. With op_failed the label must read
@@ -2122,6 +2141,7 @@ def test_autorefresh_status_never_reads_enabled_on_failed_enable(monkeypatch):
 
     class _Fake:
         _autorefresh_status_label = _StubStatusLabel()
+        _run_background = staticmethod(_run_now)
 
     fake = _Fake()
     gui._SpinDoctorGUI._refresh_autorefresh_status(fake, op_failed=True)
@@ -2136,6 +2156,7 @@ def test_autorefresh_status_disabled_when_no_task_after_failure(monkeypatch):
 
     class _Fake:
         _autorefresh_status_label = _StubStatusLabel()
+        _run_background = staticmethod(_run_now)
 
     fake = _Fake()
     gui._SpinDoctorGUI._refresh_autorefresh_status(fake, op_failed=True)
@@ -2153,6 +2174,7 @@ def test_introvideo_autorun_status_never_reads_enabled_on_failed_enable(monkeypa
 
     class _Fake:
         _introvideo_autorun_status_label = _StubStatusLabel()
+        _run_background = staticmethod(_run_now)
 
     fake = _Fake()
     gui._SpinDoctorGUI._refresh_introvideo_autorun_status(fake, op_failed=True)
@@ -3736,6 +3758,7 @@ def test_sidecar_restore_with_apply_off_is_a_preview(monkeypatch, tmp_path):
         lambda *_a, **_k: type("R", (), {"stdout": listing})(),
     )
     monkeypatch.setattr(app, "_ask_pick_sidecar", lambda *_a: str(tmp_path / "x.bak"))
+    monkeypatch.setattr(app, "_run_background", _run_now, raising=False)
     titles, runs, flashes, page_done = [], [], [], []
     monkeypatch.setattr(app.messagebox, "askyesno",
                         lambda title, *_a, **_k: titles.append(title) or True)

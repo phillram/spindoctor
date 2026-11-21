@@ -34,7 +34,7 @@ import re
 import struct
 import time
 import zlib
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Callable, Optional
@@ -1378,9 +1378,3 @@ def recover(config: Config, platform) -> Optional[RecoveryReport]:
         write_results_json(run_dir)
     _testrun.clear_active()
     return report
-
-
-def as_dict(obj) -> dict:
-    """A dataclass as JSON-ready data (for ``--json``)."""
-    data = asdict(obj)
-    return {k: (str(v) if isinstance(v, Path) else v) for k, v in data.items()}

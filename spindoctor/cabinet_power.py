@@ -323,8 +323,6 @@ class WindowsOps:
         k.CloseHandle.argtypes = [w.HANDLE]
         k.WaitForSingleObject.argtypes = [w.HANDLE, w.DWORD]
         k.WaitForSingleObject.restype = w.DWORD
-        k.QueryFullProcessImageNameW.argtypes = [w.HANDLE, w.DWORD, w.LPWSTR, ctypes.POINTER(w.DWORD)]
-        k.QueryFullProcessImageNameW.restype = w.BOOL
         self._enum_proc = ctypes.WINFUNCTYPE(w.BOOL, w.HWND, w.LPARAM)
         u.EnumWindows.argtypes = [self._enum_proc, w.LPARAM]
         u.GetWindowThreadProcessId.argtypes = [w.HWND, ctypes.POINTER(w.DWORD)]
@@ -336,50 +334,15 @@ class WindowsOps:
 
     def pids(self, name: str) -> "list[int]":
         """Process IDs whose EXE file name is *name*, ignoring case."""
-        ctypes, w = self._c, self._w
+        from . import _win32
 
-        class PROCESSENTRY32W(ctypes.Structure):
-            _fields_ = [
-                ("dwSize", w.DWORD), ("cntUsage", w.DWORD), ("th32ProcessID", w.DWORD),
-                ("th32DefaultHeapID", ctypes.c_size_t), ("th32ModuleID", w.DWORD),
-                ("cntThreads", w.DWORD), ("th32ParentProcessID", w.DWORD),
-                ("pcPriClassBase", ctypes.c_long), ("dwFlags", w.DWORD),
-                ("szExeFile", ctypes.c_wchar * 260),
-            ]
-
-        k = self._k
-        k.CreateToolhelp32Snapshot.argtypes = [w.DWORD, w.DWORD]
-        k.CreateToolhelp32Snapshot.restype = w.HANDLE
-        k.Process32FirstW.argtypes = [w.HANDLE, ctypes.POINTER(PROCESSENTRY32W)]
-        k.Process32NextW.argtypes = [w.HANDLE, ctypes.POINTER(PROCESSENTRY32W)]
-        snapshot = k.CreateToolhelp32Snapshot(2, 0)  # TH32CS_SNAPPROCESS
-        if snapshot in (None, ctypes.c_void_p(-1).value):
-            return []
-        try:
-            entry = PROCESSENTRY32W()
-            entry.dwSize = ctypes.sizeof(entry)
-            found, me, want = [], os.getpid(), name.lower()
-            ok = k.Process32FirstW(snapshot, ctypes.byref(entry))
-            while ok:
-                if entry.szExeFile.lower() == want and entry.th32ProcessID != me:
-                    found.append(entry.th32ProcessID)
-                ok = k.Process32NextW(snapshot, ctypes.byref(entry))
-            return found
-        finally:
-            k.CloseHandle(snapshot)
+        me, want = os.getpid(), name.lower()
+        return [p.pid for p in _win32.list_processes() if p.name.lower() == want and p.pid != me]
 
     def image_path(self, pid: int) -> Optional[str]:
-        handle = self._k.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
-        if not handle:
-            return None
-        try:
-            size = self._w.DWORD(32768)
-            buf = self._c.create_unicode_buffer(size.value)
-            if self._k.QueryFullProcessImageNameW(handle, 0, buf, self._c.byref(size)):
-                return buf.value
-            return None
-        finally:
-            self._k.CloseHandle(handle)
+        from . import _win32
+
+        return _win32.process_image_path(pid) or None
 
     def _top_windows(self, pids, owned: bool = False) -> list:
         """Visible top-level windows of *pids*, in z-order; owned ones too if *owned*."""

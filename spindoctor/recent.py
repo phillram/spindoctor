@@ -14,7 +14,6 @@ HyperSpin Tools menu entry — fast (only reads INI files), idempotent
 from __future__ import annotations
 
 import argparse
-import configparser
 import shutil
 import sys
 from dataclasses import dataclass, field
@@ -104,30 +103,11 @@ def _read_stats_file(
     Older RL versions write ``Last_Played`` instead of ``Last_Time_Played``.
     System-level keys (no specific game) are ignored.
     """
-    parser = configparser.ConfigParser(strict=False, interpolation=None)
-    try:
-        # utf-8-sig strips the BOM RocketLauncher sometimes writes; plain
-        # utf-8 leaves it on the first section header and configparser then
-        # raises MissingSectionHeaderError, silently dropping the whole
-        # file (playtime._read_playstats_file already uses utf-8-sig).
-        parser.read(path, encoding="utf-8-sig")
-    except UnicodeDecodeError:
-        # RL on Windows may write game names in the system codepage
-        # (e.g. accented letters like ü → 0xfc in cp1252). Retry once.
-        parser = configparser.ConfigParser(strict=False, interpolation=None)
-        try:
-            parser.read(path, encoding="cp1252")
-        except (OSError, configparser.Error, UnicodeDecodeError) as exc:
-            if warnings is not None:
-                warnings.append(
-                    f"Could not read stats file {path}: {type(exc).__name__}: {exc}"
-                )
-            return []
-    except (OSError, configparser.Error) as exc:
-        if warnings is not None:
-            warnings.append(
-                f"Could not read stats file {path}: {type(exc).__name__}: {exc}"
-            )
+    # playtime imports recent's ranking helpers, so defer this import.
+    from .playtime import read_statistics_ini
+
+    parser = read_statistics_ini(path, warnings, label="stats")
+    if parser is None:
         return []
 
     records: list[PlayRecord] = []
@@ -172,27 +152,11 @@ def _read_global_statistics_ini(
     top so that synthetic wheel names (Favorites, Recently Played, Most Played)
     are also dropped when this function is called from :func:`collect_play_records`.
     """
-    parser = configparser.ConfigParser(strict=False, interpolation=None)
-    try:
-        # utf-8-sig handles the BOM that RocketLauncher sometimes writes
-        parser.read(path, encoding="utf-8-sig")
-    except UnicodeDecodeError:
-        parser = configparser.ConfigParser(strict=False, interpolation=None)
-        try:
-            parser.read(path, encoding="cp1252")
-        except (OSError, configparser.Error, UnicodeDecodeError) as exc:
-            if warnings is not None:
-                warnings.append(
-                    f"Could not read Global Statistics file {path}: "
-                    f"{type(exc).__name__}: {exc}"
-                )
-            return []
-    except (OSError, configparser.Error) as exc:
-        if warnings is not None:
-            warnings.append(
-                f"Could not read Global Statistics file {path}: "
-                f"{type(exc).__name__}: {exc}"
-            )
+    # playtime imports recent's ranking helpers, so defer this import.
+    from .playtime import read_statistics_ini
+
+    parser = read_statistics_ini(path, warnings, label="Global Statistics")
+    if parser is None:
         return []
 
     section = "Last_Played_Games"

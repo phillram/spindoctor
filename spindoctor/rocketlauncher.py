@@ -395,32 +395,31 @@ def _is_absolute_path(p: str) -> bool:
     return Path(p).is_absolute() or bool(re.match(r"^[A-Za-z]:[/\\]", p))
 
 
-def _read_rom_path_from_ini(ini_path: Path) -> Optional[str]:
-    """Return the first ``Rom_Path=`` value found in *ini_path*, or ``None``.
-
-    Used by :func:`generate_rl_system_ini` to check whether the existing
-    file already points at a valid directory before deciding to overwrite.
-    """
+def _read_first_ini_values(ini_path: Path, keys) -> dict[str, str]:
+    """First values for literal scalar INI keys, ignoring sections and key case."""
+    wanted = {key.lower() for key in keys}
+    values: dict[str, str] = {}
     try:
         for line in ini_path.read_text(encoding="utf-8", errors="replace").splitlines():
-            stripped = line.strip()
-            if stripped.lower().startswith("rom_path="):
-                return stripped.split("=", 1)[1].strip()
+            key, sep, value = line.strip().partition("=")
+            low = key.lower()
+            if sep and low in wanted:
+                values.setdefault(low, value.strip())
+                if len(values) == len(wanted):
+                    break
     except OSError:
         pass
-    return None
+    return values
+
+
+def _read_rom_path_from_ini(ini_path: Path) -> Optional[str]:
+    """Return the first ``Rom_Path=`` value found in *ini_path*, or ``None``."""
+    return _read_first_ini_values(ini_path, ("rom_path",)).get("rom_path")
 
 
 def _read_default_emulator_from_ini(ini_path: Path) -> Optional[str]:
     """Return the Default_Emulator value from *ini_path*, or ``None``."""
-    try:
-        for line in ini_path.read_text(encoding="utf-8", errors="replace").splitlines():
-            stripped = line.strip()
-            if stripped.lower().startswith("default_emulator="):
-                return stripped.split("=", 1)[1].strip()
-    except OSError:
-        pass
-    return None
+    return _read_first_ini_values(ini_path, ("default_emulator",)).get("default_emulator")
 
 
 def _update_rom_path_in_ini(ini_path: Path, new_rom_path: str) -> bool:
@@ -702,11 +701,12 @@ def generate_rl_system_ini(
         _skip_update = False
         _planned_rom_path: Optional[str] = None
         if not ovr.get("rom_path") and emu_ini.exists() and not output_base:
-            _current = _read_rom_path_from_ini(emu_ini)
+            _existing_values = _read_first_ini_values(emu_ini, ("rom_path", "default_emulator"))
+            _current = _existing_values.get("rom_path")
             if _current and Path(_current).is_dir() and not Path(_natural_rom_path).exists():
                 _skip_update = True
             if not _skip_update:
-                _existing_emu = _read_default_emulator_from_ini(emu_ini)
+                _existing_emu = _existing_values.get("default_emulator")
                 if _existing_emu and re.search(r"\bmame\b", _existing_emu, re.IGNORECASE):
                     if _current and not _is_absolute_path(_current):
                         # Relative path: resolve from RL root (how RocketLauncher
@@ -759,11 +759,12 @@ def generate_rl_system_ini(
         _skip_update_flat = False
         _planned_rom_path_flat: Optional[str] = None
         if not ovr.get("rom_path") and flat_ini.exists() and not output_base:
-            _current_flat = _read_rom_path_from_ini(flat_ini)
+            _existing_values_flat = _read_first_ini_values(flat_ini, ("rom_path", "default_emulator"))
+            _current_flat = _existing_values_flat.get("rom_path")
             if _current_flat and Path(_current_flat).is_dir() and not Path(_natural_rom_path).exists():
                 _skip_update_flat = True
             if not _skip_update_flat:
-                _existing_emu_flat = _read_default_emulator_from_ini(flat_ini)
+                _existing_emu_flat = _existing_values_flat.get("default_emulator")
                 if _existing_emu_flat and re.search(r"\bmame\b", _existing_emu_flat, re.IGNORECASE):
                     if _current_flat and not _is_absolute_path(_current_flat):
                         try:
@@ -1911,7 +1912,16 @@ def _rl_ini_value(path: Path, section: str, key: str) -> str:
     return _read_rl_ini(path).get(section.lower(), {}).get(key.lower(), "")
 
 
-def _read_system_default_emulator(source_system: str, rocketlauncher_dir: Path) -> str:
+def _cached_rl_ini(path: Path, cache: Optional[dict] = None) -> dict[str, dict[str, str]]:
+    if cache is None:
+        return _read_rl_ini(path)
+    if path not in cache:
+        cache[path] = _read_rl_ini(path)
+    return cache[path]
+
+
+def _read_system_default_emulator(source_system: str, rocketlauncher_dir: Path,
+                                  ini_cache: Optional[dict] = None) -> str:
     """Return the Default_Emulator name configured for *source_system* in RL's settings.
 
     Checks folder layout (``Settings/<system>/Emulators.ini`` → ``[ROMS]``) first,
@@ -1922,19 +1932,20 @@ def _read_system_default_emulator(source_system: str, rocketlauncher_dir: Path) 
     settings_dir = rocketlauncher_dir / "Settings"
 
     # Folder layout: Settings/<system>/Emulators.ini → [ROMS] Default_Emulator
-    val = _rl_ini_value(settings_dir / source_system / "Emulators.ini", "ROMS", "Default_Emulator")
+    val = _cached_rl_ini(settings_dir / source_system / "Emulators.ini", ini_cache).get("roms", {}).get("default_emulator", "")
     if val:
         return val
 
     # Flat layout: Settings/<system>.ini → [Settings] Default_Emulator
-    val = _rl_ini_value(settings_dir / f"{source_system}.ini", "Settings", "Default_Emulator")
+    val = _cached_rl_ini(settings_dir / f"{source_system}.ini", ini_cache).get("settings", {}).get("default_emulator", "")
     if val:
         return val
 
     return ""
 
 
-def _read_emulator_exe(emulator_name: str, rocketlauncher_dir: Path) -> str:
+def _read_emulator_exe(emulator_name: str, rocketlauncher_dir: Path,
+                       ini_cache: Optional[dict] = None) -> str:
     """Return the bare exe filename for *emulator_name* from ``Global Emulators.ini``.
 
     Tries ``Emu_Path`` and ``Emulator_Application_Path`` keys (cabinet installations
@@ -1946,13 +1957,14 @@ def _read_emulator_exe(emulator_name: str, rocketlauncher_dir: Path) -> str:
 
     from pathlib import PureWindowsPath
 
-    path_str = _read_emulator_emu_path(emulator_name, rocketlauncher_dir)
+    path_str = _read_emulator_emu_path(emulator_name, rocketlauncher_dir, ini_cache)
     if path_str:
         return PureWindowsPath(path_str).name
     return EMULATOR_EXECUTABLES.get(emulator_name, "")
 
 
-def _read_emulator_emu_path(emulator_name: str, rocketlauncher_dir: Path) -> str:
+def _read_emulator_emu_path(emulator_name: str, rocketlauncher_dir: Path,
+                            ini_cache: Optional[dict] = None) -> str:
     """Return the raw ``Emu_Path`` string for *emulator_name* from ``Global Emulators.ini``.
 
     Unlike :func:`_read_emulator_exe` (which returns only the bare filename), this
@@ -1962,8 +1974,9 @@ def _read_emulator_emu_path(emulator_name: str, rocketlauncher_dir: Path) -> str
     this; returns an empty string if the emulator has no path entry.
     """
     global_ini = rocketlauncher_dir / "Settings" / "Global Emulators.ini"
-    for key in ("Emu_Path", "Emulator_Application_Path", "Emulator_Path"):
-        path_str = _rl_ini_value(global_ini, emulator_name, key)
+    section = _cached_rl_ini(global_ini, ini_cache).get(emulator_name.lower(), {})
+    for key in ("emu_path", "emulator_application_path", "emulator_path"):
+        path_str = section.get(key, "")
         if path_str:
             return path_str
     return ""
@@ -2010,7 +2023,8 @@ def _read_pclauncher_game_exe(
 
 
 def _get_app_wait_exe(
-    source_system: str, rocketlauncher_dir: Path, source_rom: str = ""
+    source_system: str, rocketlauncher_dir: Path, source_rom: str = "",
+    ini_cache: Optional[dict] = None,
 ) -> str:
     """Return the ``AppWaitExe=`` value for a PCLauncher entry targeting *source_system*.
 
@@ -2036,20 +2050,21 @@ def _get_app_wait_exe(
     *source_rom* is only needed (and used) when *source_system* resolves to
     PCLauncher; pass it whenever the ROM name is known.
     """
-    emulator = _read_system_default_emulator(source_system, rocketlauncher_dir)
+    emulator = _read_system_default_emulator(source_system, rocketlauncher_dir, ini_cache)
     if not emulator:
         emulator = guess_emulator(source_system)
 
     if emulator == "PCLauncher":
         return _read_pclauncher_game_exe(source_system, source_rom, rocketlauncher_dir)
 
-    return _read_emulator_exe(emulator, rocketlauncher_dir)
+    return _read_emulator_exe(emulator, rocketlauncher_dir, ini_cache)
 
 
 def _get_fade_title(
     source_system: str,
     rocketlauncher_dir: Path,
     extra: "dict[str, str] | None" = None,
+    ini_cache: Optional[dict] = None,
 ) -> str:
     """Return the ``FadeTitle=`` window-title fragment for *source_system*'s emulator.
 
@@ -2066,7 +2081,7 @@ def _get_fade_title(
     is necessary alongside ``AppWaitExe`` to avoid the 30-second
     "waiting for window ahk_pid" error from PCLauncher.ahk.
     """
-    emulator = _read_system_default_emulator(source_system, rocketlauncher_dir)
+    emulator = _read_system_default_emulator(source_system, rocketlauncher_dir, ini_cache)
     if not emulator or emulator == "PCLauncher":
         return ""
     merged: dict[str, str] = {**EMULATOR_WINDOW_TITLES, **(extra or {})}
@@ -2179,9 +2194,10 @@ def write_pclauncher_system_ini(
     rl_exe = rl_exe or (rocketlauncher_dir / "RocketLauncher.exe")
     system_ini = rocketlauncher_dir / "Modules" / "PCLauncher" / f"{system_name}.ini"
     lines: list[str] = []
+    ini_cache: dict = {}
     for target_name, source_system, source_rom in entries:
-        app_wait_exe = _get_app_wait_exe(source_system, rocketlauncher_dir, source_rom)
-        fade_title = _get_fade_title(source_system, rocketlauncher_dir, extra_window_titles)
+        app_wait_exe = _get_app_wait_exe(source_system, rocketlauncher_dir, source_rom, ini_cache)
+        fade_title = _get_fade_title(source_system, rocketlauncher_dir, extra_window_titles, ini_cache)
         lines.append(f"[{target_name}]")
         lines.append(f"Application={rl_exe}")
         lines.append(f'Parameters=-s "{source_system}" -r "{source_rom}"')

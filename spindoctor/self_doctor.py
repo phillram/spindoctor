@@ -199,6 +199,21 @@ def check_rescue_copies(report: SelfDoctorReport) -> SelfCheck:
     return check
 
 
+def _tree_size_and_count(folder: Path, pattern: str = "*") -> tuple[int, int]:
+    """Size of all files and count matching names in a single traversal."""
+    size = count = 0
+    for path in folder.rglob("*"):
+        if not path.is_file():
+            continue
+        if path.match(pattern):
+            count += 1
+        try:
+            size += path.stat().st_size
+        except OSError:
+            pass
+    return size, count
+
+
 def check_manifest_dir_sizes(report: SelfDoctorReport) -> None:
     """Manifest dirs (curation / migrations / edits / renames / themes /
     media_imports) accumulate one JSON per --apply run.
@@ -215,8 +230,7 @@ def check_manifest_dir_sizes(report: SelfDoctorReport) -> None:
         d = CONFIG_DIR / name
         if not d.exists():
             continue
-        size = _walk_size(d)
-        n_files = sum(1 for _ in d.rglob("*") if _.is_file())
+        size, n_files = _tree_size_and_count(d)
         if size < _MANIFEST_DIR_WARN_BYTES:
             report.add(SelfCheck(
                 name=f"manifests_{name}",
@@ -386,8 +400,7 @@ def check_metadata_cache(report: SelfDoctorReport, config) -> SelfCheck:
         )
         report.add(check)
         return check
-    size = _walk_size(cache_dir)
-    n_files = sum(1 for _ in cache_dir.rglob("*.json") if _.is_file())
+    size, n_files = _tree_size_and_count(cache_dir, "*.json")
     check = SelfCheck(
         name="metadata_cache", status=Status.INFO,
         detail=(

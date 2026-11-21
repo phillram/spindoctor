@@ -33,6 +33,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable, Optional
 
+from ._ahk import iter_ahk_code_lines
 from .config import Config
 from ._text import read_windows_text as _read_windows_text
 
@@ -131,14 +132,15 @@ def detect_lightgun_install(config: Config,
         if not root.exists():
             continue
         # Bounded walk — Sinden + DemulShooter live ≤4 levels deep.
-        for depth, dirpath in _bounded_walk(root, max_depth=4):
+        for depth, dirpath, filenames in _bounded_walk(root, max_depth=4, include_files=True):
             lower = str(dirpath).lower()
             if not install.arcade_guns_dir and any(
                 h in lower for h in arcadeguns_hints
             ):
                 install.arcade_guns_dir = dirpath
             try:
-                files = {f.name.lower(): f for f in dirpath.iterdir() if f.is_file()}
+                files = {name.lower(): dirpath / name for name in filenames
+                         if (dirpath / name).is_file()}
             except OSError:
                 continue
             if (not install.sinden_software_dir and "lightgun.exe" in files
@@ -160,17 +162,20 @@ def detect_lightgun_install(config: Config,
     return install
 
 
-def _bounded_walk(root: Path, max_depth: int):
-    """Yield ``(depth, dir)`` for every directory under *root*."""
+def _bounded_walk(root: Path, max_depth: int, include_files: bool = False):
+    """Yield ``(depth, dir)``; optionally include the walk's file names."""
     import os
     base = len(Path(os.path.abspath(root)).parts)
-    for dirpath, dirnames, _ in os.walk(root):
+    for dirpath, dirnames, filenames in os.walk(root):
         depth = len(Path(os.path.abspath(dirpath)).parts) - base
         if depth >= max_depth:
             # Don't descend further: without this, os.walk still visits
             # every folder under Program Files and LocalAppData.
             dirnames[:] = []
-        yield depth, Path(dirpath)
+        if include_files:
+            yield depth, Path(dirpath), filenames
+        else:
+            yield depth, Path(dirpath)
 
 
 # ─── per-system audit ─────────────────────────────────────────────────────────
@@ -270,9 +275,6 @@ _TARGET_RE = re.compile(r"-target(?:=|\s+)(\S+)", re.IGNORECASE)
 # those names case-insensitively.  Global.ahk runs for every system, so it
 # can't tell which systems are gun systems and isn't read.
 
-# An AHK comment starts with ";" at the start of a line or after a space
-# or tab ("`;" is a literal semicolon).
-_AHK_COMMENT_RE = re.compile(r"(?:^|[ \t]);")
 # Run / RunWait as a command ("Run, x" or "Run x") or a function ("Run(x)").
 _AHK_RUN_RE = re.compile(r"^\s*Run(?:Wait)?\s*[,(\s]", re.IGNORECASE)
 # Match the executable being launched, not a taskkill argument, working
@@ -303,18 +305,8 @@ _GAME_EMULATOR_RE = re.compile(
 def _ahk_code_lines(text: str) -> Iterable[str]:
     """The code on each line of AHK *text*: comments and ``/* … */`` blocks
     removed, blank lines skipped."""
-    in_block = False
-    for line in text.splitlines():
-        s = line.strip()
-        if in_block:
-            in_block = not (s.startswith("*/") or s.endswith("*/"))
-            continue
-        if s.startswith("/*"):
-            in_block = not (len(s) >= 4 and s.endswith("*/"))
-            continue
-        code = _AHK_COMMENT_RE.split(line, maxsplit=1)[0]
-        if code.strip():
-            yield code
+    for _number, code in iter_ahk_code_lines(text):
+        yield code
 
 
 def _read_ahk(path: Path) -> str:
@@ -431,6 +423,23 @@ def _system_emulators(rocketlauncher_dir: Path, system_name: str, body: str
         games = ""
     names += [g.group(1) for g in _GAME_EMULATOR_RE.finditer(games) if g.group(1)]
     return list(dict.fromkeys(n.lower() for n in names))
+
+
+def emulator_systems(rl_dir: Path, wheels: Iterable[str]) -> dict[str, set[str]]:
+    """Lower-cased emulator names mapped to the wheels that launch with them."""
+    out: dict[str, set[str]] = {}
+    for wheel in wheels:
+        found = system_settings_ini(rl_dir, wheel)
+        if found is None:
+            continue
+        try:
+            body = found[0].read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for emu in _system_emulators(rl_dir, wheel, body):
+            if emu:
+                out.setdefault(emu, set()).add(wheel.lower())
+    return out
 
 
 def _add_user_functions(status: SystemLightgunStatus, index: UserFunctionsIndex,

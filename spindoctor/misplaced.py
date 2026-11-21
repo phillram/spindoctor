@@ -91,6 +91,8 @@ def find_misplaced_in_system(
     recursive = bool(overrides.get("recursive_scan"))
     iterator = roms_dir.rglob("*") if recursive else roms_dir.iterdir()
 
+    suggestions: dict[str, list[str]] = {}
+    known_systems = tuple(known_systems)
     misplaced: list[MisplacedRom] = []
     for path in iterator:
         if not path.is_file():
@@ -100,7 +102,9 @@ def find_misplaced_in_system(
             continue
         if ext in _GENERIC_EXTS:
             continue
-        suggested = _all_known_systems_with_ext(ext, known_systems)
+        if ext not in suggestions:
+            suggestions[ext] = _all_known_systems_with_ext(ext, known_systems)
+        suggested = suggestions[ext]
         # If no other system owns this extension, it's probably noise
         # (a .txt, .nfo, screenshot...) and shouldn't be reported.
         if not suggested:
@@ -110,7 +114,7 @@ def find_misplaced_in_system(
                 path=path,
                 current_system=system_name,
                 extension=ext,
-                suggested_systems=suggested,
+                suggested_systems=list(suggested),
                 reason="extension",
             )
         )

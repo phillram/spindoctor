@@ -95,6 +95,28 @@ class SystemSummary:
 
 # ─── parsing ──────────────────────────────────────────────────────────────────
 
+
+def read_statistics_ini(path: Path, warnings: Optional[list[str]], *,
+                        label: str) -> Optional[configparser.ConfigParser]:
+    """Read RL's UTF-8/BOM or legacy Windows-codepage statistics files."""
+    for encoding in ("utf-8-sig", "cp1252"):
+        parser = configparser.ConfigParser(strict=False, interpolation=None)
+        try:
+            parser.read(path, encoding=encoding)
+            return parser
+        except UnicodeDecodeError as exc:
+            if encoding == "utf-8-sig":
+                continue
+            error = exc
+        except (OSError, configparser.Error) as exc:
+            error = exc
+        if warnings is not None:
+            warnings.append(
+                f"Could not read {label} file {path}: {type(error).__name__}: {error}"
+            )
+        return None
+
+
 def _coerce_int(raw: str) -> int:
     raw = (raw or "").strip()
     if not raw:
@@ -124,24 +146,8 @@ def _read_playstats_file(
 
     Older RL versions write ``Last_Played`` instead of ``Last_Time_Played``.
     """
-    parser = configparser.ConfigParser(strict=False, interpolation=None)
-    try:
-        parser.read(path, encoding="utf-8-sig")
-    except UnicodeDecodeError:
-        parser = configparser.ConfigParser(strict=False, interpolation=None)
-        try:
-            parser.read(path, encoding="cp1252")
-        except (OSError, configparser.Error, UnicodeDecodeError) as exc:
-            if warnings is not None:
-                warnings.append(
-                    f"Could not read stats file {path}: {type(exc).__name__}: {exc}"
-                )
-            return []
-    except (OSError, configparser.Error) as exc:
-        if warnings is not None:
-            warnings.append(
-                f"Could not read stats file {path}: {type(exc).__name__}: {exc}"
-            )
+    parser = read_statistics_ini(path, warnings, label="stats")
+    if parser is None:
         return []
 
     out: list[PlayStat] = []
@@ -195,26 +201,8 @@ def _read_global_statistics_ini(
       * ``[TopTen_Time_Played]`` — total seconds per game
       * ``[TopTen_Times_Played]`` — number of sessions per game
     """
-    parser = configparser.ConfigParser(strict=False, interpolation=None)
-    try:
-        parser.read(path, encoding="utf-8-sig")
-    except UnicodeDecodeError:
-        parser = configparser.ConfigParser(strict=False, interpolation=None)
-        try:
-            parser.read(path, encoding="cp1252")
-        except (OSError, configparser.Error, UnicodeDecodeError) as exc:
-            if warnings is not None:
-                warnings.append(
-                    f"Could not read Global Statistics file {path}: "
-                    f"{type(exc).__name__}: {exc}"
-                )
-            return []
-    except (OSError, configparser.Error) as exc:
-        if warnings is not None:
-            warnings.append(
-                f"Could not read Global Statistics file {path}: "
-                f"{type(exc).__name__}: {exc}"
-            )
+    parser = read_statistics_ini(path, warnings, label="Global Statistics")
+    if parser is None:
         return []
 
     by_key: dict[tuple[str, str], PlayStat] = {}

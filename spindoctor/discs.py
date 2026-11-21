@@ -16,7 +16,7 @@ import re
 from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Optional
 
 from .config import Config
 
@@ -25,7 +25,16 @@ _DISC_RE = re.compile(
     r"^(?P<base>.+?)\s*\(\s*Disc\s*(?P<n>\d+)[^)]*\)\s*$",
     re.IGNORECASE,
 )
-_DISC_EXTS = {".bin", ".cue", ".chd", ".iso", ".img", ".gdi", ".cdi"}
+DISC_EXTENSIONS = {".bin", ".cue", ".chd", ".iso", ".img", ".gdi", ".cdi"}
+_DISC_EXTS = DISC_EXTENSIONS
+
+
+def disc_identity(stem: str) -> Optional[tuple[str, int]]:
+    """Return (base title, disc number), or None for an unnumbered stem."""
+    match = _DISC_RE.match(stem)
+    if match is None:
+        return None
+    return match.group("base").strip(), int(match.group("n"))
 
 
 @dataclass
@@ -61,11 +70,11 @@ def _check_disc_completeness(folder: Path, report: DiscReport) -> None:
     for entry in folder.iterdir():
         if not entry.is_file() or entry.suffix.lower() not in _DISC_EXTS:
             continue
-        m = _DISC_RE.match(entry.stem)
-        if not m:
+        identity = disc_identity(entry.stem)
+        if identity is None:
             continue
-        base = m.group("base").strip()
-        by_base[base].append(int(m.group("n")))
+        base, number = identity
+        by_base[base].append(number)
 
     for base, discs in by_base.items():
         report.games_checked += 1

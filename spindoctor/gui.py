@@ -1304,7 +1304,6 @@ class _SpinDoctorGUI:
         self.ttk = ttk_mod
         self.filedialog = filedialog_mod
         self.messagebox = messagebox_mod
-        self.scrolledtext = scrolledtext_mod
 
         # Before the root window exists, or Windows bitmap-stretches the
         # whole UI on high-DPI displays and text comes out blurry.
@@ -1515,9 +1514,6 @@ class _SpinDoctorGUI:
                     foreground=_FG_DIM)
         s.configure("SidebarHintOn.TLabel", background=_DARK_BG_RAISE,
                     foreground=_APPLY_ON_HINT_FG)
-        s.configure("Sidebar.TCheckbutton", background=_DARK_BG_RAISE,
-                    foreground=_DARK_FG)
-        s.map("Sidebar.TCheckbutton", background=[("active", _DARK_BG_RAISE)])
         s.configure("Nav.Toolbutton", background=_DARK_BG_RAISE,
                     foreground=_FG_DIM, anchor="w", padding=(12, 4),
                     relief="flat", borderwidth=0)
@@ -2164,7 +2160,6 @@ class _SpinDoctorGUI:
             "step": 0,
             "frames": [],
             "path_vars": {},
-            "doctor_text": None,
         }
 
         def show_step(idx: int) -> None:
@@ -2250,10 +2245,9 @@ class _SpinDoctorGUI:
         doctor_txt.pack(fill="both", expand=True, pady=(0, 4))
         doctor_txt.insert("end", "Running doctor\n")
         doctor_txt.configure(state="disabled")
-        state["doctor_text"] = doctor_txt
 
         # ── nav-button factory (rebuilt on each step transition) ─────────────
-        def _save_and_close(skip: bool = False) -> None:
+        def _save_paths(skip: bool = False) -> bool:
             try:
                 cfg2 = load_config()
             except Exception:  # noqa: BLE001
@@ -2268,11 +2262,16 @@ class _SpinDoctorGUI:
                 self.messagebox.showerror(
                     "Could not save config", str(exc),
                 )
-                return
+                return False
             if not skip:
                 self._sync_setup_form(
                     {k: v.get().strip() for k, v in state["path_vars"].items()},
                 )
+            return True
+
+        def _save_and_close(skip: bool = False) -> None:
+            if not _save_paths(skip):
+                return
             try:
                 win.destroy()
             except Exception:  # noqa: BLE001
@@ -2361,23 +2360,8 @@ class _SpinDoctorGUI:
             # Persist the two paths immediately so the doctor run sees
             # them — without this, doctor would re-read the OLD config
             # from disk and complain about missing roms_dir/hyperspin_dir.
-            try:
-                cfg2 = load_config()
-            except Exception:  # noqa: BLE001
-                from .config import Config
-                cfg2 = Config()
-            for key, var in state["path_vars"].items():
-                setattr(cfg2, key, var.get().strip())
-            try:
-                save_config(cfg2)
-            except Exception as exc:  # noqa: BLE001
-                self.messagebox.showerror(
-                    "Could not save config", str(exc),
-                )
+            if not _save_paths():
                 return
-            self._sync_setup_form(
-                {k: v.get().strip() for k, v in state["path_vars"].items()},
-            )
             show_step(2)
             threading.Thread(target=_run_doctor_async, daemon=True).start()
 
@@ -2568,7 +2552,7 @@ class _SpinDoctorGUI:
         # whose name contains the filter text (case-insensitive). Lives
         # above the notebook so it's discoverable but doesn't steal
         # vertical space when not in use. The trace on the var calls
-        # `_refresh_systems` so the dropdowns update live as the user
+        # `_apply_system_filter` so the dropdowns update live as the user
         # types — no commit-and-search step.
         self._system_filter_var = self.tk.StringVar(value="")
         self._system_filter_frame = self.ttk.Frame(main_paned)
@@ -2591,10 +2575,9 @@ class _SpinDoctorGUI:
             self._system_filter_frame, text="Close",
             command=self._toggle_system_filter,
         ).pack(side="left", padx=(0, 8))
-        # Trace fires on every keystroke (write mode). _refresh_systems
-        # is cheap (≤ 1 ms for typical cabinets) so this stays snappy.
+        # Filter the last scan without re-reading the cabinet.
         self._system_filter_var.trace_add(
-            "write", lambda *_a: self._refresh_systems(),
+            "write", lambda *_a: self._apply_system_filter(),
         )
         self._system_filter_entry.bind(
             "<Escape>", lambda _e: self._toggle_system_filter(),
@@ -3612,6 +3595,43 @@ class _SpinDoctorGUI:
 
     # ── Update check ──────────────────────────────────────────────────────────
 
+    def _run_background(self, work, on_done, on_error) -> None:
+        """Run blocking work off-thread; deliver its result only through Tk."""
+        results = queue.Queue(maxsize=1)
+
+        def worker():
+            try:
+                result = work()
+            except Exception as exc:  # noqa: BLE001 - delivered on the Tk thread
+                results.put((False, exc))
+            else:
+                results.put((True, result))
+
+        def poll():
+            try:
+                if not self.root.winfo_exists():
+                    return
+            except Exception:  # noqa: BLE001 - window already destroyed
+                return
+            try:
+                ok, value = results.get_nowait()
+            except queue.Empty:
+                self.root.after(30, poll)
+                return
+            (on_done if ok else on_error)(value)
+
+        threading.Thread(target=worker, daemon=True).start()
+        self.root.after(30, poll)
+
+    @staticmethod
+    def _cli_json(args):
+        argv = resolve_cli_command("spindoctor") + args
+        proc = subprocess.run(
+            argv, check=True, capture_output=True, text=True,
+            timeout=30, creationflags=_CREATE_NO_WINDOW,
+        )
+        return json.loads(proc.stdout or "[]")
+
     def _start_update_check(self) -> None:
         """Kick off the GitHub release-tag check on a background thread.
 
@@ -4072,6 +4092,20 @@ class _SpinDoctorGUI:
 
         populate()
 
+    def _selected_manifest(self, tree, item_meta, *, title, message):
+        sel = tree.selection()
+        if not sel:
+            self.messagebox.showinfo(title, message)
+            return None
+        meta = item_meta.get(sel[0])
+        if meta is None:
+            self.messagebox.showinfo(
+                "Pick a file",
+                "Selected row is a category folder. Pick a specific "
+                "manifest underneath it.",
+            )
+        return meta
+
     def _undo_selected_manifest(self, tree, item_meta: dict) -> None:
         """Run the matching `--undo` command for the selected manifest.
 
@@ -4080,20 +4114,11 @@ class _SpinDoctorGUI:
         recent run (curate, media-scan), warns the user if they picked
         an older manifest — that's the most surprising failure mode.
         """
-        sel = tree.selection()
-        if not sel:
-            self.messagebox.showinfo(
-                "Nothing selected",
-                "Pick a manifest from the tree first.",
-            )
-            return
-        meta = item_meta.get(sel[0])
+        meta = self._selected_manifest(
+            tree, item_meta, title="Nothing selected",
+            message="Pick a manifest from the tree first.",
+        )
         if meta is None:
-            self.messagebox.showinfo(
-                "Pick a file",
-                "Selected row is a category folder. Pick a specific "
-                "manifest underneath it.",
-            )
             return
         path, dirname, is_most_recent = meta
         recipe = self._UNDO_RECIPES.get(dirname)
@@ -4160,20 +4185,11 @@ class _SpinDoctorGUI:
         """
         import json as _json
 
-        sel = tree.selection()
-        if not sel:
-            self.messagebox.showinfo(
-                "Pick a row first",
-                "Select a manifest from the tree, then click Show diff.",
-            )
-            return
-        meta = item_meta.get(sel[0])
+        meta = self._selected_manifest(
+            tree, item_meta, title="Pick a row first",
+            message="Select a manifest from the tree, then click Show diff.",
+        )
         if meta is None:
-            self.messagebox.showinfo(
-                "Pick a file",
-                "Selected row is a category folder. Pick a specific "
-                "manifest underneath it.",
-            )
             return
         path, dirname, _is_recent = meta
         try:
@@ -4286,20 +4302,11 @@ class _SpinDoctorGUI:
         don't have per-system scope so the button shows an info message
         for those.
         """
-        sel = tree.selection()
-        if not sel:
-            self.messagebox.showinfo(
-                "Pick a row first",
-                "Select a theme-apply manifest from the tree first.",
-            )
-            return
-        meta = item_meta.get(sel[0])
+        meta = self._selected_manifest(
+            tree, item_meta, title="Pick a row first",
+            message="Select a theme-apply manifest from the tree first.",
+        )
         if meta is None:
-            self.messagebox.showinfo(
-                "Pick a file",
-                "Selected row is a category folder. Pick a specific "
-                "manifest underneath it.",
-            )
             return
         path, dirname, _is_recent = meta
         if dirname != "themes":
@@ -4485,15 +4492,24 @@ class _SpinDoctorGUI:
                 f"{len(filtered)} of {len(all_assets)} file(s)"
             )
 
+        filter_state = {"timer": None, "text": None}
+
         def apply_filter(_evt=None) -> None:
             from . import themes as themes_mod
+            filter_state["timer"] = None
             kw = filter_var.get().strip()
-            filtered = themes_mod.filter_assets(
-                all_assets, keyword=kw or None,
-            )
+            filter_state["text"] = kw
+            filtered = themes_mod.filter_assets(all_assets, keyword=kw or None)
             render(filtered)
 
-        filter_entry.bind("<KeyRelease>", apply_filter)
+        def schedule_filter(_evt=None) -> None:
+            if filter_state["timer"] is not None:
+                win.after_cancel(filter_state["timer"])
+                filter_state["timer"] = None
+            if filter_var.get().strip() != filter_state["text"]:
+                filter_state["timer"] = win.after(120, apply_filter)
+
+        filter_entry.bind("<KeyRelease>", schedule_filter)
 
         def open_selected(_evt=None) -> None:
             sel = tree.selection()
@@ -5343,7 +5359,7 @@ class _SpinDoctorGUI:
         if state is not None:
             state["edited"] = True
 
-    def _reseed_cred_hints_after_save(self) -> None:
+    def _reseed_cred_hints_after_save(self, cfg=None) -> None:
         """Refresh the last-4 hints from the just-saved config.
 
         After ``_save_setup`` writes to disk, the hint labels should
@@ -5351,10 +5367,11 @@ class _SpinDoctorGUI:
         so the user gets immediate visual confirmation that the saved
         state now matches what's on disk.
         """
-        try:
-            cfg = load_config()
-        except Exception:  # noqa: BLE001
-            return
+        if cfg is None:
+            try:
+                cfg = load_config()
+            except Exception:  # noqa: BLE001
+                return
         for key, _label, _is_password in _CRED_FIELDS:
             hint_var = self._cred_hint_vars.get(key)
             if hint_var is None:
@@ -5506,11 +5523,12 @@ class _SpinDoctorGUI:
         for key, _label, _is_password in _CRED_FIELDS:
             setattr(cfg, key, self._setup_vars[key].get().strip())
         save_config(cfg)
+        self._sidecar_target_generation = getattr(self, "_sidecar_target_generation", 0) + 1
         self._setup_mark_clean()
         # Re-seed last-4 hints from the just-saved values so the
         # masked fields show the new ``…abcd`` (or ``(empty)``)
         # immediately instead of staying on "(edited — not yet saved)".
-        self._reseed_cred_hints_after_save()
+        self._reseed_cred_hints_after_save(cfg)
         ok, errors = cfg.is_valid()
         record = _RunRecord(
             started_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -5535,7 +5553,7 @@ class _SpinDoctorGUI:
         self._run_history.append(record)
         self._refresh_logs_tab()
         # System dropdown depends on roms_dir/hyperspin_dir; refresh it.
-        self._refresh_systems()
+        self._refresh_systems(cfg=cfg)
 
     # ── Wheels tab (LEGACY — content merged into _build_tools_tab) ──────────────
 
@@ -5719,11 +5737,6 @@ class _SpinDoctorGUI:
         )
 
         def run_next(remaining: list[tuple[str, list[str]]], last_rc: int) -> None:
-            # Record the previous step's result before deciding next.
-            if results or last_rc != 0:
-                # Skip the synthetic "kicked off chain" rc=0 on first call.
-                if results:
-                    pass  # already recorded by the inline append below
             if not remaining:
                 self._chain_end()
                 self._summarise_preflight(results)
@@ -6013,9 +6026,9 @@ class _SpinDoctorGUI:
             missing_label=f"roms_dir/{system}",
         )
 
-    def _refresh_systems(self, *, notify: bool = False) -> None:
+    def _refresh_systems(self, *, notify: bool = False, cfg=None) -> None:
         try:
-            _cfg = load_config()
+            _cfg = load_config() if cfg is None else cfg
             systems = get_systems(_cfg)
         except Exception as exc:  # noqa: BLE001 — surface any config error to UI
             _cfg = None
@@ -6034,7 +6047,19 @@ class _SpinDoctorGUI:
                 _wheel = {e.system.lower() for e in _mm.entries}
             except Exception:  # noqa: BLE001
                 pass
-        # Apply the optional quick-filter (toggled by Ctrl+Shift+F).
+        self._system_scan = (tuple(systems), frozenset(_wheel))
+        lb = getattr(self, "_migrate_systems_lb", None)
+        if lb is not None:
+            lb.delete(0, self.tk.END)
+            for name in systems:
+                display = name
+                if _wheel and name.lower() not in _wheel and name.lower() != "main menu":
+                    display += _NOT_IN_WHEEL_SUFFIX
+                lb.insert(self.tk.END, display)
+        self._apply_system_filter(notify=notify, initialize=True)
+
+    def _apply_system_filter(self, *, notify: bool = False, initialize: bool = False) -> None:
+        systems, _wheel = getattr(self, "_system_scan", ((), frozenset()))
         # Case-insensitive substring match against the system name.
         # When the filter is empty, every system shows — matches the
         # behaviour before the filter existed.
@@ -6046,9 +6071,6 @@ class _SpinDoctorGUI:
                 else s + _NOT_IN_WHEEL_SUFFIX
                 for s in names
             ]
-
-        # Migration picks systems to move, so its list ignores the filter.
-        all_display_systems = _badged(systems)
 
         filter_pattern = ""
         try:
@@ -6127,7 +6149,7 @@ class _SpinDoctorGUI:
         # <<ComboboxSelected>>, so the game list would otherwise stay empty
         # until the user manually picks a system from the dropdown.
         fixexe_game_combo = getattr(self, "_fixexe_game_combo", None)
-        if fixexe_game_combo is not None and not fixexe_game_combo["values"]:
+        if initialize and fixexe_game_combo is not None and not fixexe_game_combo["values"]:
             if getattr(self, "_games_system_var", None) and self._games_system_var.get():
                 self._refresh_fixexe_games()
 
@@ -6145,13 +6167,6 @@ class _SpinDoctorGUI:
                         if val.endswith(_NOT_IN_WHEEL_SUFFIX):
                             _v.set(val[:-len(_NOT_IN_WHEEL_SUFFIX)])
                     fd_combo.bind("<<ComboboxSelected>>", _strip_fd, add=True)
-
-        # Migrate systems Listbox — different widget type, handled separately.
-        lb = getattr(self, "_migrate_systems_lb", None)
-        if lb is not None:
-            lb.delete(0, self.tk.END)
-            for s in all_display_systems:
-                lb.insert(self.tk.END, s)
 
         if notify:
             if systems:
@@ -6309,10 +6324,11 @@ class _SpinDoctorGUI:
         self._backup_restore_combo.grid(row=0, column=1, sticky="ew", padx=6, pady=2)
         restore_btn_frame = self.ttk.Frame(restore_frame)
         restore_btn_frame.grid(row=0, column=2, sticky="w", padx=(0, 6), pady=2)
-        self.ttk.Button(
+        self._backup_scan_btn = self.ttk.Button(
             restore_btn_frame, text="Scan",
             command=self._scan_backup_folders,
-        ).pack(side="left", padx=(0, 4))
+        )
+        self._backup_scan_btn.pack(side="left", padx=(0, 4))
         self.ttk.Button(
             restore_btn_frame, text="Browse",
             command=lambda: self._browse_backup_dir(
@@ -6465,47 +6481,55 @@ class _SpinDoctorGUI:
                 f"Backup target folder does not exist: {target_path}"
             )
             return
-        try:
-            argv = resolve_cli_command("spindoctor") + [
-                "backup", "list", "--target", str(target_path), "--json",
-            ]
-            proc = subprocess.run(
-                argv,
-                check=True, capture_output=True, text=True,
-                timeout=30,
-                creationflags=_CREATE_NO_WINDOW,
-            )
-        except (OSError, subprocess.SubprocessError) as exc:
-            self._report_action_error(
-                "backup scan",
-                "Could not list backups",
-                f"Failed to enumerate backups via "
-                f"`spindoctor backup list`:\n\n{exc}",
-            )
+        button = getattr(self, "_backup_scan_btn", None)
+        if getattr(self, "_backup_scan_running", False):
             return
-        try:
-            entries = json.loads(proc.stdout or "[]")
-        except json.JSONDecodeError as exc:
-            self._report_action_error(
-                "backup scan",
-                "Could not list backups",
-                f"`spindoctor backup list --json` produced unparseable "
-                f"output:\n\n{exc}\n\n{proc.stdout!r}",
+        self._backup_scan_running = True
+        if button is not None:
+            button.configure(state="disabled")
+
+        def finish():
+            self._backup_scan_running = False
+            if button is not None:
+                button.configure(state="normal")
+            return self._backup_target_var.get().strip() == target
+
+        def failed(exc):
+            if not finish():
+                return
+            if isinstance(exc, json.JSONDecodeError):
+                message = (
+                    f"`spindoctor backup list --json` produced unparseable "
+                    f"output:\n\n{exc}\n\n{exc.doc!r}"
+                )
+            else:
+                message = (
+                    f"Failed to enumerate backups via "
+                    f"`spindoctor backup list`:\n\n{exc}"
+                )
+            self._report_action_error("backup scan", "Could not list backups", message)
+
+        def done(entries):
+            if not finish():
+                return
+            folders = sorted(
+                (e["path"] for e in entries if isinstance(e, dict) and "path" in e),
+                reverse=True,
             )
-            return
-        folders = sorted(
-            (e["path"] for e in entries if isinstance(e, dict) and "path" in e),
-            reverse=True,
+            if not folders:
+                self._flash_validation(
+                    f"No SpinDoctor backups in {target_path}."
+                )
+                return
+            self._backup_restore_combo["values"] = folders
+            if not self._backup_restore_path_var.get():
+                self._backup_restore_path_var.set(folders[0])
+            self._set_status(f"Found {len(folders)} backup(s) in {target_path.name}.")
+
+        self._run_background(
+            lambda: self._cli_json(["backup", "list", "--target", str(target_path), "--json"]),
+            done, failed,
         )
-        if not folders:
-            self._flash_validation(
-                f"No SpinDoctor backups in {target_path}."
-            )
-            return
-        self._backup_restore_combo["values"] = folders
-        if not self._backup_restore_path_var.get():
-            self._backup_restore_path_var.set(folders[0])
-        self._set_status(f"Found {len(folders)} backup(s) in {target_path.name}.")
 
     def _preset_config_snapshot(self) -> None:
         """Tick settings + databases only; untick everything else.
@@ -6534,6 +6558,11 @@ class _SpinDoctorGUI:
         self._backup_label_var.set("")
         self._set_status("All components selected for a full backup.")
 
+    @staticmethod
+    def _selected_components(variables, total) -> Optional[str]:
+        selected = [key for key, var in variables.items() if var.get()]
+        return None if len(selected) == total else ",".join(selected)
+
     def _selected_backup_components(self) -> Optional[str]:
         """Return a comma-separated `--include` value, or None for "all".
 
@@ -6541,12 +6570,7 @@ class _SpinDoctorGUI:
         matches what most users want and avoids re-listing every component
         in the argv.
         """
-        selected = [k for k, v in self._backup_component_vars.items() if v.get()]
-        if not selected:
-            return ""  # signal to caller: nothing picked
-        if len(selected) == len(_BACKUP_COMPONENTS):
-            return None
-        return ",".join(selected)
+        return self._selected_components(self._backup_component_vars, len(_BACKUP_COMPONENTS))
 
     def _run_backup_create(self) -> None:
         target = self._backup_target_var.get().strip()
@@ -6899,12 +6923,7 @@ class _SpinDoctorGUI:
 
     def _selected_migrate_components(self) -> Optional[str]:
         """Return a comma-separated `--include` value, or None for "all"."""
-        selected = [k for k, v in self._migrate_component_vars.items() if v.get()]
-        if not selected:
-            return ""
-        if len(selected) == len(_MIGRATE_COMPONENTS):
-            return None
-        return ",".join(selected)
+        return self._selected_components(self._migrate_component_vars, len(_MIGRATE_COMPONENTS))
 
     def _run_migrate(self) -> None:
         target = self._migrate_target_var.get().strip()
@@ -7383,62 +7402,58 @@ class _SpinDoctorGUI:
         values = self._mm_tree.item(sel[0], "values")
         return int(values[0]) - 1  # values[0] is 1-based position
 
-    def _mm_move_up(self) -> None:
-        idx = self._mm_selected_index()
+    def _move_wheel_row(self, prefix: str, step=None) -> None:
+        idx = getattr(self, f"_{prefix}_selected_index")()
         if idx < 0:
-            self._set_status("Select a row in the table first.")
+            noun = "row" if prefix == "mm" else "game"
+            self._set_status(f"Select a {noun} in the table first.")
             return
-        if idx == 0:
-            self._set_status("Already at the top.")
+        data = getattr(self, f"_{prefix}_data")
+        if step is None:
+            raw = getattr(self, f"_{prefix}_goto_var").get().strip()
+            try:
+                target = int(raw) - 1
+            except ValueError:
+                self._set_status("Enter a valid position number.")
+                return
+            if not 0 <= target < len(data):
+                self._set_status(f"Position must be between 1 and {len(data)}.")
+                return
+        else:
+            target = idx + step
+            if target < 0:
+                self._set_status("Already at the top.")
+                return
+            if target >= len(data):
+                self._set_status("Already at the bottom.")
+                return
+        if target == idx:
             return
-        self._mm_data[idx], self._mm_data[idx - 1] = (
-            self._mm_data[idx - 1], self._mm_data[idx]
-        )
-        self._mm_repopulate_tree()
-        new_iid = str(idx)       # item is now at 1-based position idx
-        self._mm_tree.selection_set(new_iid)
-        self._mm_tree.see(new_iid)
+        data.insert(target, data.pop(idx))
+        tree = getattr(self, f"_{prefix}_tree")
+        # Row IIDs are positions, so only the rows between the two ends change.
+        for pos in range(min(idx, target), max(idx, target) + 1):
+            entry = data[pos]
+            if prefix == "mm":
+                visible = "Yes" if entry["enabled"].strip().lower() != "no" else "No"
+                tree.item(
+                    str(pos + 1), values=(pos + 1, entry["system"], visible),
+                    tags=("hidden" if visible == "No" else "",),
+                )
+            else:
+                tree.item(str(pos + 1), values=(pos + 1, entry["name"], entry["description"]))
+        iid = str(target + 1)
+        tree.selection_set(iid)
+        tree.see(iid)
+
+    def _mm_move_up(self) -> None:
+        self._move_wheel_row("mm", -1)
 
     def _mm_move_down(self) -> None:
-        idx = self._mm_selected_index()
-        if idx < 0:
-            self._set_status("Select a row in the table first.")
-            return
-        if idx >= len(self._mm_data) - 1:
-            self._set_status("Already at the bottom.")
-            return
-        self._mm_data[idx], self._mm_data[idx + 1] = (
-            self._mm_data[idx + 1], self._mm_data[idx]
-        )
-        self._mm_repopulate_tree()
-        new_iid = str(idx + 2)   # item is now at 1-based position idx+2
-        self._mm_tree.selection_set(new_iid)
-        self._mm_tree.see(new_iid)
+        self._move_wheel_row("mm", 1)
 
     def _mm_move_to_pos(self) -> None:
-        idx = self._mm_selected_index()
-        if idx < 0:
-            self._set_status("Select a row in the table first.")
-            return
-        raw = self._mm_goto_var.get().strip()
-        try:
-            target = int(raw)
-        except ValueError:
-            self._set_status("Enter a valid position number.")
-            return
-        total = len(self._mm_data)
-        if not 1 <= target <= total:
-            self._set_status(f"Position must be between 1 and {total}.")
-            return
-        target_idx = target - 1
-        if target_idx == idx:
-            return
-        item = self._mm_data.pop(idx)
-        self._mm_data.insert(target_idx, item)
-        self._mm_repopulate_tree()
-        iid = str(target)
-        self._mm_tree.selection_set(iid)
-        self._mm_tree.see(iid)
+        self._move_wheel_row("mm")
 
     def _mm_toggle_visible(self) -> None:
         idx = self._mm_selected_index()
@@ -7559,82 +7574,98 @@ class _SpinDoctorGUI:
         ``spindoctor backup sidecar restore --apply`` so all file I/O
         stays in the CLI — no drift between GUI and CLI paths.
         """
-        try:
-            argv = resolve_cli_command("spindoctor") + [
-                "backup", "sidecar", "list", str(target), "--json",
-            ]
-            proc = subprocess.run(
-                argv,
-                check=True, capture_output=True, text=True,
-                timeout=30,
-                creationflags=_CREATE_NO_WINDOW,
-            )
-        except (OSError, subprocess.SubprocessError) as exc:
-            self._report_action_error(
-                "sidecar list",
-                "Could not list backups",
-                f"Failed to enumerate backups via "
-                f"`spindoctor backup sidecar list`:\n\n{exc}",
-            )
+        if getattr(self, "_sidecar_scan_running", False):
             return
-        try:
-            backups = json.loads(proc.stdout or "[]")
-        except json.JSONDecodeError as exc:
-            self._report_action_error(
-                "sidecar list",
-                "Could not list backups",
-                f"`spindoctor backup sidecar list --json` produced "
-                f"unparseable output:\n\n{exc}\n\n{proc.stdout!r}",
-            )
-            return
-        if not backups:
-            msg = no_backups_hint or (
-                f"No .YYYYMMDD_HHMMSS.bak sidecars exist next to "
-                f"{target.name}. SpinDoctor writes one before every "
-                f"in-place write when config.backup_before_modify is on "
-                f"(the default)."
-            )
-            self._flash_status(msg)
-            return
-        chosen = self._ask_pick_sidecar(target.name, backups)
-        if chosen is None:
-            return
-        applying = bool(self._global_apply_var.get())
-        if applying:
-            confirmed = self.messagebox.askyesno(
-                "Confirm restore",
-                f"Replace {target.name} with the contents of "
-                f"{Path(chosen).name}?\n\nThe current file will itself be "
-                f"backed up as a new .YYYYMMDD_HHMMSS.bak first, so this "
-                f"action is undoable via the same Restore button.",
-            )
-        else:
-            confirmed = self.messagebox.askyesno(
-                "Preview restore",
-                f"Apply changes is off, so this only previews restoring "
-                f"{target.name} from {Path(chosen).name}. Nothing is "
-                f"replaced.\n\nPreview it?",
-            )
-        if not confirmed:
-            return
-        args = ["backup", "sidecar", "restore", str(target), "--from", str(chosen)]
-        if applying:
-            args.append("--apply")
+        self._sidecar_scan_running = True
+        variables = [
+            getattr(self, name, None)
+            for name in ("_current_system_var", "_meta_system_var", "_games_system_var")
+        ]
+        selection = tuple(var.get() if var is not None else None for var in variables)
+        generation = getattr(self, "_sidecar_target_generation", 0)
+        buttons = getattr(self, "_sidecar_restore_buttons", ())
+        for button in buttons:
+            button.configure(state="disabled")
 
-        def _done(rc: int) -> None:
-            # A preview changes nothing, so the page's "restored"
-            # follow-up (refresh + success message) mustn't run.
-            if not applying:
-                if rc == 0:
-                    self._flash_status(
-                        "Preview only. Turn on Apply changes to restore "
-                        f"{target.name}."
-                    )
+        def finish():
+            self._sidecar_scan_running = False
+            for button in buttons:
+                button.configure(state="normal")
+            return generation == getattr(self, "_sidecar_target_generation", 0) and selection == tuple(
+                var.get() if var is not None else None for var in variables
+            )
+
+        def failed(exc):
+            if not finish():
                 return
-            if on_complete is not None:
-                on_complete(rc)
+            if isinstance(exc, json.JSONDecodeError):
+                message = (
+                    f"`spindoctor backup sidecar list --json` produced "
+                    f"unparseable output:\n\n{exc}\n\n{exc.doc!r}"
+                )
+            else:
+                message = (
+                    f"Failed to enumerate backups via "
+                    f"`spindoctor backup sidecar list`:\n\n{exc}"
+                )
+            self._report_action_error("sidecar list", "Could not list backups", message)
 
-        self._run_cli("spindoctor", args, on_complete=_done)
+        def done(backups):
+            if not finish():
+                return
+            if not backups:
+                msg = no_backups_hint or (
+                    f"No .YYYYMMDD_HHMMSS.bak sidecars exist next to "
+                    f"{target.name}. SpinDoctor writes one before every "
+                    f"in-place write when config.backup_before_modify is on "
+                    f"(the default)."
+                )
+                self._flash_status(msg)
+                return
+            chosen = self._ask_pick_sidecar(target.name, backups)
+            if chosen is None:
+                return
+            applying = bool(self._global_apply_var.get())
+            if applying:
+                confirmed = self.messagebox.askyesno(
+                    "Confirm restore",
+                    f"Replace {target.name} with the contents of "
+                    f"{Path(chosen).name}?\n\nThe current file will itself be "
+                    f"backed up as a new .YYYYMMDD_HHMMSS.bak first, so this "
+                    f"action is undoable via the same Restore button.",
+                )
+            else:
+                confirmed = self.messagebox.askyesno(
+                    "Preview restore",
+                    f"Apply changes is off, so this only previews restoring "
+                    f"{target.name} from {Path(chosen).name}. Nothing is "
+                    f"replaced.\n\nPreview it?",
+                )
+            if not confirmed:
+                return
+            args = ["backup", "sidecar", "restore", str(target), "--from", str(chosen)]
+            if applying:
+                args.append("--apply")
+
+            def _done(rc: int) -> None:
+                # A preview changes nothing, so the page's "restored"
+                # follow-up (refresh + success message) mustn't run.
+                if not applying:
+                    if rc == 0:
+                        self._flash_status(
+                            "Preview only. Turn on Apply changes to restore "
+                            f"{target.name}."
+                        )
+                    return
+                if on_complete is not None:
+                    on_complete(rc)
+
+            self._run_cli("spindoctor", args, on_complete=_done)
+
+        self._run_background(
+            lambda: self._cli_json(["backup", "sidecar", "list", str(target), "--json"]),
+            done, failed,
+        )
 
     def _mm_restore_from_backup(self) -> None:
         """Pick a sidecar ``.YYYYMMDD_HHMMSS.bak`` of Main Menu.xml and restore it."""
@@ -8278,14 +8309,20 @@ class _SpinDoctorGUI:
             btn_row, text="Update RocketLauncher INIs",
             command=self._run_generate_config,
         ).pack(side="left", padx=6)
-        self.ttk.Button(
+        self._sidecar_meta_restore_db_from_backup_btn = self.ttk.Button(
             btn_row, text="Restore DB backup",
             command=self._meta_restore_db_from_backup,
-        ).pack(side="left", padx=(18, 0))
-        self.ttk.Button(
+        )
+        self._sidecar_meta_restore_db_from_backup_btn.pack(side="left", padx=(18, 0))
+        self._sidecar_restore_buttons = getattr(self, "_sidecar_restore_buttons", [])
+        self._sidecar_restore_buttons.append(self._sidecar_meta_restore_db_from_backup_btn)
+        self._sidecar_meta_restore_rl_ini_from_backup_btn = self.ttk.Button(
             btn_row, text="Restore RL INI backup",
             command=self._meta_restore_rl_ini_from_backup,
-        ).pack(side="left", padx=6)
+        )
+        self._sidecar_meta_restore_rl_ini_from_backup_btn.pack(side="left", padx=6)
+        self._sidecar_restore_buttons = getattr(self, "_sidecar_restore_buttons", [])
+        self._sidecar_restore_buttons.append(self._sidecar_meta_restore_rl_ini_from_backup_btn)
 
         # ── batch-edit ───────────────────────────────────────────────────────
         # Minimal exposure of the batch-edit CLI command — one filter,
@@ -8508,25 +8545,11 @@ class _SpinDoctorGUI:
         self._run_cli("spindoctor", args)
 
     def _populate_meta_game_list(self) -> None:
-        """Refresh the Game dropdown from the selected system's database.
-
-        Always blanks the current Game selection first — a game name
-        from the previous system is meaningless (or, worse, coincides
-        with an unrelated game of the same name) once the System
-        dropdown changes, so it must never carry over.
-        """
-        self._meta_game_var.set("")
-        system = self._meta_system_var.get().strip()
-        if not system:
-            self._meta_game_combo["values"] = []
-            return
-        try:
-            cfg = load_config()
-            db = load_database(system, cfg.databases_dir)
-            names = sorted(db.games().keys())
-            self._meta_game_combo["values"] = names
-        except Exception:  # noqa: BLE001
-            self._meta_game_combo["values"] = []
+        """Clear the previous system's game selection and refill suggestions."""
+        self._fill_game_combo(
+            self._meta_system_var.get().strip(),
+            self._meta_game_combo, self._meta_game_var, select_first=False,
+        )
 
     def _meta_system_args(self) -> Optional[list[str]]:
         """Return the `--system X` or `--all` argv tail, or None on error."""
@@ -9655,9 +9678,7 @@ class _SpinDoctorGUI:
         _db_names: set[str] = set()
         if games and system:
             try:
-                cfg = load_config()  # already loaded above; cheap re-call
-                _db = load_database(system, cfg.databases_dir)
-                _db_names = {n.lower() for n in _db.games().keys()}
+                _db_names = {n.lower() for n in self._database_summary(system, cfg.databases_dir)[0]}
             except Exception:  # noqa: BLE001
                 pass  # missing / bad XML — skip annotation
         display_games = [
@@ -10443,10 +10464,13 @@ class _SpinDoctorGUI:
             tbl_btn_row, text="Refresh",
             command=self._mm_refresh,
         ).pack(side="left")
-        self.ttk.Button(
+        self._sidecar_mm_restore_from_backup_btn = self.ttk.Button(
             tbl_btn_row, text="Restore from backup",
             command=self._mm_restore_from_backup,
-        ).pack(side="left", padx=(6, 0))
+        )
+        self._sidecar_mm_restore_from_backup_btn.pack(side="left", padx=(6, 0))
+        self._sidecar_restore_buttons = getattr(self, "_sidecar_restore_buttons", [])
+        self._sidecar_restore_buttons.append(self._sidecar_mm_restore_from_backup_btn)
 
         # Sort
         sort_frame = self.ttk.LabelFrame(mm_lf, text="Sort all systems")
@@ -10994,6 +11018,40 @@ class _SpinDoctorGUI:
             return
         self._run_cli("spindoctor", ["organize", sys_, "--undo"])
 
+    def _database_summary(self, system: str, databases_dir):
+        from .database import find_database
+
+        path = Path(databases_dir) / system / f"{system}.xml"
+        if not path.is_file():
+            path = find_database(system, Path(databases_dir)) or path
+        try:
+            stat = path.stat()
+            signature = (stat.st_mtime_ns, stat.st_size)
+        except OSError:
+            signature = None
+        cache = getattr(self, "_database_summaries", {})
+        self._database_summaries = cache
+        cached = cache.get(path)
+        if signature is not None and cached is not None:
+            if cached[0] == signature and cached[1] is load_database:
+                return cached[2]
+        db = load_database(system, databases_dir)
+        games = db.games()
+        names = tuple(sorted(games))
+        genres = tuple(sorted(
+            {genre.strip() for g in games.values() if (genre := getattr(g, "genre", "")) and genre.strip()},
+            key=str.lower,
+        ))
+        entries = tuple(
+            (g.name, g.description) for g in db.iter_xml_order()
+        ) if hasattr(db, "iter_xml_order") else ()
+        summary = (names, genres, entries)
+        if signature is not None:
+            if len(cache) >= 16:
+                cache.pop(next(iter(cache)))
+            cache[path] = (signature, load_database, summary)
+        return summary
+
     def _load_games_for_system(self, system: str) -> list:
         # A section's own <<ComboboxSelected>> refresher can run before the
         # binding that strips "(Not in wheel)" from its var.
@@ -11001,8 +11059,7 @@ class _SpinDoctorGUI:
             system = system[:-len(_NOT_IN_WHEEL_SUFFIX)]
         try:
             cfg = load_config()
-            db = load_database(system, cfg.databases_dir)
-            return sorted(db.games().keys())
+            return list(self._database_summary(system, cfg.databases_dir)[0])
         except Exception as exc:  # noqa: BLE001
             import logging as _logging
             _logging.getLogger(__name__).warning(
@@ -11027,12 +11084,11 @@ class _SpinDoctorGUI:
             return
         try:
             cfg = load_config()
-            db = load_database(system, cfg.databases_dir)
-            games = list(db.iter_xml_order())
+            games = self._database_summary(system, cfg.databases_dir)[2]
         except Exception as exc:  # noqa: BLE001
             self._report_action_error("gwm load", "Load failed", str(exc))
             return
-        self._gwm_data = [{"name": g.name, "description": g.description} for g in games]
+        self._gwm_data = [{"name": name, "description": desc} for name, desc in games]
         self._gwm_loaded_system = system
         self._gwm_repopulate_tree()
         count = len(self._gwm_data)
@@ -11053,61 +11109,13 @@ class _SpinDoctorGUI:
         return int(sel[0]) - 1  # iid is 1-based
 
     def _gwm_move_up(self) -> None:
-        idx = self._gwm_selected_index()
-        if idx < 0:
-            self._set_status("Select a game in the table first.")
-            return
-        if idx == 0:
-            self._set_status("Already at the top.")
-            return
-        self._gwm_data[idx], self._gwm_data[idx - 1] = (
-            self._gwm_data[idx - 1], self._gwm_data[idx]
-        )
-        self._gwm_repopulate_tree()
-        new_iid = str(idx)
-        self._gwm_tree.selection_set(new_iid)
-        self._gwm_tree.see(new_iid)
+        self._move_wheel_row("gwm", -1)
 
     def _gwm_move_down(self) -> None:
-        idx = self._gwm_selected_index()
-        if idx < 0:
-            self._set_status("Select a game in the table first.")
-            return
-        if idx >= len(self._gwm_data) - 1:
-            self._set_status("Already at the bottom.")
-            return
-        self._gwm_data[idx], self._gwm_data[idx + 1] = (
-            self._gwm_data[idx + 1], self._gwm_data[idx]
-        )
-        self._gwm_repopulate_tree()
-        new_iid = str(idx + 2)
-        self._gwm_tree.selection_set(new_iid)
-        self._gwm_tree.see(new_iid)
+        self._move_wheel_row("gwm", 1)
 
     def _gwm_move_to_pos(self) -> None:
-        idx = self._gwm_selected_index()
-        if idx < 0:
-            self._set_status("Select a game in the table first.")
-            return
-        raw = self._gwm_goto_var.get().strip()
-        try:
-            target = int(raw)
-        except ValueError:
-            self._set_status("Enter a valid position number.")
-            return
-        total = len(self._gwm_data)
-        if not 1 <= target <= total:
-            self._set_status(f"Position must be between 1 and {total}.")
-            return
-        target_idx = target - 1
-        if target_idx == idx:
-            return
-        item = self._gwm_data.pop(idx)
-        self._gwm_data.insert(target_idx, item)
-        self._gwm_repopulate_tree()
-        iid = str(target)
-        self._gwm_tree.selection_set(iid)
-        self._gwm_tree.see(iid)
+        self._move_wheel_row("gwm")
 
     def _gwm_sort(self, key: str) -> None:
         """Sort the in-memory game list alphabetically by *key* ('description' or 'name').
@@ -11240,41 +11248,44 @@ class _SpinDoctorGUI:
         if not self._run_cli("spindoctor", args, on_complete=_cleanup):
             _cleanup(1)
 
-    def _refresh_rename_games(self) -> None:
-        system = self._rename_system_var.get().strip()
+    def _fill_game_combo(
+        self, system, combo, var, *, blank_entry=False, select_first=True,
+    ) -> None:
+        if combo is None:
+            return
         games = self._load_games_for_system(system) if system else []
-        self._rename_game_combo["values"] = games
-        self._rename_game_var.set(games[0] if games else "")
+        combo["values"] = ([""] + games) if blank_entry else games
+        var.set(games[0] if select_first and games else "")
+
+    def _refresh_rename_games(self) -> None:
+        self._fill_game_combo(
+            self._rename_system_var.get().strip(),
+            getattr(self, "_rename_game_combo", None), self._rename_game_var,
+        )
 
     def _refresh_fav_games(self) -> None:
-        system = self._fav_system_var.get().strip()
-        games = self._load_games_for_system(system) if system else []
-        self._fav_rom_combo["values"] = games
-        self._fav_rom_var.set(games[0] if games else "")
+        self._fill_game_combo(
+            self._fav_system_var.get().strip(),
+            getattr(self, "_fav_rom_combo", None), self._fav_rom_var,
+        )
 
     def _refresh_inspect_games(self) -> None:
-        system = self._inspect_system_var.get().strip()
-        games = self._load_games_for_system(system) if system else []
-        combo = getattr(self, "_inspect_rom_combo", None)
-        if combo is None:
-            return
-        combo["values"] = [""] + games
-        self._inspect_rom_var.set("")
+        self._fill_game_combo(
+            self._inspect_system_var.get().strip(),
+            getattr(self, "_inspect_rom_combo", None), self._inspect_rom_var, blank_entry=True, select_first=False,
+        )
 
     def _refresh_madd_games(self) -> None:
-        system = self._madd_system_var.get().strip()
-        games = self._load_games_for_system(system) if system else []
-        self._madd_game_combo["values"] = games
-        self._madd_game_var.set(games[0] if games else "")
+        self._fill_game_combo(
+            self._madd_system_var.get().strip(),
+            getattr(self, "_madd_game_combo", None), self._madd_game_var,
+        )
 
     def _refresh_ignore_games(self) -> None:
-        system = self._ignore_system_var.get().strip()
-        games = self._load_games_for_system(system) if system else []
-        combo = getattr(self, "_ignore_game_combo", None)
-        if combo is None:
-            return
-        combo["values"] = games
-        self._ignore_game_var.set(games[0] if games else "")
+        self._fill_game_combo(
+            self._ignore_system_var.get().strip(),
+            getattr(self, "_ignore_game_combo", None), self._ignore_game_var,
+        )
 
     def _run_rename_or_clone(self, verb: str) -> None:
         """Shared dispatcher for the `rename` / `clone` buttons.
@@ -12633,8 +12644,7 @@ class _SpinDoctorGUI:
         system = self._test_system_var.get().strip()
         if system:
             try:
-                db = load_database(system, load_config().databases_dir)
-                genres = {g.genre.strip() for g in db.games().values() if (g.genre or "").strip()}
+                genres = set(self._database_summary(system, load_config().databases_dir)[1])
             except Exception:  # noqa: BLE001 - a missing database just means no suggestions
                 genres = set()
         self._test_genre_combo.configure(values=[""] + sorted(genres, key=str.lower))
@@ -13545,39 +13555,50 @@ class _SpinDoctorGUI:
         label = getattr(self, "_autorefresh_status_label", None)
         if label is None:
             return
-        from . import autostart
-        try:
-            registered = autostart.task_exists()
-        except autostart.NotSupportedError:
-            label.configure(text="Status: not available (Windows only)", style="TLabel")
-            return
-        if not registered:
-            label.configure(text="Status: disabled", style="TLabel")
-            return
-        if op_failed:
-            label.configure(
-                text="Outdated: run Enable auto-run as Administrator",
-                style="Warn.TLabel",
-            )
-            return
-        stale = False
-        if getattr(sys, "frozen", False):
-            bat_path = self._refresh_bat_path()
-            if not bat_path.exists():
-                stale = True
+        request_attr = "_autorefresh_status_label_request"
+        request = getattr(self, request_attr, 0) + 1
+        setattr(self, request_attr, request)
+
+        def work():
+            from . import autostart
+            try:
+                registered = autostart.task_exists()
+            except autostart.NotSupportedError:
+                return dict(text="Status: not available (Windows only)", style="TLabel")
+            if not registered:
+                return dict(text="Status: disabled", style="TLabel")
+            if op_failed:
+                return dict(
+                    text="Outdated: run Enable auto-run as Administrator",
+                    style="Warn.TLabel",
+                )
+            stale = False
+            if getattr(sys, "frozen", False):
+                bat_path = self._refresh_bat_path()
+                if not bat_path.exists():
+                    stale = True
+                else:
+                    bat_text = bat_path.read_text(encoding="utf-8", errors="replace")
+                    stale = not all(ref in bat_text for ref in self._refresh_exe_refs())
+            if stale:
+                return dict(
+                    text="Outdated: Enable auto-run to fix",
+                    style="Warn.TLabel",
+                )
             else:
-                bat_text = bat_path.read_text(encoding="utf-8", errors="replace")
-                stale = not all(ref in bat_text for ref in self._refresh_exe_refs())
-        if stale:
-            label.configure(
-                text="Outdated: Enable auto-run to fix",
-                style="Warn.TLabel",
-            )
-        else:
-            label.configure(text="Status: enabled", style="TLabel")
+                return dict(text="Status: enabled", style="TLabel")
+
+        def done(options):
+            if getattr(self, request_attr, None) == request:
+                label.configure(**options)
+
+        self._run_background(work, done, lambda _exc: None)
 
     def _parse_delay_minutes(self) -> Optional[int]:
-        raw = self._tools_delay_var.get().strip()
+        return self._parse_autorun_delay(self._tools_delay_var)
+
+    def _parse_autorun_delay(self, var) -> Optional[int]:
+        raw = var.get().strip()
         if not raw:
             return None
         if not raw.isdigit():
@@ -13834,27 +13855,37 @@ class _SpinDoctorGUI:
         label = getattr(self, "_introvideo_autorun_status_label", None)
         if label is None:
             return
-        from . import autostart
-        from .introvideo import autorun_status
-        try:
-            status = autorun_status()
-        except autostart.NotSupportedError:
-            label.configure(text="Status: not available (Windows only)", style="TLabel")
-            return
-        if not status.registered:
-            label.configure(text="Status: disabled", style="TLabel")
-        elif op_failed:
-            label.configure(
-                text="Outdated: run Enable auto-run as Administrator",
-                style="Warn.TLabel",
-            )
-        elif status.stale:
-            label.configure(
-                text="Outdated: Enable auto-run to fix",
-                style="Warn.TLabel",
-            )
-        else:
-            label.configure(text="Status: enabled", style="TLabel")
+        request_attr = "_introvideo_autorun_status_label_request"
+        request = getattr(self, request_attr, 0) + 1
+        setattr(self, request_attr, request)
+
+        def work():
+            from . import autostart
+            from .introvideo import autorun_status
+            try:
+                status = autorun_status()
+            except autostart.NotSupportedError:
+                return dict(text="Status: not available (Windows only)", style="TLabel")
+            if not status.registered:
+                return dict(text="Status: disabled", style="TLabel")
+            elif op_failed:
+                return dict(
+                    text="Outdated: run Enable auto-run as Administrator",
+                    style="Warn.TLabel",
+                )
+            elif status.stale:
+                return dict(
+                    text="Outdated: Enable auto-run to fix",
+                    style="Warn.TLabel",
+                )
+            else:
+                return dict(text="Status: enabled", style="TLabel")
+
+        def done(options):
+            if getattr(self, request_attr, None) == request:
+                label.configure(**options)
+
+        self._run_background(work, done, lambda _exc: None)
 
     def _introvideo_add(self) -> None:
         cfg = load_config()
@@ -13928,15 +13959,7 @@ class _SpinDoctorGUI:
         self._run_cli("spindoctor", args)
 
     def _parse_introvideo_delay_minutes(self) -> Optional[int]:
-        raw = self._introvideo_autorun_delay_var.get().strip()
-        if not raw:
-            return None
-        if not raw.isdigit():
-            self._flash_validation(
-                "Delay must be a non-negative integer (minutes)."
-            )
-            return -1  # sentinel: caller should bail
-        return int(raw)
+        return self._parse_autorun_delay(self._introvideo_autorun_delay_var)
 
     def _introvideo_install_autorun(self) -> None:
         delay = self._parse_introvideo_delay_minutes()

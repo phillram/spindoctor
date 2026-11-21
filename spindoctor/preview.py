@@ -39,7 +39,7 @@ from typing import Optional
 
 from .config import Config
 from .database import GameEntry, load_database
-from ._utils import win_safe_stem, atomic_write_bytes
+from ._utils import win_safe_stem, atomic_write_bytes, export_safe_stem
 
 
 _IMG_EXTS = (".png", ".jpg", ".jpeg")
@@ -644,16 +644,9 @@ def render_contact_sheet_png(
 # ─── orchestration ────────────────────────────────────────────────────────────
 
 
-_FILENAME_BAD = ("\\", "/", ":", "*", "?", '"', "<", ">", "|")
-
-
 def _safe_filename(name: str) -> str:
     """Sanitize a game name into a filesystem-friendly stem."""
-    out = name
-    for ch in _FILENAME_BAD:
-        out = out.replace(ch, "_")
-    out = out.strip().rstrip(".")
-    return out or "_"
+    return export_safe_stem(name)
 
 
 def render_system_overview(

@@ -2603,7 +2603,7 @@ def check_user_functions(config: Config) -> Check:
     that's hidden or not on the Main Menu, a game that isn't on its wheel, or
     an emulator no visible wheel launches with.  Diagnosis only.
     """
-    from .lightgun import _system_emulators, index_user_functions, system_settings_ini
+    from .lightgun import emulator_systems as map_emulator_systems, index_user_functions
     from .rl_user_functions import scan_user_functions
 
     if not config.rocketlauncher_dir:
@@ -2618,18 +2618,7 @@ def check_user_functions(config: Config) -> Check:
     mm_path = Path(config.hyperspin_dir) / "Databases" / "Main Menu" / "Main Menu.xml"
     wheels = {w.lower(): w for w in _main_menu_wheels(mm_path)}
     hidden = {w.lower() for w in _hidden_main_menu_wheels(mm_path)}
-    emulator_systems: dict[str, set[str]] = {}
-    for low, wheel in wheels.items():
-        found = system_settings_ini(rl, wheel)
-        if found is None:
-            continue
-        try:
-            body = found[0].read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            continue
-        for emu in _system_emulators(rl, wheel, body):
-            if emu:
-                emulator_systems.setdefault(emu, set()).add(low)
+    emulator_systems = map_emulator_systems(rl, wheels.values())
 
     wheel_games: dict[str, set[str]] = {}
 
@@ -3493,6 +3482,7 @@ def check_led_coverage(config: Config) -> Check:
         PRUNE_WARN_ENTRIES,
         Library,
         listxml_if_cached,
+        load_live_inis,
         unused_entries,
         wheel_scope,
     )
@@ -3502,7 +3492,8 @@ def check_led_coverage(config: Config) -> Check:
     scope = wheel_scope(config, listxml=listxml)
 
     children: list[Check] = []
-    unused = unused_entries(config, scope)
+    live = load_live_inis(config)
+    unused = unused_entries(config, scope, live=live)
     if unused.controls >= PRUNE_WARN_ENTRIES:
         children.append(Check(
             name="Entries for games in no wheel", status=Status.WARN,
@@ -3526,7 +3517,7 @@ def check_led_coverage(config: Config) -> Check:
     if not roms:
         return done(Status.INFO, "no wheel uses MAME ROM names; skipping")
 
-    rows = audit_coverage(config, roms, library=library, listxml=listxml, scope=scope)
+    rows = audit_coverage(config, roms, library=library, listxml=listxml, scope=scope, live=live)
     counts: dict[str, int] = {}
     for r in rows:
         counts[r.status] = counts.get(r.status, 0) + 1

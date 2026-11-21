@@ -29,8 +29,8 @@ from dataclasses import dataclass
 from pathlib import Path, PureWindowsPath
 from typing import Iterator, Optional
 
+from ._ahk import iter_ahk_code_lines
 from .lightgun import (
-    _AHK_COMMENT_RE,
     _AHK_RUN_RE,
     _AHK_SHELL_RE,
     _AHK_TARGET_RE,
@@ -99,18 +99,7 @@ def code_lines(text: str) -> Iterator[tuple[int, str, str]]:
     lower-cased name of the method the line is in, ``""`` outside one."""
     method = ""
     pending = ""  # a method header whose "{" is on the next line
-    in_block = False
-    for number, line in enumerate(text.splitlines(), 1):
-        s = line.strip()
-        if in_block:
-            in_block = not (s.startswith("*/") or s.endswith("*/"))
-            continue
-        if s.startswith("/*"):
-            in_block = not (len(s) >= 4 and s.endswith("*/"))
-            continue
-        code = _AHK_COMMENT_RE.split(line, maxsplit=1)[0]
-        if not code.strip():
-            continue
+    for number, code in iter_ahk_code_lines(text):
         if pending:
             if code.strip() == "{":
                 method, pending = pending, ""

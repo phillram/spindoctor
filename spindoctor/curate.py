@@ -59,10 +59,6 @@ class CurationGroup:
     retire: list[Path] = field(default_factory=list)
     reasons: dict[str, str] = field(default_factory=dict)
 
-    @property
-    def has_retirements(self) -> bool:
-        return bool(self.retire)
-
 
 # ─── selection scoring ────────────────────────────────────────────────────────
 

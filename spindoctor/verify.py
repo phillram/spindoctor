@@ -25,14 +25,13 @@ per-file SHA1 unless the size already matched something in the DAT.
 """
 from __future__ import annotations
 
-import hashlib
 import xml.etree.ElementTree as ET
-import zlib
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable, Literal, Optional
 
 from . import archives
+from ._utils import hash_stream
 
 
 MatchMode = Literal["inner", "wrapper", "auto"]
@@ -108,23 +107,12 @@ def _index(entries: Iterable[DatEntry]) -> dict[str, dict]:
 
 
 def _hash_file(path: Path, want_sha1: bool, want_crc: bool) -> tuple[Optional[str], Optional[str]]:
-    sha1 = hashlib.sha1() if want_sha1 else None
-    crc = 0
     try:
         with open(path, "rb") as f:
-            while True:
-                buf = f.read(1 << 20)
-                if not buf:
-                    break
-                if sha1:
-                    sha1.update(buf)
-                if want_crc:
-                    crc = zlib.crc32(buf, crc)
+            sha1, crc, _ = hash_stream(f, want_sha1=want_sha1, want_crc=want_crc)
     except OSError:
         return None, None
-    sha1_hex = sha1.hexdigest() if sha1 else None
-    crc_hex = f"{crc & 0xFFFFFFFF:08x}" if want_crc else None
-    return sha1_hex, crc_hex
+    return sha1, crc
 
 
 def _classify_by_wrapper_hash(path: Path, index: dict[str, dict]) -> VerifyEntry:

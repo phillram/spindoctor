@@ -24,7 +24,7 @@ from __future__ import annotations
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Iterator, Optional
 
 from .config import Config
 
@@ -163,12 +163,13 @@ class LwaxAnimation:
 
     def _resolved_colors(self) -> "list[dict[str, Color]]":
         """Per-frame full color map (every known label), forward-filled."""
+        return list(self._iter_resolved_colors())
+
+    def _iter_resolved_colors(self) -> Iterator[dict[str, Color]]:
         current: "dict[str, Color]" = {label: (0, 0, 0) for label in self._control_map}
-        resolved = []
         for frame in self.frames:
             current.update(frame.colors)
-            resolved.append(dict(current))
-        return resolved
+            yield dict(current)
 
     def render(self) -> str:
         """Render the raw (unsigned) ``.lwax`` XML text.
@@ -181,7 +182,7 @@ class LwaxAnimation:
         if not self.frames:
             raise ValueError("Animation has no frames; call add_frame() first.")
 
-        resolved = self._resolved_colors()
+        resolved = self._iter_resolved_colors()
         lines = ['<?xml version="1.0" encoding="utf-8"?>', "<LEDAnimation>"]
 
         prev_intensity: "dict[tuple[str, str], list[int]]" = {}
