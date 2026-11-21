@@ -40,8 +40,11 @@ jobs:
     strategy:
       fail-fast: false
       # Coverage rationale:
-      # * ubuntu-latest × {3.8, 3.12} — catches Python 3.8 stdlib/syntax
-      #   regressions (the Win 7 cabinet floor) and the modern interpreter.
+      # * ubuntu-22.04 × 3.8 — catches Python 3.8 stdlib/syntax regressions
+      #   (the Win 7 cabinet floor). Pinned off ubuntu-latest: that label moved
+      #   to Ubuntu 26.04, where actions/setup-python no longer ships a 3.8
+      #   build, so the job failed at setup time on every PR (PRs #568–#570).
+      # * ubuntu-latest × 3.12 — the modern interpreter.
       # * windows-2022 × 3.12 — catches Windows-specific path / encoding /
       #   filesystem behaviour. We don't run windows-2022 × 3.8 here because
       #   Defender + NTFS make it 4× slower than 3.12 (≈21min vs ≈5min)
@@ -49,7 +52,7 @@ jobs:
       #   wouldn't already catch.
       matrix:
         include:
-          - os: ubuntu-latest
+          - os: ubuntu-22.04
             python-version: '3.8'
           - os: ubuntu-latest
             python-version: '3.12'
