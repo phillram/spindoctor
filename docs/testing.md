@@ -1,126 +1,57 @@
-# Running and maintaining the tests
-
-Install the project and test tools into a virtual environment:
+# Testing
 
 ```text
 python -m pip install -e ".[all,dev]"
 python -m pip install pytest-xdist ruff
-```
-
-## Feedback loops
-
-Start with the files that own the behavior you changed:
-
-```text
 python -m pytest -q tests/test_backup.py
 python -m ruff check .
+git diff --check
 ```
 
-For a complete serial run, including real Tk coverage:
+Start with changed subsystems. For the Windows CI split:
 
 ```text
-python -m pytest -q --durations=15
+python -m pytest -q -n auto --ignore=tests/test_gui.py --durations=15
+python -m pytest -q tests/test_gui.py --durations=15
 ```
 
-Windows CI runs non-GUI tests in parallel and GUI tests in the main
-process. Use the same split locally:
+For serial debugging: `python -m pytest -q --durations=15`.
+Real Tk tests need a display; headless Linux CI uses Tk plus `xvfb-run -a`.
+A run skipping GUI integration is not equivalent to display-enabled validation.
+CI covers Linux Python 3.8/3.12, Windows 3.12 and a frozen Win7-compatible build.
+
+## Isolation and useful coverage
+
+- `tests/conftest.py` re-homes state before imports and blocks unexpected
+  non-loopback DNS. Stub network clients and background starters explicitly.
+- Use `config_home`, `isolated_config` or `config_home_factory` for per-test state;
+  reset imported path aliases/override caches as needed.
+- `tests.helpers.build_nes_library` saves config as well as sample files;
+  request isolation first.
+- Use small/sparse payloads and controlled clocks for retries/rate limits.
+- Keep failure injection, collision, preservation, precedence and recovery cases.
+  Parameterize shared setups without losing unique assertions.
+- Dry-run tests need a nonempty actionable plan plus unchanged relevant bytes.
+- Logic-only GUI tests can call real handlers on lightweight instances.
+  Keep real Tk tests for construction, layout, events, traces, fonts and scrolling;
+  do not share a mutable GUI across tests.
+
+Compare timings with the same interpreter, workers, dependencies and display.
+Build/install/smoke time is separate from pytest time; fewer collected tests
+does not prove faster or better coverage.
+
+## Documentation maintenance
 
 ```text
-python -m pytest -q -n auto --ignore=tests/test_gui.py
-python -m pytest -q tests/test_gui.py
+python scripts/generate_command_reference.py
+python scripts/generate_command_reference.py --check
+python -m pytest -q tests/test_documentation.py
 ```
 
-On headless Linux, real Tk tests need a display. CI provides Tk and uses
-`xvfb-run -a` around pytest. Do not treat a run that skips GUI integration
-coverage as equivalent to a full display-enabled run.
+The generator inspects Click definitions without executing command callbacks.
+Documentation tests check the generated index, local links and all GUI screenshot
+references. Regenerate every page image with the
+[isolated Windows capture script](gui.md#refreshing-screenshots) after GUI changes.
 
-Compare timings with the same interpreter, dependencies, display, and
-worker count. Serial and parallel timings are different measurements.
-Use pytest's duration report to distinguish fixture setup from test calls.
-
-### GitHub timing evidence
-
-Compare completed runs of the same workflow and distinguish test steps from
-installation, building, packaging smoke tests, and the overall critical path.
-The pre-cleanup [v3.2.0 run](https://github.com/phillram/spindoctor/actions/runs/42923471537)
-and [test-cleanup run](https://github.com/phillram/spindoctor/actions/runs/43162857384)
-had identical production code, with these observed step durations:
-
-| Step | Before | After |
-| --- | ---: | ---: |
-| Linux / Python 3.8 tests | 26 s | 19 s |
-| Linux / Python 3.12 tests | 25 s | 24 s |
-| Windows / Python 3.12 non-GUI tests | 74 s | 58 s |
-| Windows / Python 3.12 GUI tests | 64 s | 38 s |
-| Windows / Python 3.8 GUI smoke | 65 s | 41 s |
-| Windows / Python 3.8 standalone EXE smoke | 74 s | 74 s |
-| Entire CI workflow | 4m42s | 4m36s |
-
-These are individual runner observations, not a controlled average. The
-Windows test steps saved 42 seconds (about 30%), but the whole workflow did
-not improve by the 61% measured in the earlier local serial benchmark.
-Builds and standalone smoke tests dominate its critical path. CI prints
-the 15 slowest pytest phases so future comparisons can identify real work
-rather than inferring it from test counts.
-
-The standalone smoke harness waits for a visible, laid-out Tk window that
-Windows does not report as hung, continuously present for one second, and
-an interactive worker prompt, rather than sleeping for assumed startup
-times. This checks startup readiness, not a 20-second burn-in or an explicit
-window-message round trip; Windows' hung-window flag has its own delay.
-The harness holds original worker handles before Stop and checks their exit
-plus cleanup in a private extraction directory observed before stopping.
-Timeouts remain bounded; a
-slow or failed startup is not silently treated as a passing smoke test.
-
-## Keep tests isolated and focused
-
-- `tests/conftest.py` re-homes the process before importing SpinDoctor so
-  tests cannot write into the developer's actual configuration directory.
-  Tests that save configuration still need per-test isolation to avoid
-  sharing state or override caches with neighboring tests.
-- Request `config_home` when a test needs an isolated config directory
-  path, or `isolated_config` when it only needs isolation. Neither creates
-  the directory. Use `config_home_factory` for a custom root, and keep
-  module-specific manifest paths and imported aliases in thin local
-  adapters. The shared fixtures reset override caches on setup and teardown.
-- `tests.helpers.build_nes_library` creates the same three-game on-disk
-  library for editor and CLI tests. It also saves configuration, so callers
-  must request config isolation first.
-- The network guard rejects unexpected non-loopback DNS lookups. Stub the
-  HTTP session or provider in tests that exercise network-facing code.
-  Do not rely on a fake hostname failing to resolve: that adds delays and
-  makes results depend on the machine's network.
-- Stub background task starters when the task itself is outside a test's
-  scope. Patching only a worker's callee can race with test teardown.
-- Use small file payloads. When code only inspects file size, a truncated
-  file can represent a large download without allocating a huge byte string.
-- Test rate limiters and retry policies with controlled clocks. Other
-  client tests should not pay real rate-limit or backoff delays.
-
-## What to retain, consolidate, or move
-
-Keep failure-injection, dry-run, preservation, collision, precedence, and
-recovery cases even when their setup resembles a successful-path test.
-Before deleting a duplicate, identify a keeper that exercises the same
-entry point and transfer any unique assertions.
-
-Use parametrization for cases with the same setup and assertions but
-different inputs. Give cases descriptive IDs. Parametrization reduces
-repeated code, not necessarily the number of collected tests; exposing
-previously looped cases can increase that count.
-
-Put regression tests beside their owning subsystem, not in a file named
-after the PR or review that discovered them. Keep genuinely cross-operation
-recovery contracts together.
-
-Logic-only GUI tests should call real handlers on lightweight instances.
-Retain real Tk coverage for construction, widget layout, button and event
-wiring, variable traces, scrolling, text search, and font metrics. Avoid a
-shared mutable GUI instance: saving construction time is not worth
-order-dependent tests.
-
-Dry-run tests need an actionable plan. Seed data that would actually move,
-copy, or change under `--apply`, assert that the plan is nonempty, and compare
-source, destination, and relevant configuration bytes before and after.
-An unchanged filesystem proves little when there was nothing to do.
+For packaging, use the [standalone EXE smoke harness](../build/README.md).
+It checks readiness and cleanup with bounded waits, not a long burn-in test.

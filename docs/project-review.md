@@ -1,5 +1,9 @@
 # Whole-project review
 
+Historical engineering record. Findings, validation counts and follow-ups below
+describe that review, not a current support matrix or a fresh audit. For current
+behavior, use the [documentation index](index.md).
+
 ## Scope and confidence
 
 This review inventoried the package and tests, ran the existing suite, and

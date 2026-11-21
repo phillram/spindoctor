@@ -6,6 +6,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Documentation
+
+- Refresh and shorten current guides, replace all GUI screenshots with the
+  15-page sidebar layout, and add generated-command/link/screenshot drift checks.
+
 ## [3.3.0] - 2026-11-14
 
 ### Added

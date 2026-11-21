@@ -33,7 +33,7 @@ or removed. They are kept in case the originals are ever needed again.
 Current releases already include MP3 assets and `_MUSIC_ASSETS` entries for the
 synthetic wheels. No packaging or code changes are needed. Rebuild installs missing
 assets without replacing existing custom files. See
-[Synthetic wheel media](../../../docs/synthetic-wheel-media.md#what-spindoctor-installs-automatically).
+[Synthetic wheel media](../../../docs/synthetic-wheel-media.md#two-media-locations).
 
 ## Restoring an original background
 

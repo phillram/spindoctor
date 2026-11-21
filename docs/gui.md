@@ -1,529 +1,177 @@
-# GUI walkthrough
+# GUI guide
 
-The canonical reference for `spindoctor-gui` — the same window whether you launched it from `spindoctor-gui.exe` (Windows binary) or `spindoctor-gui` (pip install). Cabinet owners who'd rather click than type live here.
+Launch **`spindoctor.exe`** from a Windows GUI download, `spindoctor-gui` after
+pip installation, or `python -m spindoctor.gui` from a checkout.
+The binary embeds its workers; no separate CLI EXE is needed.
 
-## Contents
+## Layout and safety
 
-- [Launching](#launching)
-- [First-run wizard](#first-run-wizard)
-- [Layout primer](#layout-primer)
-- [Tab tour](#tab-tour)
-- [Menubar](#menubar)
-- [Keyboard shortcuts](#keyboard-shortcuts)
-- [Find bar](#find-bar)
-- [System quick-filter](#system-quick-filter)
-- [Dropdown letter-key jump](#dropdown-letter-key-jump)
-- [Dry-run feedback](#dry-run-feedback)
-- [Dark mode and right-click menus](#dark-mode-and-right-click-menus)
-- [Stopping a long-running command](#stopping-a-long-running-command)
+The sidebar groups **15 pages** and shares a **System** selector. Use its refresh
+button after changing paths or adding systems. The bottom Output panel shows
+commands, progress and errors; History retains this session's runs.
 
----
+**Apply changes** starts off on every launch. It adds `--apply` to supported
+actions, not a universal write lock: configuration, lists and helper-file
+generation can save without it. Console commands use their own arguments.
+Read warnings before scheduling or invoking live cabinet actions.
+See [command safety](commands.md#safety).
 
-## Launching
-
-| Install route | How to launch |
-|---|---|
-| **Windows binary** | Double-click `spindoctor-gui.exe` in the extracted folder (e.g. `C:\spindoctor\`). |
-| **pip install** | Run `spindoctor-gui` from any terminal — the console script ships with the wheel. |
-| **Source checkout, no install** | `python -m spindoctor.gui` from the repo root. |
-
-The GUI is a thin wrapper — it runs CLI and wheel-builder workers for every command. Windows binary installs relaunch `spindoctor-gui.exe` itself with `--run-tool`; all workers and bundled deployment media are embedded, so no other EXE is needed. Pip installs use the installed console scripts. Anything you can do here is also available — and identical — on the command line. The GUI's job is the input form, the progress bar, and the output panel.
-
-**Async startup.** The window paints immediately, then runs the library scan (populating every system combobox across every tab from your HyperSpin Databases directory) and the startup health checks (config validation + CLI-binary probe) in the background. While the scan is in flight the status bar reads "Scanning library"; once it finishes the bar lands on either "Ready." or the first detected problem (e.g. "Setup incomplete — N path(s) need attention"). On a slow NAS-mounted library this avoids the "is it frozen?" beat the older synchronous behaviour had on launch.
-
-**Fresh-install Setup focus.** When no `config.json` exists yet, the GUI auto-selects the Setup tab so a brand-new cabinet owner lands on the form that needs filling. Once any config has been saved, your last-active tab (`gui_last_active_tab`) is restored as usual.
-
-**Single-instance lock.** The GUI takes an OS-level file lock at `~/.spindoctor/gui.lock` on startup. Launching a second `spindoctor-gui` on the same machine will show a warning and exit cleanly — two GUIs editing the same HyperSpin XML simultaneously can corrupt the library, so the second instance refuses to start by default. If you genuinely need two windows open (comparing two cabinet configs on one box, for example) set `SPINDOCTOR_DISABLE_SINGLETON=1` in your environment before launching — you're then responsible for not running destructive operations from both. The lock file is released automatically when the process exits, so a crash never poisons future launches.
+**View** controls verbose output, saved logs, help text, dark mode, Output
+visibility and UI scale (0.6–2.0). Logs save to `output_dir` when enabled.
+Window size, scale and last page are remembered; a new installation opens Setup.
+One GUI instance per user is allowed by default.
 
 ## First-run wizard
 
-The wizard is opt-in — it does not auto-fire at launch. New cabinet owners reach it from the **Run first-run wizard** button at the top of the Setup tab; the same dialog is also available from **Help → First-run setup** at any time. A three-step modal opens:
+**Setup → Run first-run wizard**, also available in **Help → First-run setup**,
+saves core paths and runs a health check. It does not install cabinet software.
 
-1. **Welcome** — a one-sentence intro and a "Skip" / "Next" pair.
-2. **Pick paths** — required: `roms_dir` and `hyperspin_dir`. Browse buttons next to each field; drag-and-drop a folder from Explorer / Finder also fills the field.
-3. **Run health check** — runs `spindoctor doctor` inline against the just-saved paths and renders the per-check ✓/⚠/✗ summary so you can fix anything obvious before clicking Finish.
+## Pages
 
-Existing installs and re-runs use the same dialog. There is no auto-open behaviour and no `first_run_complete` flag — start it when you want it.
-
-## Layout primer
-
-A single window with a grouped page list in a sidebar on the left, a shared **Output** panel along the bottom (resizable via a draggable sash), and a status bar at the very bottom. The Output panel's header row holds **Find**, **Copy**, **Clear** and **Hide**. The status bar shows the current command and, while a command runs, a progress bar with **Stop** beside it. While the Output panel is hidden, a **Show output** button appears in the status bar. Every page scrolls vertically with an always-visible scrollbar so cabinet owners on 1024×768 / 1280×720 displays can still reach widgets that overflow.
-
-The sidebar groups the pages as **Get started** (Setup, Diagnostics), **Library** (Systems, Games, Metadata & Media, Maintenance), **Wheels & cabinet** (Custom Wheels, Intro Video, LEDBlinky, Lightgun), **Backup & move** (Backup & Restore, Migration) and **Advanced** (History, Console). Ctrl+1 to Ctrl+9 jump to the first nine pages in that order.
-
-The status bar text is automatically truncated when a command string is too long to fit; the progress bar, Stop and Show output stay visible regardless of command length.
-
-### Apply changes, Verbose output, and Save log file
-
-Four settings apply to **every command on every page**. **Apply changes** is the switch at the top of the sidebar; the other three are checkbuttons in the **View** menu. While **Verbose output** or **Save log file** is on, a reminder under the Apply switch says so (for example "On: Verbose output (View menu)").
-
-| Setting | Effect |
-|---|---|
-| **Apply changes** | A large switch. **OFF** (default, green text): commands run in dry-run mode, the output shows what *would* happen, and nothing is written. **ON** (orange): commands run with `--apply` and write changes to disk. |
-| **Verbose output** | When checked, commands run with `--verbose` and print additional detail: file paths being written, per-item counts (added / overridden / skipped), old→new values. When unchecked (default), only the summary line is shown. |
-| **Show help text** | Shows or hides the longer explanations on every page at once. Off by default; safety warnings (deletes, overwrites) are always shown. |
-| **Save log file** | When checked, every finished command's exact Output panel text (command line, full stdout/stderr, exit code) is written as a `.txt` backup file into your configured **Default output directory** (Setup tab). Unchecked by default. If `output_dir` isn't set, the Output panel notes the run wasn't saved instead of writing anywhere unexpected. |
-
-The Apply switch is always visible and changes color when it's on, so you can't miss which mode you're in before clicking a button. Save log file is a convenience copy of what the History page already keeps in memory for the session; use it when you want a durable record after the GUI closes (e.g. to attach to a bug report).
-
-### System picker
-
-The **System** dropdown in the sidebar selects a system in every section at once: Diagnostics, Systems, Games, Metadata & Media, Maintenance, Custom Wheels favorites and Lightgun. Diagnostics, Games, Metadata & Media and Maintenance → Remove duplicate region and revision variants have no System dropdown of their own: they show `System: MAME  (change it in the sidebar)`. The few sections that still have their own **System** dropdown (for example Systems → Add or remove on main menu, the ignore list and Lightgun) can pick a different system for a one-off run; the next sidebar pick resets them. Click **↻** next to the sidebar dropdown to reload the system list, for example after changing paths in Setup.
-
-## Tab tour
-
-Tabs appear in new-user journey order: configure paths first (Setup), then confirm the cabinet is healthy (Diagnostics — read-only, so it's safe to explore before touching anything), then build out systems (Systems), then manage games within those systems (Games), enrich metadata (Metadata & Media), curate the library (Maintenance), manage cross-system wheels (Custom Wheels), manage the boot-video randomizer pool (Intro Video), configure hardware (LEDBlinky / Lightgun), launch-test games (Test games), then infrastructure (Backup & Restore → Migration), and finally the session log (History) and power-user escapes (Console) at the very end.
-
-Screenshots below show SpinDoctor's dark theme at 125% UI scale with a synthetic sample cabinet, not a real library. Your systems, paths and enabled controls will differ. Maintainers can regenerate them on Windows with `python scripts/capture_gui_screenshots.py`.
-
-Most action tabs use numbered **Step N** sections that read top-to-bottom — follow them in order when setting something up for the first time, or jump directly to the step you need for ongoing maintenance.
+Screenshots show the actual current GUI with synthetic data, dark theme and
+125% UI scale. They contain no real cabinet inventory or scraper credentials.
+Long pages scroll; a screenshot shows only the visible viewport.
 
 ### Setup
 
-![Setup tab, shown with a sample cabinet](screenshots/01-setup.png)
+Save paths and scraper credentials, test credentials, browse/open folders, or
+start the wizard. Folder drag-and-drop requires the optional GUI dependency.
 
-A **Run first-run wizard** button sits at the very top — the friendliest entry point for a brand-new cabinet owner (also reachable any time from **Help → First-run setup**).
-
-Below it, every path-based config key in a single form, pre-populated with your current `config.json` values. A path that isn't set yet stays blank, with helper text underneath saying what goes there ("Required, not set yet." for core paths, "Not set." for optional ones); the text disappears once the field has a path. Fields are grouped into **Core paths** (ROMs, HyperSpin, Emulators, RocketLauncher — what every feature relies on) and **Optional paths** (LEDBlinky, MAME executable, output/backup/audit-export/temp dirs — fine to leave blank until a feature needs them). Each row has a **Browse** button (native folder picker) and an **Open** button (jumps to the path in Explorer / Finder to verify your choice). When `tkinterdnd2` is available (Windows binary install or `pip install spindoctor[gui]` / `[all]`), drag a folder from Explorer / Finder onto any path field to fill it in.
-
-Below the path fields, a **Scraper credentials** section stores your ScreenScraper username, ScreenScraper password, and TheGamesDB API key — password and key fields are masked (`***`) with a Show/Hide eyeball toggle. A **Test credentials** button pings both endpoints and reports ✓ / ✗ inline before you click Save.
-
-Click **Save configuration** to validate and write everything to `config.json` in one step. A History tab entry is created recording the saved path, any validation warnings, and an exit code (0 = valid, 1 = warnings). CLI equivalent: `spindoctor config init`.
+![Setup](screenshots/01-setup.png)
 
 ### Diagnostics
 
-![Diagnostics tab, shown with a sample cabinet](screenshots/02-diagnostics.png)
+Read-only cabinet inspection: preflight (`doctor`, tools inventory, full audit),
+system audits, duplicates, misplaced/orphan files, disc/archive checks, search,
+DAT verification, coverage and previews. Reports and caches may be created.
 
-The cabinet's "is everything OK?" diagnostic surface — nothing on this tab writes to disk. Four numbered steps cover the main diagnostic workflow.
-
-**Cabinet health check:** Three one-click, library-wide checks that need nothing filled in first — the natural next stop straight after Setup. **Preflight check** chains `doctor` → `tools-audit` → `audit --all` end-to-end with a determinate "step N of 3" progress bar, then pops a verdict messagebox at the end (green "Cabinet is ready" / yellow "N issues found"). Continues past failures so a partial cab state is still informative. Designed for the "I'm taking the cab to a LAN event tomorrow" moment when running three commands by hand is error-prone. **Run health check** and **Check installed tools** run the individual checks.
-
-**Audit a system:** Pick a system in the sidebar, then click **Audit selected system** (or **Audit all systems** for the whole library). Audit options: a **Report CSV (optional)** entry + Browse button feeds `audit --report`; checkboxes for `--no-media` (skip media checks for faster runs) and `--detailed` (richer per-file output).
-
-**Open Media folder** and **Open ROMs folder** buttons jump straight to `<hyperspin>\Media\<system>\` or `<roms_dir>\<system>\` — useful when an audit row reports "missing wheel" and you want to eyeball the offending folder.
-
-**Library-wide scans:** One-click read-only inspectors: **Find duplicate ROMs**, **Find cross-system dupes**, **Find misplaced ROMs**, **Find orphan media**, **Check disc-set consistency**, **Check archive extensions**, **Lint**, **Generate report**, **Preview HyperSpin XML**, **Stats**. Each button writes "Scan complete — see output for results." to the status bar.
-
-**Check archive extensions** peeks inside every `.zip`/`.7z`/`.rar` archive in each configured ROM folder and compares the inner file extensions against the `Rom_Extension=` list in `Global Emulators.ini` (falling back to SpinDoctor's built-in emulator-extension map when the RL config is unavailable). Archives whose inner extension is not in the configured list are flagged — this is the most common reason RocketLauncher reports *"No valid roms found in the archive"* at launch time.
-
-**Search and verify:** A **Global Search** box (`spindoctor find-global`), a **Verify-against-DAT** mini-form (`spindoctor verify --system X --dat …`), and an **Inspect** form. Both use the sidebar system. The Inspect form's **ROM (optional)** dropdown fills from that system's database; leave it blank (first item) to run `inspect --all`. Click **↻** to refresh the game list.
-
-CLI equivalents: `spindoctor audit`, `spindoctor doctor`, `spindoctor tools-audit`, `spindoctor find-dupes`, `spindoctor find-misplaced`, `spindoctor find-orphan-media`, `spindoctor check-discs`, `spindoctor check-archive-ext`, `spindoctor lint`, `spindoctor report`, `spindoctor preview`, `spindoctor stats`.
+![Diagnostics](screenshots/02-diagnostics.png)
 
 ### Systems
 
-![Systems tab, shown with a sample cabinet](screenshots/03-systems.png)
+Reorder, sort, hide/show, add or remove main-menu systems; bootstrap console/PC
+systems and set overrides. **Where wheels start** sets first, last or random
+game for selected/all wheels. Close HyperSpin before writing those settings.
 
-Manage the systems that HyperSpin exposes. Three numbered steps cover the common setup journey; the remaining sections are optional. To add, remove, reorder, or rename individual games within a system, use the **Games** tab (next tab along).
-
-**Main menu order:** Reorder, show/hide, sort, add, or remove the systems on HyperSpin's top-level wheel (`Main Menu.xml`). The tab renders the current file as a scrollable, selectable table (Treeview) with columns for position, system name, and visibility.
-
-Select any row, then reposition it with one of three methods: click **Move up** / **Move down**, press **Alt+Up** / **Alt+Down** to nudge without leaving the keyboard, or type a target position in the **Move to #** field and click **Go** to jump directly in a single action. Click **Toggle visible** to flip its enabled flag. **Save order** asks for confirmation before writing the full reordered list back to `Main Menu.xml`; on completion a History tab entry records the target file, the outcome, and an exit code. Both reorderable tables (this one and Games → Manage the game wheel) share one toolbar layout: row edits on the left, **Save order** alone on the right. After a vertical separator, **Refresh** reloads the live file and **Restore from backup** rolls back to an earlier `Main Menu.xml`. **Sort all systems** and **Add or remove on main menu** sit below the table. **Add or remove on main menu** (**Add to main menu** / **Remove from main menu**) puts an existing system on HyperSpin's main menu or takes it off; to create a brand-new system, use **Add a new system** below. CLI equivalent: `spindoctor mainmenu *`.
-
-If `Main Menu.xml` can't be parsed (file open in HyperHQ, malformed XML, truncated mid-write) the tab pops a modal naming the file path and the parse error, and clears the table so you don't see stale rows from the previous successful load. Fix the file and click Refresh to retry.
-
-**Where wheels start:** a table of every wheel on the main menu and where it starts when you open it: **the first game**, **the last game it was on**, or **a random game**, which lands on a different letter every time. The table reads HyperSpin's `random_game` / `use_last_game` keys in each wheel's `Settings\<System>.ini`. Selecting a wheel shows its current setting in **Start on**; with several wheels selected, it shows their setting when they share one. Select wheels (Ctrl or Shift for more), pick **Start on**, then click **Set selected wheels**, or **Set all wheels** for every wheel on the main menu. With Apply on, it asks first, backs up each changed file, writes it and reads the table again. With Apply off, it shows what would change. A wheel with no settings file shows as "no settings file" and is skipped. Close HyperSpin first: nothing is changed while it runs. The counts under the table show how many wheels start each way. CLI equivalent: `spindoctor wheel-start`.
-
-**Add a new system:** **Add arcade system** (or **Add PC system** for a PC-games system) on a typed system name with optional skip-media toggles. For PC systems the GUI automatically appends `--no-interactive` so the title-review step doesn't hang on stdin. To add newly installed games to an existing PC system (not a brand-new one), use the **Games** tab → Step 3.
-
-**Organize a system:** Drives `spindoctor organize <SYSTEM>` with checkboxes for `--no-sort` and `--restructure`. Restructure honours the global Apply toggle, plus a separate **Undo latest restructure** button for the `--undo` flow.
-
-**Per-system overrides** (advanced): surfaces `config system set` with a system dropdown and form fields for ScreenScraper ID, TheGamesDB ID, ROM extensions (comma-separated, leading dot optional), layout (`per-game-folder` / `multi-disc-m3u` / `flat`), emulator name, and **ROM folder path**. **Load current values** prefills the form from the saved override; **Save override** calls the CLI with only the flags the user actually filled in. Designed for niche systems (homebrew consoles, PC libraries, custom MAME variants, Daphne-based systems, etc.) that stock SpinDoctor doesn't recognize. The **ROM folder path** field overrides the default `roms_dir\<SystemName>` derivation used by `generate-config` — set it when the ROM folder name differs from the HyperSpin system name (e.g. `J:\Games\3DO` for a system named "Panasonic 3DO"). CLI equivalent: `config system set --emulator <name> --rom-path <path>`.
-
-**Inspect** buttons run `spindoctor systems` and `config system list`. Read-only.
-
----
+![Systems](screenshots/03-systems.png)
 
 ### Games
 
-![Games tab, shown with a sample cabinet](screenshots/04-games.png)
+Reorder/remove database entries, batch-edit metadata, rename/clone games, scan
+new PC installations and fix a PCLauncher's executable.
 
-Manage individual games across any system. The sidebar's **System** picker drives all four steps, and the page shows the selected system at the top. The tab is the central place for day-to-day game management: reordering the wheel, removing stale entries, renaming or cloning, adding freshly installed PC games, and fixing a bad executable path.
-
-**System picker:** Pick the system in the sidebar. Changing the selection automatically clears the game-wheel table, reloads the rename/clone game list, and reloads the fix-exe game list (Step 4). All four steps read from the same selection — no need to re-pick in each section.
-
-**Manage the game wheel:** When you open the page, or pick a system in the sidebar while it's open, a scrollable table loads every game in that system's XML database in wheel order — position number, ROM name, and display title.
-
-Reposition games with one of three methods: click **Move up** / **Move down**, press **Alt+↑** / **Alt+↓** to nudge without leaving the keyboard, or type a target position in the **Move to #** field and click **Go** (or press Enter) to jump directly. **Save order** is at the right end of the same row, as on the Systems table. **Sort A→Z (by title)** sorts by display name with leading articles stripped (The / A / An), matching HyperSpin's own wheel sort convention; **Sort A→Z (by ROM name)** sorts by filename. **Remove game** shows a dry-run message when Apply is off; with Apply ticked it confirms and shells out to `game remove --apply` (the table row is removed only after the command reports success). Tick **Also remove PCLauncher INI (PC systems only)** to also delete `Modules/PCLauncher/<system>/<game>.ini` — use this for PC systems so RocketLauncher no longer finds the game; the checkbox is a no-op for systems that have no PCLauncher INI. **Save order** writes the full reordered list back to the system XML — dry-run preview when Apply is off, background-thread save when Apply is on. Changing the system picker clears the table so a loaded game list can't accidentally be saved to the wrong database. CLI: `spindoctor game list / remove / move / move-up / move-down / sort`.
-
-**Rename or clone a game:** Rename moves the ROM file, database entry, and every media file in one operation and writes an undo manifest so the change is reversible. Clone duplicates everything under a new name — useful for keeping a speed-hack alongside the clean dump or creating a multi-language variant. Both are dry-run until you tick Apply. The **Game** dropdown auto-populates from the selected system's database; click **↻** to refresh after a database change. CLI: `spindoctor rename / clone`.
-
-**Add new PC games:** For PC / Windows / Steam systems only. Scans every install folder inside `<roms_dir>/<system>/` and adds any new games to the HyperSpin wheel database — one entry per folder, junk shortcuts silently ignored. Also writes per-game PCLauncher INIs and the RocketLauncher system settings files (`Settings/<system>/Emulators.ini` and `Settings/<system>.ini` with `Default_Emulator=PCLauncher`, `Rom_Path=Modules/PCLauncher/<system>`, `Rom_Extension=ini`). Run this after installing a new game to the PC Games folder. **Overwrite existing PCLauncher INIs** rewrites every existing per-game INI — use after a drive migration or when a game launches the wrong executable. This step is not needed for MAME, SNES, or other ROM-based systems. CLI: `spindoctor add-pc-system <system> --no-menu --no-system-media --no-game-media --no-interactive [--overwrite-pclauncher] [--apply]`.
-
-**Fix a game that launches the wrong program:** For PC games that open an uninstaller, GOG/Steam cache file, NW.js runtime, or wrong `.ahk` launcher. SpinDoctor scans the game folder and ranks candidates: real `.exe` files first (shallower paths ranked above deeper ones), then `.ahk` scripts, then `.bat` files, then known junk at the bottom. Select the game from the dropdown (the list reads from disk so it includes newly installed games not yet in the XML), pick the correct candidate, and click **Apply fix** to update `Application=` and `WorkingFolder=` in the PCLauncher INI. Other keys (`FadeTitle=`, `AppWaitExe=`, etc.) are left untouched. **INI targeting:** the per-game INI (`Modules/PCLauncher/<System>/<game>.ini`) is updated when it exists — this is the file used by PC Games, Windows Games, and any system set up by `add-pc-system`. The system-level INI (`Modules/PCLauncher/<System>.ini`) is the fallback for Taito Type X / NESiCAxLive systems that have no per-game subfolder. CLI: `spindoctor pc-fix-exe <system> <game> [--exe <path>] --apply`.
+![Games](screenshots/04-games.png)
 
 ### Metadata & Media
 
-![Metadata & Media tab, shown with a sample cabinet](screenshots/05-metadata-media.png)
+Refresh metadata/artwork for one system, all systems or a saved subset; import
+local media, sync databases and generate configs. Per-game overrides pin provider
+IDs or Steam App IDs; ambiguous matches can be skipped rather than auto-picked.
 
-Fetch metadata + media from ScreenScraper / TheGamesDB and sync the database XML. The page uses the sidebar system (or **All systems** when that box is checked), plus a **Game** dropdown below it (auto-populated when a system is selected). Leave Game blank to process all games; pick one to target only that game. An Apply toggle governs all steps. Changing the sidebar system always blanks the Game dropdown — a game from the previous system never carries over.
-
-**Full metadata refresh:** One-click chain: `fetch-meta → fetch-media → update-db` in sequence for the selected system (and game, if one is picked). Stops on first error. Use the individual steps below to run or troubleshoot each phase separately.
-
-**Fetch metadata:** Wraps `fetch-meta` with `--auto-best` / `--all-games` / `--no-cache`, a **Source** dropdown (`both (SS primary)` / `screenscraper` / `thegamesdb` / config default), and a **Threshold** entry (client-side validated 0.0–1.0). "Both (SS primary)" is the recommended default — ScreenScraper is tried first and TheGamesDB fills any gaps.
-
-**Multi-system fetch-meta** (added in 2.0): the **Pick subset** button opens a modal multi-select Listbox. The **Download for selected systems** button chains `fetch-meta --system X` once per picked system, aborting on the first non-zero exit code. Designed for cabinets with 20+ systems where the user wants to refresh a handful after a scraper-data improvement.
-
-**Fetch media:** Media-type checkboxes (wheel, background, snap, video, trailer, title, theme, fade, sound — defaulting to wheel + background), plus `--overwrite`. The **Source** dropdown (`both (SS primary)` / `screenscraper` / `thegamesdb` / config default) controls which provider is queried. With "both", ScreenScraper fills slots first; TheGamesDB fills any that SS missed — including clearlogos (→ wheel) and screenshots (→ snap). Video, title, fade, sound, and theme require ScreenScraper. See [commands.md → fetch-media provider capabilities](commands.md#fetch-media) for the full comparison table. If **Game** is selected in the shared header, only that game's media is touched. If the Output panel shows `metadata error: … NameResolutionError` or `Network unreachable`, the cabinet's internet connection was down — see [Troubleshooting → fetch-media reports "Failed: 500"](troubleshooting.md#fetch-media-reports-failed-500-with-no-explanation).
-
-**Scan a local media folder:** Source-folder picker + copy/move/link action. CLI: `spindoctor media-scan`.
-
-**Sync database to ROMs:** `update-db` with `--remove-orphans` / `--strip-variant-tags`. **Update RocketLauncher INIs** (alongside) regenerates RocketLauncher's per-system settings INIs — **run this after every ROM migration** so RocketLauncher's `Rom_Path` entries reflect the new drive. CLI: `spindoctor update-db`, `spindoctor generate-config --apply`.
-
-**Batch edit metadata** (advanced, unnumbered): One filter clause + one set clause + optional CSV report path. Drives `spindoctor batch-edit`.
-
-**Add one local media file** (unnumbered): System + game + media-type dropdowns + file picker, drives `media-add` with optional **Move** and **Overwrite if target exists** flags. Honours the global Apply toggle — unticked shows the would-copy destination as a dry-run preview. Selecting a system auto-populates the **Game** dropdown from that system's database; click **↻** to refresh.
-
-**Fill theme zips** (unnumbered): One box, one shared description, two buttons. **Fill missing game themes** installs a blank HyperSpin theme zip for every game in the selected system that has a video or background screenshot but no per-game theme zip — the blank theme shows `Images\Backgrounds\<game>.png` as a full-screen backdrop and overlays the game video on top when one is present. **Fill console default theme** instead installs a single blank `Media\<System>\Themes\default.zip` when the console has none — HyperSpin falls back to `default.zip` for any game in the system without its own theme, so this covers a whole console with one file rather than one zip per game, a lighter alternative to filling per game. Existing theme zips (per-game or `default.zip`) are never overwritten. Both buttons follow the tab's Apply/Verbose convention — dry-run preview by default, ticking the status bar's **Apply** checkbox writes, and **Verbose** prints the full path for each theme zip. Tick **All systems** in the System row to scan all systems at once. CLI: `spindoctor theme-fill --system <SYSTEM> [--all] [--apply] [--verbose]` (per-game) and `spindoctor theme-fill --default --system <SYSTEM> [--all] [--apply] [--verbose]` (console default).
-
-**Per-game & override (Optional)** — appears directly below the System selector, before Full metadata refresh. Contains two related controls in one collapsible box:
-
-- **Game selector** (blank = all games): Limits every operation on the tab to one specific game. The dropdown auto-populates when a system is selected. Clear it with **✕** to run all games again.
-- **Override IDs** (optional): Forces a specific ScreenScraper / TheGamesDB game ID instead of fuzzy name matching — for titles that don't match by name (language barrier, alternate punctuation, remaster subtitle). All three fields (ScreenScraper ID, TheGamesDB ID, Steam App ID) accept either a bare numeric ID or a full URL pasted from the browser — the ID is extracted automatically. Find ScreenScraper IDs at `screenscraper.fr/gameinfos.php?gameid=XXXX`, TheGamesDB IDs at `thegamesdb.net/game.php?id=XXXX`. **Load current override** reads whatever's saved; **Save override** / **Clear override** drive `config game-override set / clear`. Once a scraper ID is saved, the metadata cache is automatically bypassed for that game so the forced ID takes effect immediately on the next run — no cache clearing needed. CLI: `spindoctor config game-override set / list / clear` — see [Configuration → Per-game overrides](configuration.md#per-game-overrides).
-
-- **Steam media** (optional, PC games only): Download trailer video(s), screenshots, per-game background images, header artwork, and/or a wheel image for a specific game directly from the Steam Store — no account or API key needed. Only useful for PC/Steam titles that ScreenScraper/TheGamesDB don't cover well. Workflow: (1) pick System + Game above; (2) click **Find** to auto-populate the **Steam URL / App ID** field and immediately scan for media (see below) — or paste a URL/App ID manually and click **Scan**; (3) pick the desired candidate from each dropdown — **Video**, **Screenshot**, **Background**, **Artwork**, and **Wheel** — each also offers **"— do not download —"** as its first option; set any picker to that to skip that type (e.g. leave Wheel on "— do not download —" if you already have better wheel art from ScreenScraper); the **Background** picker uses the same screenshot list as Screenshot — pick the screenshot you want to use as the per-game background (`Images\Backgrounds\<game>.png`); (4) click **Apply selected** to download only the selected types. Dropdowns show "— scan first —" until a scan completes, or "— none —" if Steam has nothing for that type. Each picker row has a **View** button — opens the selected candidate's direct URL in the browser for all types (images, video). For MP4 video candidates the browser will download or play inline; for HLS `.m3u8` candidates the browser downloads the manifest (use a separate player to view it). View buttons are disabled until a Scan has been run and reset when you switch game or system. **Store page** button (next to Scan) opens the game's Steam store page in the browser — enabled after a successful scan. Video candidates served via HLS (most 2024+ titles) are labelled `(HLS — needs ffmpeg)` in the dropdown — ffmpeg must be present next to `spindoctor.exe` or on `PATH` for these to download. The **Overwrite existing** checkbox controls whether an already-present file is replaced. The **Quality** dropdown (`Best (1080p)` / `720p` / `480p` / `360p`) controls the HLS resolution for video downloads — `Best (1080p)` picks the highest available quality (default); lower settings produce much smaller files (e.g. a 400 MB 1080p trailer becomes ~25 MB at 480p). Quality has no effect on MP4 or image candidates. Maps to `--hls-quality` on the CLI. A stored Steam App ID (saved via **Save override**) is pre-filled automatically when a game is loaded — so after saving once you can just click Scan without re-pasting the URL. Switching to a different game resets the URL field and all five pickers automatically. **Image format:** Steam serves wheel, artwork, background, and screenshot images as JPEG; SpinDoctor saves them as `.png` (HyperSpin requires PNG in those folders) and converts to real PNG when Pillow is installed. The **Wheel** slot uses Steam's header capsule image; it is not a transparent-logo equivalent but works as a placeholder when ScreenScraper has no wheel art. **Find (Steam App ID lookup):** Click **Find** (next to the Steam URL / App ID field) to search the Steam store by the selected game's name, auto-populate the field with the best match, and immediately trigger a Scan — no copy-pasting or separate Scan click required. The search runs in the background; the status bar shows progress. If the auto-match is wrong (e.g. a DLC page instead of the base game), paste the correct URL manually and click **Scan**. CLI equivalent: `spindoctor fetch-steam-media` — see [commands.md → fetch-steam-media](commands.md#fetch-steam-media).
+![Metadata and Media](screenshots/05-metadata-media.png)
 
 ### Maintenance
 
-![Maintenance tab, shown with a sample cabinet](screenshots/06-maintenance.png)
+Preview region/revision curation and veto individual retirements before applying.
+Archive supports undo; permanent deletion does not. Also manage ignores and
+preview cache/manifest cleanup.
 
-Thin out region/revision duplicates, prune library caches, and manage ignore lists.
-
-**Remove duplicate region and revision variants:** Wraps `spindoctor curate` (region checkboxes, prefer-revision latest/oldest, `--include-proto`, archive vs delete with an inline tooltip explaining archive is reversible and delete is permanent, dry-run by default). Region tickboxes persist across launches via the `gui_curate_regions` config key. The **Preview (interactive)** button opens a Toplevel with a `☑/☐` per-row keep/skip toggle so you can veto specific retirements before committing. Choosing delete + Apply shows a final confirmation dialog.
-
-**Cache cleanup:** 13 per-category checkboxes — the 9 safe caches pre-checked; the 4 unsafe categories (migration / restructure undo manifests, HyperSpin DB backups, LEDBlinky file backups) unchecked with a warning. **Check cache status** shows disk usage before you commit.
-
-**Ignore list:** Wires up `ignore add / remove / list` with system dropdown + game-name dropdown (auto-populated from the selected system's database; click **↻** to refresh), plus a **View / un-ignore** button.
-
-**Metadata-match cache:** **List cached matches** and **Clear cache** buttons drive `spindoctor match list|clear` with an optional system filter.
+![Maintenance](screenshots/06-maintenance.png)
 
 ### Custom Wheels
 
-![Custom Wheels tab, shown with a sample cabinet](screenshots/07-custom-wheels.png)
+Import/manage favorites, refresh selected smart wheels, register them on the main
+menu, install selected Toolkit helpers and schedule startup refreshes.
+The Idle Tour settings section controls limits and skipped wheels.
 
-Four numbered steps cover building and wiring up the custom wheels; the remaining sections are optional one-time setup.
-
-**Import HyperSpin favorites (optional):** **Sync favorites from HyperSpin** imports HyperSpin's per-system F-key favorites into SpinDoctor's store so the next Refresh custom wheels includes them. Skip this if you only manage favorites from this tab. (It leads the tab because the import must happen *before* the rebuild reads the store — the previous layout placed it after the rebuild while its own tooltip said to run it first.) The favorites import scans every console for favorite markers; with the global **Verbose** toggle ticked, the Output panel lists each console as it is scanned and which ones contributed favorites. The scan only parses a console's database when a favorites source is actually present, so consoles with no favorites cost almost nothing.
-
-**Refresh custom wheels:** Three checkboxes (Favorites / Recently Played / Most Played, all ticked by default) plus a **Refresh selected** button that rebuilds only the ticked wheels. The progress bar pulses continuously while the rebuild runs; the status bar shows "Step N/M: &lt;wheel&gt;" so you can track which wheel is active. Each wheel streams phase-by-phase updates to the Output panel (`building wheel`, `writing database`, `mirroring media`, `PCLauncher INIs done`, etc.) — rebuilding a large Favorites collection can take several minutes, so watch the Output panel rather than waiting for silence. With **Verbose** ticked, the rebuild additionally lists each media file mirrored and each console scanned during the favorites import. CLI: `spindoctor-fav rebuild --apply` / `spindoctor-recent rebuild --apply` / `spindoctor-stats build-wheel --apply`.
-
-**Add to the HyperSpin main menu:** **Add wheels to Main Menu** chains `mainmenu add` for each ticked wheel (Favorites and Recently Played need this; Most Played auto-registers). As of v2.4.25, this also regenerates the RocketLauncher system settings files (`Settings/<system>.ini` and `Settings/<system>/Emulators.ini`) with `Rom_Extension=ini` and installs the bundled wheel media — so clicking the button is sufficient to fully restore a synthetic wheel that has been accidentally removed (e.g. by running generate-config after a ROM drive migration).
-
-**Manage favorites:** **Add / Remove / List** drive `fav add / remove / list` directly. Remove asks for confirmation. Run Refresh custom wheels (Favorites checked) afterwards to push changes into HyperSpin. Select a system to auto-populate the **Game** dropdown from that system's database; click **↻** to refresh the list after database changes.
-
-**Install .bat helpers (optional):** A checklist of every helper `install-tools` can write (hover one for what it does; none is ticked to start), then two sub-sections. Each button acts on the ticked helpers only; with none ticked it asks you to tick one. Helpers you leave unticked are not touched.
-
-1. **Install for HyperHQ → Tools menu** — writes a `.bat` per ticked helper, such as `Refresh Favorites.bat` or `Refresh All.bat`, into `<RocketLauncher>\Modules\HyperLaunch\Tools\spindoctor\`. Register them in HyperHQ → Tools to expose them inside HyperSpin's in-cabinet Tools menu. CLI: `spindoctor install-tools --tool <names>`.
-2. **Install into an existing wheel system** — adds the ticked helpers as `<game>` entries inside an existing HyperSpin wheel (e.g. a `Toolkit` wheel), with per-game PCLauncher INIs alongside the bats. **Uninstall from wheel** removes the ticked ones. CLI: `spindoctor install-tools --tool <names> --add-to-system <NAME>`.
-
-**Auto-refresh on cabinet startup** (Windows-only): a status label (Enabled / Disabled / "not available" on non-Windows) is always visible, no click needed — refreshes automatically after any of the three buttons below run, matching the Intro Video tab's Auto-run status label — the two use identical **Enable auto-run** / **Disable auto-run** button names, since they wrap the same Windows Task Scheduler mechanism (just for a different scheduled task). If the task is registered but its generated `.bat` no longer matches the currently-running SpinDoctor install (typically after upgrading into a new version folder without re-clicking **Enable auto-run**), the label says so explicitly in amber — "Outdated: Enable auto-run to fix" — rather than a misleading plain "enabled"; re-clicking **Enable auto-run** fixes it in place. **Enable auto-run** registers a Task Scheduler `ONLOGON` task with a configurable post-log-on delay (default 2 min). **Disable auto-run** and **Check task status** round out the lifecycle (the latter also writes a timestamped entry to the Output panel/Logs tab, useful for an audit trail beyond what the status label shows).
-
-**Reset wheel data (scrub):** Permanently delete favorites and/or play statistics to start fresh. Backup folder field creates a restorable snapshot before scrubbing. Statistics.ini files cannot be regenerated — always back up first. **Restore** button recovers from a previous scrub backup.
+![Custom Wheels](screenshots/07-custom-wheels.png)
 
 ### Intro Video
 
-![Intro Video tab, shown with a sample cabinet](screenshots/08-intro-video.png)
+Manage the enabled pool, add videos, retire/restore selections, swap the current
+intro and register/remove its Windows-logon task.
 
-Manages the pool of videos HyperSpin plays on boot, and swaps between them. The pool folder **is** the list — no third-party tool, no `Random.ini` (see [Cabinet Architecture Reference → Intro Video Randomizer](cabinet-architecture-reference.md#intro-video-randomizer) for the background and file layout). Requires **Intro video pool directory** and **Intro video target file** to be set on the Setup tab first.
-
-The **Videos** table (with a vertical scrollbar for longer pools) lists every video in the pool folder, with columns for status (enabled / disabled) and file size. "Disabled" means the file has been moved into a `Disabled\` subfolder by **Remove selected** — it's still on disk, just out of rotation.
-
-**↻ Refresh** re-scans. **Add video(s)** opens a multi-select file picker (defaulting to the pool folder) to copy new file(s) in from elsewhere — CLI: `introvideo add`. **Remove selected** moves the selected row(s) — Ctrl/Shift-click to select several — into `Disabled\`, without deleting the video files themselves — CLI: `introvideo remove`. **Restore selected** moves disabled row(s) back into rotation — CLI: `introvideo restore`. **Swap now** runs one swap immediately: picks a random enabled video and copies it over the intro video target file — the fastest way to confirm your pool/target config actually works without waiting for a reboot — CLI: `introvideo swap`. None of these buttons pop a confirmation dialog; the global **Apply** checkbox is the gate — leaving it unticked runs a dry-run preview in the Output panel first, same as everywhere else in the GUI that shells out to a `--apply`-gated command.
-
-**Auto-run on Windows login** — a **Delay after login (minutes)** field (default `1`; `0` = no delay), a status label (Enabled / Disabled / "not available" on non-Windows), and **Enable auto-run** / **Disable auto-run** buttons wrapping `introvideo install-autorun --delay-minutes <N>` / `uninstall-autorun`. Registers a Windows Task Scheduler logon task that runs a swap automatically at every login — no HyperSpin, RocketLauncher, or HyperHQ configuration involved, it's a plain login task that copies a file. The delay is CLI's `--delay-minutes` (`schtasks /DELAY`) — it gives HyperSpin's own intro playback a head start so the swap doesn't collide with it; the field is only read when you click **Enable auto-run** (changing it doesn't retroactively update an already-registered task — click Enable again to apply a new value). The status label refreshes automatically after either button runs, and distinguishes a working registration from a **stale** one — shown in amber as "Outdated: Enable auto-run to fix" when the task is registered but its `.bat` no longer matches the currently-running install (e.g. after a SpinDoctor upgrade); click **Enable auto-run** again to fix it in place.
+![Intro Video](screenshots/08-intro-video.png)
 
 ### LEDBlinky
 
-![LEDBlinky tab, shown with a sample cabinet](screenshots/09-ledblinky.png)
+Set up controls, generate/audit/prune profiles, adjust colors and brightness,
+and manage lighting behavior. Advanced animation commands are also in Console.
+Generated LWAX files need signing in LEDBlinky's Animation Editor.
 
-The LEDBlinky tab is organized as a numbered step-by-step workflow. Follow the sections top to bottom when setting up LED colors for the first time. Steps 1 and 2 are one-time setup; Steps 3 onward are the regular ongoing workflow.
-
-**Overlay hook fix (one-time setup)**
-
-Fixes HyperSpin Search / Genre / Favorites overlay crashes: adds a stub entry to `LEDBlinkyControls.xml` and comments out LEDBlinky process hooks in per-menu `Settings.ini`. Run once after installing LEDBlinky. Always writes in-place to `ledblinky_dir` / `hyperspin_dir`.
-
-- **Check overlay hooks** — read-only scan. CLI: `spindoctor ledblinky check`.
-- **Fix overlay hooks** — commits both patches. CLI: `spindoctor ledblinky fix --apply`.
-
-**Settings.ini (one-time setup)**
-
-Configure LEDBlinky's animation behaviour. Run once after installing, then only when you want to change the animation style.
-
-- **FE active animation** — `FELWAFile`: animation played while actively browsing HyperSpin. Leave blank for static colors; pick `<Random>` to have LedBlinky choose a different animation every time; pick `<Audio Animation>` to sync LEDs to audio instead of looping a fixed animation; pick a `.lwa` file for a smooth fade effect. Leave as `(leave unchanged)` — the default — to not touch this key at all.
-- **Screen saver animation** — `FEScreenSaverLWAFile`: animation played during the HyperSpin screen saver. Leave blank to silence; pick `<Random>` to have LedBlinky choose a different animation every time; pick `<Random Montage>` to string several animations together in random order instead of looping just one; pick a `.lwa` file for a specific animation. Leave as `(leave unchanged)` — the default — to not touch this key at all.
-- **In-game unused buttons** — `GamePlayLWAFile`: leave **blank** to silence unmapped buttons during gameplay (recommended); pick `<Random>` for a random animation on unmapped buttons; select an `.lwa` file to animate them instead.
-
-`<Random>`, `<Random Montage>`, and `<Audio Animation>` are literal values LedBlinky itself recognizes (none is a filename) — distinct from `(leave unchanged)`, which is purely a GUI convenience meaning "don't include this flag in the `patch-settings` call at all." Each dropdown only pre-populates the values LedBlinky's own docs say that key supports (`<Random Montage>` for the screen saver, `<Audio Animation>` for FE active), but since these are editable comboboxes and `patch-settings` never validates the string, any of the three can be typed into any dropdown.
-
-**Refresh list** populates all three dropdowns from your LEDBlinky `lwa\` folder and pre-selects each dropdown to the value currently set in `Settings.ini`. The dropdowns also pre-populate on startup if `ledblinky_dir` is already configured. Apply checkbox + **Patch Settings.ini**. CLI: `spindoctor ledblinky patch-settings`.
-
-> **Where do the `.lwa`/`.lwax` files in those dropdowns come from?** LedBlinky ships some; you can also build your own — see **LED animations (.lwax)** below (or `ledblinky lwax fade` / `ledblinky lwax batch` on the CLI). Both write *unsigned* files that need a one-time **Save As** in LedBlinky's Animation Editor before they appear here.
-
-**MAME controls and colors**
-
-These steps build MAME-sourced LED data using `mame -listxml`. Use **Run full MAME setup** for a single-click workflow, or run individual steps below. Generate works on the games in your wheels, not every ROM on disk, so re-run it after adding MAME games to a wheel. Existing entries are preserved unless Overwrite is ticked.
-
-- **Run full MAME setup** — chains Generate + Sync player colors in one step. CLI: `spindoctor ledblinky setup --apply`.
-- **Generate controls and colors** — adds `controls.ini` + `Colors.ini` entries for the games in every wheel that uses MAME ROM names (MAME in the wheel's name, or MAME / HBMAME / Zinc as its emulator) and their parent ROMs, only where an entry is missing. A missing entry is copied back from SpinDoctor's LEDBlinky library when it's there (see **Prune** below), else built from MAME's `-listxml`. Existing entries are never changed. Dry-run by default; tick **Overwrite existing entries — 3a Generate** to replace existing entries. Since 2.4.21, output uses native `P1_BUTTON1=` format (not legacy hex). CLI: `spindoctor ledblinky generate`.
-- **Every MAME ROM file, not just wheel games** — makes Run full MAME setup, Generate and Audit work from every ROM file in the MAME folder instead, as they did before, plus every entry in SpinDoctor's library. Entries pruned earlier all come back, exactly as they were. LEDBlinky loads every entry when it starts, so leave this off unless you want them all.
-- **Normalize Colors.ini** — only needed for a legacy Colors.ini in hex format (`ledcolor1=FF0000`). Not required after a fresh Generate. CLI: `spindoctor ledblinky colors normalize`.
-- **Sync player colors** — adds missing P2/P3/P4+ entries to `Colors.ini` by mirroring the matching P1 color for each button listed in `controls.ini`. Never overwrites existing entries (use `--override` via Custom Command to replace them). CLI: `spindoctor ledblinky colors sync-players`.
-- **Audit wheel coverage** — for every game in those wheels (and their parents): which have entries, which are missing but can be added (from the library or `-listxml`), and which have no data anywhere. It also counts the entries for games in no wheel. Read-only. CLI: `spindoctor ledblinky audit`.
-- **Prune unused entries** — removes the `controls.ini` / `Colors.ini` entries for games in no wheel (hidden wheels and genre lists count; parents of wheel games are kept). LEDBlinky reads both files in full before it lights anything or sets the ServoStik, so an entry for every ROM on disk (tens of thousands) delays it by tens of seconds after HyperSpin starts. Each removed entry is saved to SpinDoctor's LEDBlinky library first (`~/.spindoctor/ledblinky_library`, never read by LEDBlinky), and both files are backed up. Dry-run unless **Apply** is ticked. CLI: `spindoctor ledblinky prune`.
-- **Inspect ROM** — type a ROM name and click **Inspect** to diagnose why a specific game's LEDs may not be working. CLI: `spindoctor ledblinky inspect-rom <rom>`.
-
-**Fill default colors (any console)**
-
-Adds `Colors.ini` entries for every ROM that has no LED mapping — works for MAME, SNES, NES, or any other console. Games without an entry go completely dark; after fill-defaults they glow a steady color. Leave **Console** blank to cover all systems at once, including Favorites and Recently Played.
-
-- **Console** — select a specific system or leave blank for all consoles (including Favorites / Recently Played / Most Played).
-- **Default color** — dropdown from `Color-RGB.ini`; **Refresh colors** reloads the palette.
-- **Buttons (1-8)** — how many `P{n}_BUTTON` keys per player.
-- **Players (1-4)** — number of player blocks (P1–P4), all mirrored to the same color.
-- **Admin buttons** — optional extra block using the next player slot. Set to 0 to disable.
-- **Override existing entries if all buttons are the same color** — updates uniform sections; leaves mixed-color entries untouched.
-- **Don't add new keys when overriding** — only updates values of already-present keys.
-
-Apply checkbox + **Fill default colors** button. CLI: `spindoctor ledblinky fill-defaults`.
-
-**Randomize colors**
-
-Gives each game its own independent random button color. All `P*_BUTTON*` / `P*_JOYSTICK` keys get one random color; `P*_COIN` / `P*_START` get a second. Only existing keys are updated — buttons intentionally absent (dark) stay dark. Requires normalized format (Step 3b for legacy files). If most sections are skipped, run Normalize first.
-
-- **Seed (optional)** — integer for reproducible output; blank = fresh shuffle every run.
-
-Apply checkbox + **Randomize colors** button. CLI: `spindoctor ledblinky colors randomize [--seed N]`.
-
-**In-game admin buttons (Exit / Pause / Select)**
-
-Sets the admin buttons that stay lit **while a game is running** — Exit, Pause, and Select — the always-active `UI_*` controls in `LEDBlinkyControls.xml`. This is the mechanism that actually drives the physical admin LEDs in-game on the example cabinet.
-
-- **Exit / Pause / Select** — a color dropdown each, offering `(leave unchanged)`, `off (dark)`, or any palette color. Pick e.g. **Select → off (dark)** for a clean arcade look where only the usable buttons (Exit + Pause) stay lit.
-- **Search / Left Mouse / Right Mouse** — an optional dropdown row offering `(leave unchanged)`, `off (dark)`, or `on (lit)`. Unlike Exit/Pause/Select these aren't their own LED (their key rides on another always-active control — e.g. Search's `/` is on Pause), so they can't be independently coloured: `off` removes just that key so Search goes dark while Pause stays lit, and `on` re-attaches it (lit in Pause's colour). `on` respects the **Console** scope below — on `(all consoles)` it lights the button on *every* system, so pick a console to target one.
-- **Console** — scope the change to one system (give each console its own admin coloration) or `(all consoles)` for every game at once. **Refresh consoles / colors** reloads both lists from your LEDBlinky files.
-
-Apply checkbox + **Apply in-game admin buttons**. Restart LEDBlinky afterward so it reloads the file. CLI: `spindoctor ledblinky admin-leds set [--emulator NAME]` (incl. `--search-off`/`--lmouse-off`/`--rmouse-off` and their `--search-on`/`--lmouse-on`/`--rmouse-on` inverses) — the GUI covers this uniform mode; the CLI also has `show` (incl. `--by-console`), `randomize` (incl. `--games` per-game variety), `add`, and `remove`.
-
-> **What happened to the old "Player slot / P3 / BUTTON1–8" controls?** They wrote `Colors.ini` `P{n}_BUTTON` keys — a different LEDBlinky mechanism that only lights admin buttons on cabinets which map them to a spare player slot. The example cabinet uses the `UI_*` controls above instead, so that block had no in-game effect and was removed to avoid confusion. The `spindoctor ledblinky admin-buttons set` CLI command still exists for cabinets that do use the player-slot wiring.
-
-**Brightness**
-
-Sets all `Color-RGB.ini` colors to a uniform brightness: **100 % = maximum** (dim colors boosted); 50 % = half; 10 % = night mode; 0 % = all off. Drag slider and click **Scale brightness**. CLI: `spindoctor ledblinky colors brightness`.
-
-**Color definitions (Color-RGB.ini)**
-
-Treeview of all named colors (Name, R/G/B 0-48, hex).
-
-- **Add new color** — type a **New name** and a **New color** (`#RRGGBB`), then click it to append a brand-new color to `Color-RGB.ini`. It becomes available everywhere colors are picked by name (admin buttons, fill-defaults, animations). No row selection needed. CLI: `spindoctor ledblinky colors add`.
-- **Update and rename** — select an existing row first, then edit its name and/or hex; the rename propagates through `Color-RGB.ini`, `Colors.ini`, and `LEDBlinkyControls.xml`. CLI: `spindoctor ledblinky colors edit`.
-
-**Back up and restore LEDBlinky files**
-
-Quick backup and restore scoped to LEDBlinky files. Both folder fields default to `config.backup_dir`. Dry-run by default. CLI: `spindoctor backup create --include ledblinky` / `spindoctor backup restore --include ledblinky`.
-
-**LED animations (.lwax)**
-
-Build moving LED animations, as opposed to the per-game colors in Steps 3–8. **Generate pattern library** writes to `~/Downloads/spindoctor-lwax-patterns/`. **Generate fade** writes to `<output_dir>/LEDBlinky/lwax/fade.lwax` and needs `output_dir` configured. The CLI also accepts explicit output paths. See the [animation command reference](commands.md#ledblinky-lwax-fade) for destinations and signing.
-
-- **Generate pattern library** — the whole ~280-file batch (sweeps, pulses, rain, breathe, rainbow, flash-free `_soft` fill/drain, the smooth `cute_*` set, etc.). CLI: `spindoctor ledblinky lwax batch` (honours the global Apply checkbox). New colourways of the `cute_*` patterns, and the flash check, are CLI-only (`ledblinky lwax cute`, `ledblinky lwax flash-check`; both are in the Custom Command dropdown).
-- **Generate fade** — a single custom colour-cycle fade from the comma-separated hex colours in the field (e.g. `FF0000,00FF00,0000FF`). CLI: `spindoctor ledblinky lwax fade --color …`.
-
-Generated files are **unsigned** — before LedBlinky will load one, open it in `LEDBlinkyAnimationEditor.exe` and do **Animation → Save As** (no edits) to sign it; it then appears in the Settings.ini dropdowns. Full walkthrough: [`commands.md` → "`ledblinky lwax batch`"](commands.md#ledblinky-lwax-batch--generate-the-whole-pattern-library).
+![LEDBlinky](screenshots/09-ledblinky.png)
 
 ### Lightgun
 
-![Lightgun tab, shown with a sample cabinet](screenshots/10-lightgun.png)
+Detect Sinden/DemulShooter installations, audit hooks and User Functions, and
+configure system launch hooks. See [light-gun limitations](lightgun.md).
 
-Two numbered steps cover the lightgun setup workflow.
-
-**Detect and audit:** **Detect installed gear** reads existing RocketLauncher INIs and seeds SpinDoctor config with discovered DemulShooter targets (optional `--apply` to persist). **Audit wiring** shows per-system hook status. CLI: `spindoctor lightgun detect / audit`.
-
-**Configure one system:** Pick a system, optionally choose a DemulShooter `-target` value (auto-detected from system name if left blank), and add optional extra args. **Configure system** writes the Pre/Post launch hooks. CLI: `spindoctor lightgun configure --system <NAME>`.
+![Lightgun](screenshots/10-lightgun.png)
 
 ### Test games
 
-Launches games through RocketLauncher, one after another, and shows which ones break: didn't start, closed by itself, an error pop-up, a Windows crash report, not responding, RocketLauncher log errors or a black screen. It runs [`spindoctor test`](commands.md#test); it isn't part of Diagnostics, because a test run launches games and edits RocketLauncher's play statistics (it puts them back after every game).
+Choose system(s), genre, names or a random count; preview with **Show games**.
+With Apply on, **Launch games** runs real games through RocketLauncher.
+Options include opening HyperSpin first and reporting/removing newly created
+files. View failures, screenshots and the HTML report; resume, re-test or recover
+an interrupted run. Leave the cabinet alone while tests run.
 
-- **Games to test** follows the sidebar **System** (or check **All systems**): a **Genre** (filled from the system's database; `*` and `?` work), **Game names** (wildcards, several separated by `|`), and **Random, per system**, **Random, in total** or **Every game** with a number. **Seconds per game**, **Open HyperSpin first**, **Include skipped wheels and PCLauncher games** and **Files the games create** (`report`, `remove` or `off`) match the command's options.
-- **Apply changes** keeps its meaning. Off, the button reads **Show games**: the picked games are listed with their file check and `doctor` notes, and nothing launches. On, it reads **Launch games**.
-- **Resume last run** and **Re-test failed** run `test --resume` and `test --only-failed`, also under the Apply switch.
-- **Stop after this game** asks the run to close its current game, put the statistics back and stop. The bottom bar's **Stop** does the same for a test run and only ends the program if the run hasn't stopped within about a minute; closing the window waits a few seconds.
-- If a run was ended before it could tidy up, a note at the top offers **Recover now** (`test --recover`): it closes the game the run left open and puts the statistics back.
-- **Last run** lists the newest run's results, failures first; double-click a row to open its screenshot. **Open report** opens the run's `report.html`, **Open run folder** its folder.
+![Test games](screenshots/11-test-games.png)
 
 ### Backup & Restore
 
-![Backup & Restore tab, shown with a sample cabinet](screenshots/11-backup-restore.png)
+Select components and destination, create/list/inspect snapshots, or preview a
+restore. Changed drive letters require the current-paths option and careful review.
 
-Three numbered steps walk through the full backup / restore workflow.
-
-**Backup folder and components:** Set the destination folder and tick the components to include (default: all of them — roms, databases, media, emulators, rocketlauncher, ledblinky, settings). **Config snapshot** preset selects settings + databases only for a lightweight backup; **Everything** ticks all.
-
-**Create a backup:** Optional label, then **Create backup**. **List backups under target** lists existing snapshots under the same folder. CLI: `spindoctor backup create / list`.
-
-**Restore from a backup:** **Scan** populates the dropdown from your configured backup folder; **Browse** picks a folder manually. **Show backup info** and **Compare to live** are read-only. **Restore backup** (separated by a visual divider from the safe buttons) triggers the actual restore. Restore-time toggles: `--use-current-paths` (drive letters changed since backup) and `--overwrite`. CLI: `spindoctor backup info / diff / restore`.
+![Backup and Restore](screenshots/12-backup-restore.png)
 
 ### Migration
 
-![Migration tab, shown with a sample cabinet](screenshots/12-migration.png)
+Move or copy selected components, optionally verify, update configuration and
+inspect/undo prior runs. Emulator-internal paths still need manual checking.
 
-Six numbered steps walk through the full migration workflow.
-
-**Step 1 — Current configuration:** **Show current paths** lets you verify what's configured before moving anything. Run the health check from Diagnostics.
-
-**Step 2 — Backup before migrating:** **Open Backup & Restore** jumps to the Backup & Restore page so you can snapshot your setup first. Strongly recommended — if anything goes wrong you can restore from it.
-
-**Step 3 — Migration settings:** Target root picker, component checkboxes (default: all of them — roms, hyperspin, emulators, rocketlauncher, ledblinky), an optional systems-filter Listbox for partial-roms migrations (nothing selected = migrate all), and option toggles: `--keep-source` / `--verify` / `--no-update-config` / `--preserve-names`. Click **Start migration** to execute. Dry-run by default. CLI: `spindoctor migrate`.
-
-**Step 4 — Undo a previous migration:** Manifest dropdown pre-populated from `~/.spindoctor/migrations/` (with "latest" at the top). **Refresh** reloads. **List manifests** and **Undo** complete the lifecycle.
-
-**Step 5 — Update RocketLauncher after migration:** Click **Update RocketLauncher INIs** (respects the global Apply toggle) to rewrite `Rom_Path=` in every per-system `Settings\<SystemName>\Emulators.ini`. Only `Rom_Path` changes — `Default_Emulator`, `Emu_Path`, `Module`, and all other emulator settings are left exactly as configured. Without this step RocketLauncher can't find your games at the new location and HyperSpin displays empty wheels. See [Workflows → Moving only your ROMs to a new drive](workflows.md#moving-only-your-roms-to-a-new-drive).
-
-**Step 6 — Re-prefix game paths after a drive change:** For systems like **Taito Type X** whose game folders were moved to a different drive outside of a SpinDoctor `migrate` run. Pick the system, enter the new absolute game folder path (e.g. `J:\Games\Taito Type X`), then click **Preview** to see what would change or **Apply** to write. Rewrites `Application=` in `Modules\PCLauncher\<System>.ini` and `Rom_Path=` in `Settings\<System>\Emulators.ini`. Only those two keys change — `FadeTitle=`, `AppWaitExe=`, `ExitMethod=`, `PostExit=`, and all other per-game keys survive untouched. Use this step (not Step 5) when only one system's game folder was relocated manually. CLI: `spindoctor repath-system <System> --rom-path <NewPath> --apply`.
-
-Ticking **Apply** pops a confirmation dialog before running — the wording adapts to the chosen mode. `--keep-source` shows a milder "copy to new drive, originals stay" message; the default destructive move warns explicitly that originals will be removed and points at the undo-manifest as the only recovery path.
+![Migration](screenshots/13-migration.png)
 
 ### History
 
-![History tab, shown with a sample cabinet](screenshots/13-history.png)
+Review session commands, output and exit status. For durable recovery records use
+**File → View logs & manifests**, not session History.
 
-Persistent timeline of every action taken since the GUI was launched, newest first. Tree on the left (Status / Started / Command); read-only viewer on the right showing the full output of the selected row. Each row tags as `DRY-RUN`, `OK`, `FAIL <code>`, or `running`. The viewer header shows `# Dry-run: Yes` (preview), `# Dry-run: No` (wrote to disk), or `# Dry-run: N/A` (read-only or write-always command where the concept does not apply). **Copy selected** copies the selected entry's output; **Save selected** exports it to a `.txt` file and appends its own log entry recording the saved path.
-
-The History tab captures both CLI subprocess invocations *and* in-process GUI operations that write data: Save configuration, Save Main Menu order, Theme-apply Apply, Curate Apply, Ignore viewer Remove, and the three Task Scheduler actions (Schedule / Remove / Check status). Everything that changes state on disk appears here.
-
-The bottom Output panel only shows the *current* run; this tab indexes everything since launch so you can answer "what did that dry-run output again?" without re-running. Buffer caps at 200 entries (FIFO) and is in-memory only — restarting the GUI clears it. For longer-term history of apply-mode commands that wrote a JSON manifest, use **File → View logs & manifests**.
-
-Each run retains its latest 256 Ki characters (at most 4,096 output fragments).
-The Output panel retains its latest 1 Mi characters and 10,000 lines. When a
-limit is reached, older output is removed and an **Earlier output truncated**
-notice appears. Saved and automatically saved logs contain this retained tail
-and the notice, not the full original stream. Run the CLI directly and redirect
-its output to a file when you need a complete verbose log.
-
-The tree updates by itself whenever a run starts or finishes. A **Browse manifests / undo** button next to Copy, Save and Clear (separated by a vertical Separator) signposts the menu's "Logs & Manifests" viewer for new users who land on the History tab first.
+![History](screenshots/14-history.png)
 
 ### Console
 
-![Console tab, shown with a sample cabinet](screenshots/14-console.png)
+Choose an editable categorized preset or enter CLI arguments, without the
+`spindoctor` prefix. Replace placeholders before running. Explicit flags govern
+Console operations; inspect the command before executing.
 
-Anything the dedicated tabs don't cover. The entry field is an editable Combobox seeded with canonical commands organised into named sections (`─── Health & Discovery ───`, `─── LEDBlinky ───`, etc.). Every CLI command with meaningful flag variants is represented, and commands within each section are alphabetically sorted. Selecting a section header auto-advances to the first real command in that section. Default value is `--help`. Pick a preset, edit `<PLACEHOLDER>` tokens (`<SYSTEM>`, `<PATH>`, `<ROM>`, …), press Enter or click Run. Unfilled placeholders trigger a warning instead of silently shelling out.
+![Console](screenshots/15-console.png)
 
-Quoting values with spaces (e.g. `emulator-title set "Model 2" "Sega Model 2"`) works the same as on the command line — the quote characters themselves are stripped before the arguments reach the CLI, so `"Daphne"` and `Daphne` are equivalent input here.
+## Menus, shortcuts and stopping
 
-## Menubar
+**File** opens configuration/library folders, logs/manifests and theme tools.
+**Help** offers setup, release checks and About. The GUI checks GitHub for new
+releases; disable with `SPINDOCTOR_NO_UPDATE_CHECK=1`.
 
-A `File` / `View` / `Help` menubar runs across the top of the window:
+- `Ctrl+1`…`Ctrl+9`: first nine pages.
+- `Ctrl+F`: find in Output; `Ctrl+backtick`: toggle Output.
+- `Ctrl++`, `Ctrl+-`, `Ctrl+0`: adjust/reset UI scale.
+- Right-click text fields/output for editing/copy actions.
 
-- **File → Open config.json** — opens `~/.spindoctor/config.json` in your OS default editor.
-- **File → Open SpinDoctor folder** — opens `~/.spindoctor/` in Explorer / Finder / xdg-open.
-- **File → Open HyperSpin folder** / **Open ROMs folder** — same, for the paths set in `config.json`.
-- **File → View logs & manifests** — opens a Toplevel listing every per-run JSON manifest under `~/.spindoctor/{migrations,curation,edits,renames,media_imports,themes,misplaced}/` with a tree on the left and a read-only JSON viewer on the right. Three buttons at the bottom: **Undo this run** (runs the matching `--undo` for the selected manifest), **Show diff** (renders changes as a before/after table), **Revert just \<SYSTEM\>** (theme swaps only — one-system revert via `--revert-system`).
-- **File → Browse HyperSpin themes** — opens a Toplevel inventorying every overlay file under `Media/Frontend/Images/` and per-system `Media/<system>/Images/{Special A,Special B}/`.
-- **View → Show output pane** — checkbutton (also bound to `Ctrl+`` ` ``) that collapses or restores the bottom Output panel, as do the panel's **Hide** button and the status bar's **Show output** button. State persists across restarts via the `output_visible` config key.
-- **View → Verbose output / Save log file / Show help text** — checkbuttons for the shared run settings described in [Apply changes, Verbose output, and Save log file](#apply-changes-verbose-output-and-save-log-file). Not saved between sessions.
-- **View → UI scale** — radio submenu with presets `0.8×` / `0.9×` / `1.0×` / `1.1×` / `1.25×` / `1.5×`. `Ctrl++` / `Ctrl+-` step by 0.1; `Ctrl+0` resets. Persisted via the `ui_scale` config key.
-- **Help → About SpinDoctor** — version (the window title is just "SpinDoctor"), description, and links to GitHub project / latest release / CHANGELOG. Shows the app icon next to the title when the bundled PNG icon is available.
-- **Help → Keyboard shortcuts** — opens an in-app reference for the shortcut map listed below.
-- **Help → Check for updates** — pings GitHub Releases and reports if a newer tag is available, with a yes/no dialog that opens the release page on accept. If you're already on the latest tag, the result is surfaced in the status bar ("vX.Y.Z is the latest release.") rather than a modal — only newer-available results pop a dialog so you can decide whether to open the release page. The same check runs silently in the background on every launch — when newer, the status bar shows "Update available: vX.Y.Z" plus a one-click **Download** button. Set `SPINDOCTOR_NO_UPDATE_CHECK=1` to disable for cabinets behind a strict firewall.
-- **Help → First-run setup** — re-opens the first-run wizard manually.
+**Stop** can terminate an ordinary worker before its cleanup completes.
+For launch tests it first requests orderly closure and statistics restoration;
+**Stop after this game** is gentler. If interrupted, use **Recover now** or
+`spindoctor test --recover` before rebuilding ranked wheels.
 
-## Keyboard shortcuts
+## Refreshing screenshots
 
-| Shortcut | Action |
-|---|---|
-| `Ctrl+1`–`Ctrl+9` | Jump to the Nth tab. |
-| `Ctrl+F` | Open the Output-panel find bar (see below). |
-| `Ctrl+Shift+F` | Toggle the system quick-filter bar (see below). |
-| `Ctrl+`` ` `` | Show / hide the bottom Output panel. |
-| `Ctrl++` / `Ctrl+=` | Zoom in (step UI scale by +0.1). Both keys are bound. |
-| `Ctrl+-` | Zoom out (step UI scale by -0.1). |
-| `Ctrl+0` | Reset UI scale to 1.0×. |
-| `Esc` | Close any open dialog (About, Keyboard shortcuts, find bar, etc.). |
+On Windows 10+, from a source checkout with Python 3.10+ and Pillow 11.2.1+:
 
-The same table is reachable in-app via **Help → Keyboard shortcuts**.
-
-## Find bar
-
-Press `Ctrl+F` (`Cmd+F` on macOS), or click **Find** in the Output panel's header, to open a slim search bar above the Output panel. Type to highlight every case-insensitive match in the buffer; **Next** / `Enter` jumps to the next match, **Prev** / `Shift+Enter` to the previous, `Esc` closes the bar. A match count ("3 of 17") shows next to the controls. Selected text pre-seeds the search field on open. The global binding works regardless of current focus — useful for scanning long audit / migrate output for a game name.
-
-## System quick-filter
-
-Press `Ctrl+Shift+F` (`Cmd+Shift+F` on macOS) to open a filter bar above the tab notebook. Type to narrow *every* system combobox across every tab to entries containing the typed text (case-insensitive). On a cabinet with 50+ systems, typing "mega" instantly shows only Mega Drive / Mega CD / Sega Mega-Tech everywhere. `Esc` closes the bar and clears the filter; the Clear button does the same without closing.
-
-## Dropdown letter-key jump
-
-Every **readonly** dropdown in the GUI (system pickers, etc.) supports letter-key type-ahead: with the dropdown focused, pressing a letter jumps straight to the next entry starting with that letter — no need to scroll a list of hundreds of games by hand. Pressing the same letter again moves to the next match instead of looping back to the first one. This is wired up once, globally, so any readonly dropdown added in the future gets it automatically. The handful of *editable* dropdowns (free-text entry with suggestions, e.g. the Metadata & Media Game filter or the Console tab's command field) deliberately don't get this — every keystroke there goes straight into the text field instead.
-
-## "(Not in wheel)" system and game badges
-
-System pickers across every GUI tab annotate any system that exists as a folder in `roms_dir` or `databases_dir` but is absent from `Main Menu.xml` with a `(Not in wheel)` suffix — for example, `Taito Type X (Not in wheel)`. This makes it easy to spot systems you've added to disk but not yet registered in the wheel.
-
-The **Fix game executable** game picker also badges any game folder on disk that has no matching entry in the system's HyperSpin XML database. This is the only game dropdown that reads from the filesystem rather than the XML, so it is the only one where the discrepancy can arise; all other game pickers read the XML directly.
-
-Both badges are display-only — the suffix is stripped automatically before any CLI command runs, so file paths and `--system` / `--game` arguments are never affected.
-
-## Dry-run feedback
-
-Commands fall into three categories, which the GUI tracks and displays in the History tab:
-
-| Category | `--apply` concept | History tab `# Dry-run:` header | Logs tag |
-|---|---|---|---|
-| **Dry-run preview** | Supported; not passed | `Yes` | `DRY-RUN` |
-| **Actual write** | Supported; passed | `No` | `OK` |
-| **Read-only / write-always** | N/A (no `--apply` flag) | `N/A` | `OK` |
-
-For dry-run previews the GUI wraps the output in explicit banners:
-
-```
-=== DRY RUN ===
-
-$ spindoctor curate --all
-
-(plan output…)
-
-=== DRY RUN COMPLETE (exit 0) — nothing was written. Re-run with --apply to commit. ===
+```text
+python scripts/capture_gui_screenshots.py
 ```
 
-The status bar at the bottom switches to `Dry run finished — nothing changed. View results in Output or the History tab.` so the difference between "preview" and "applied" is unmissable. Real applies (with `--apply`) stay quiet so command-specific success messages aren't drowned out.
-
-Read-only and write-always commands (`audit`, `doctor`, `tools-audit`, `inspect`, `find-dupes`, `stats`, `check-discs`, `check-archive-ext`, `verify`, `lint`, `report`, `preview`, `systems`, `find-global`, `diff`, `self-doctor`, `backup list/info`, `backup sidecar list`, `fav list/add/remove/sync`, `recent list`, `ignore add/remove/clear`, `match clear`, `emulator-title list/set/remove`, `mainmenu show/edit`, `ledblinky audit/check/inspect-rom`, `ledblinky colors list`, `lightgun audit`, `config show/init/set/system/verify-credentials`, `install-tools`) never show the DRY RUN banner — for the read-only ones it would mislead users into thinking a health check was a preview of something committable, and for the write-always single-record ones (`fav add`, `ignore add`, …) it would falsely suggest nothing was written. Commands that are read-only *without* `--apply` but write *with* it (`doctor --apply`, `lightgun detect --apply`) are recorded as actual writes whenever `--apply` is present.
-
-Long-running single commands and chained wheel rebuilds use a **pulsing (indeterminate)** progress bar; multi-step chains that have a known step count (Full metadata refresh, Preflight check) additionally advance a **determinate** fill between steps.
-
-### Quiet success, audible validation
-
-Routine GUI outcomes are surfaced in the status bar at the bottom of the window rather than a modal you have to click through. Two patterns:
-
-- **Status flash** (`_flash_status`): "Configuration saved.", "Auto-refresh task deleted.", "vX.Y.Z is the latest release.", etc. The bar shows the message and auto-reverts to "Ready." after 6 seconds. No click-through.
-- **Validation flash** (`_flash_validation`): "No subset picked — click 'Pick subset' first.", "Nothing to apply — every retirement is unchecked.", "Pick a PC system first.", etc. Same status-bar update, plus an audible bell — so a user focused on a form widget at the top of the window doesn't miss the bottom-of-window feedback.
-
-Modal dialogs are reserved for: multi-line result summaries (Preflight passed, Curate done with manifest path, Auto-refresh scheduled with reboot instructions), destructive-action confirmations (Backup restore, Migrate apply, Curate delete), and errors. Up-to-date update checks, save successes, "nothing selected" prompts, and similar one-line outcomes go through the status bar instead.
-
-## Dark mode and right-click menus
-
-The GUI is dark by default — no toggle, no setting. The palette (deep grey background, off-white text, blue selection / focus accents) is applied via `ttk.Style` overrides on the `clam` theme plus `option_add` defaults for the non-themed Tk widgets (Menu, Listbox, Text, Canvas, PanedWindow). The macOS native menubar still uses the system appearance because Tk can't override it.
-
-Scrollbar thumbs (the draggable rectangle inside the trough) are intentionally several stops brighter than the surrounding panel so the grabby part is obvious against the dark theme; they also brighten further on hover. If your scrollbars previously felt invisible, you're on an older build — upgrade and the thumb pops.
-
-Every `Entry` / `Text` / `ScrolledText` widget in the GUI — Setup paths, scraper credentials, the Output panel, log viewers — has a right-click (or `Button-2` on macOS) context menu with Cut / Copy / Paste / Select-All. Read-only views show only Copy + Select-All; masked password fields suppress Copy/Cut so right-click can't bypass the mask.
-
-## Stopping a long-running command
-
-The **Stop** button, next to the progress bar at the bottom of the window and shown while a command runs, terminates the current subprocess (sends `SIGTERM` / Windows `TerminateProcess`). The GUI re-enables the Run buttons once the child exits.
-
-A game test from the **Test games** page is the exception: Stop first asks the run to close its game and put RocketLauncher's play statistics back, and only terminates it if it hasn't stopped within about a minute. Whatever a terminated run left behind is finished by **Recover now** on that page, or by the next test run.
-
-**Stop is not a rollback or a guarantee of a recovery manifest.** In particular,
-Windows `TerminateProcess` can prevent Python cleanup and interrupt handlers from
-running. Prefer letting a destructive operation finish when possible.
-
-The CLI handles normal terminal interrupts for backup, move-mode migration and
-curate-archive by attempting to record partial progress. That protection does not
-make abrupt termination, a crash or a failed manifest write safe.
-
-After stopping, inspect the files and any available manifest through
-**File → View logs & manifests** before retrying or undoing. A partial backup is
-not a complete snapshot. For migration or curation, confirm which files actually
-moved; if a record is missing or incomplete, use your independent backup rather
-than assuming undo can reconstruct the run. See
-[Recovery from mistakes](workflows.md#recovery-from-mistakes).
+The script isolates HOME/configuration in a temporary synthetic cabinet, disables
+update/task probes, runs only a sample `systems` command, and captures the app
+window rather than the desktop. Replace all page images together and remove
+obsolete filenames when pages change. Never capture a real cabinet for these docs.

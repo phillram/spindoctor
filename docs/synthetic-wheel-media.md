@@ -1,378 +1,56 @@
-# Synthetic Wheel Media Setup
+# Synthetic-wheel media
 
-This guide covers all the visual and audio assets for the four SpinDoctor-managed
-synthetic wheels: **Favorites**, **Most Played**, **Recently Played**, and **Recompiled**.
+Favorites, Recently Played and Most Played mirror source games' art. Recompiled
+also has bundled system assets but is not a fourth statistics/favorites builder.
 
----
+## Two media locations
 
-## HyperSpin media — two separate locations
+| Location | Shows |
+|---|---|
+| `Media/Main Menu/` | System selector logos, backgrounds, themes, video/music |
+| `Media/<System>/` | Game-list art, themes, videos and navigation sound |
 
-It helps to understand that HyperSpin reads system-level media from **two different
-directories** depending on what it is showing:
+Rebuilds and supported main-menu registration install missing bundled system
+assets: `<System>.png` in Main Menu `Images/Wheel` and `Images/Backgrounds`,
+`<System>.mp4` in `Video`, `<System>.zip` in `Themes`, `<System>.mp3` in `Sound`,
+and `Wheel Click.mp3` inside the system's `Sound`. Missing HyperSpin
+`Settings/<System>.ini` is also created where supported.
+Existing custom assets are preserved, not replaced.
 
-| Location | When it appears | Examples |
-|----------|----------------|---------|
-| `Media\Main Menu\` | **Main Menu** — the top-level wheel where you pick a system; attract mode | Wheel logo, background behind the logo, music during attract mode |
-| `Media\<SystemName>\` | **Inside the system wheel** — the game list for that system | Per-game wheel art, per-game background, per-game theme |
+## Mirrored game media
 
-The assets SpinDoctor bundles target the **Main Menu** — they appear during attract mode
-on the top-level wheel, the same context where videos play for each console before
-the wheel spins to the next one.  Per-game media inside the wheel is already handled
-by the existing media-mirror step (mirrored from the source systems).
+Wheel builders mirror from the original system; fetch missing artwork there,
+then rebuild. Default `auto` tries hardlinks, falling back to copies.
+Linked files share bytes: keep an independent backup before in-place edits.
+Custom target systems need ownership evidence; a real PCLauncher wheel is not
+safe to overwrite merely because its launcher type matches.
 
----
+## Themes and video
 
-## What SpinDoctor installs automatically
+Bundled main-menu themes hide the video visual while its audio plays over the
+background. Custom themes can change this. For broad legacy compatibility,
+replacement videos should use MP4/H.264 Main profile, level 4.0, yuv420p and AAC.
+Avoid B-frames for very-low-frame-rate static-image videos to prevent delayed
+first frames. This is a conservative encoding recipe, not every decoder's limit.
 
-Every `rebuild --apply` run installs these files without extra flags:
+If video is absent, check:
 
-| File | Main Menu location | What it does |
-|------|--------------------|-------------|
-| `Favorites.png` | `Media\Main Menu\Images\Wheel\` | Wheel logo in the system selector |
-| `Most Played.png` | `Media\Main Menu\Images\Wheel\` | Wheel logo in the system selector |
-| `Recently Played.png` | `Media\Main Menu\Images\Wheel\` | Wheel logo in the system selector |
-| `Recompiled.png` | `Media\Main Menu\Images\Wheel\` | Wheel logo in the system selector |
-| `Favorites.png` | `Media\Main Menu\Images\Backgrounds\` | Background shown during attract mode |
-| `Most Played.png` | `Media\Main Menu\Images\Backgrounds\` | Background shown during attract mode |
-| `Recently Played.png` | `Media\Main Menu\Images\Backgrounds\` | Background shown during attract mode |
-| `Recompiled.png` | `Media\Main Menu\Images\Backgrounds\` | Background shown during attract mode |
-| `Favorites.mp4` | `Media\Main Menu\Video\` | Attract-mode video |
-| `Most Played.mp4` | `Media\Main Menu\Video\` | Attract-mode video |
-| `Recently Played.mp4` | `Media\Main Menu\Video\` | Attract-mode video |
-| `Recompiled.mp4` | `Media\Main Menu\Video\` | Attract-mode video |
-| `Favorites.zip` | `Media\Main Menu\Themes\` | Theme zip — required for HyperSpin to play the video |
-| `Most Played.zip` | `Media\Main Menu\Themes\` | Theme zip — required for HyperSpin to play the video |
-| `Recently Played.zip` | `Media\Main Menu\Themes\` | Theme zip — required for HyperSpin to play the video |
-| `Recompiled.zip` | `Media\Main Menu\Themes\` | Theme zip — required for HyperSpin to play the video |
-| `Favorites.mp3` | `Media\Main Menu\Sound\` | Active-browsing music while scrolling the main-menu wheel |
-| `Most Played.mp3` | `Media\Main Menu\Sound\` | Active-browsing music while scrolling the main-menu wheel |
-| `Recently Played.mp3` | `Media\Main Menu\Sound\` | Active-browsing music while scrolling the main-menu wheel |
-| `Recompiled.mp3` | `Media\Main Menu\Sound\` | Active-browsing music while scrolling the main-menu wheel |
-| `Wheel Click.mp3` | `Media\Favorites\Sound\` | Sound played on every left/right cursor move inside the Favorites wheel |
-| `Wheel Click.mp3` | `Media\Most Played\Sound\` | Sound played on every left/right cursor move inside the Most Played wheel |
-| `Wheel Click.mp3` | `Media\Recently Played\Sound\` | Sound played on every left/right cursor move inside the Recently Played wheel |
-| `Wheel Click.mp3` | `Media\Recompiled\Sound\` | Sound played on every left/right cursor move inside the Recompiled wheel |
-| `<System>.ini` | `HyperSpin\Settings\` | Lets HyperSpin open the sub-wheel |
+- Filename stem exactly matches the database system/game name.
+- Theme zip and video exist in the correct Main Menu versus game-list location.
+- HyperSpin's volume/playback settings permit it.
+- `[video defaults] path=` is blank or points to the intended folder: a redirect
+  replaces the local Video lookup; there is no per-game fallback.
 
-**Install condition:** every asset is only written when the destination is absent —
-SpinDoctor never overwrites a file you placed there yourself.
+## Blank fallback themes
 
-The rebuild summary reports each asset:
-```
-Wheel art:      installed → D:\Arcade\HyperSpin\Media\Main Menu\Images\Wheel\Favorites.png
-Background:     installed → D:\Arcade\HyperSpin\Media\Main Menu\Images\Backgrounds\Favorites.png
-Music:          installed → D:\Arcade\HyperSpin\Media\Main Menu\Sound\Favorites.mp3
-Video:          installed → D:\Arcade\HyperSpin\Media\Main Menu\Video\Favorites.mp4
-Theme zip:      installed → D:\Arcade\HyperSpin\Media\Main Menu\Themes\Favorites.zip
-Wheel Click sound: installed → D:\Arcade\HyperSpin\Media\Favorites\Sound\Wheel Click.mp3
-```
-
----
-
-## Attract-mode behaviour
-
-HyperSpin's attract mode (when the cabinet is idle) cycles through every system in
-`Main Menu.xml`.  For each system it shows:
-
-1. The **wheel logo** (`Images\Wheel\<System>.png`) — always shown
-2. The **background image** (`Images\Backgrounds\<System>.png`) — shown behind the logo
-3. The **video** (`Video\<System>.mp4`) + **theme zip** (`Themes\<System>.zip`) —
-   the theme zip is required for HyperSpin to play the video; the video's visual
-   is hidden (1×1 px) so only its audio track plays and the background PNG shows
-4. The **active-browsing music** (`Sound\<System>.mp3`) — plays while the user
-   is *scrolling* the main-menu wheel (not during attract idle). SpinDoctor
-   bundles an MP3 for each of the four synthetic wheels and installs it
-   automatically.
-
-All four synthetic wheels are part of this rotation.  Items 1, 2, 3, and 4 are
-all bundled and installed automatically by `rebuild --apply` / `mainmenu add --apply`.
-
----
-
-## Media that requires manual placement
-
-### Attract-mode video
-
-> **Already bundled.** SpinDoctor installs attract-mode videos automatically.
-> Follow these instructions only if you want to replace them with your own.
-
-Each video is a static-frame MP4 (background image + music looped to a multiple of the
-music track duration).  HyperSpin plays the video and advances to the next system in
-the attract rotation when it ends — no global timer setting is required.
-
-| Wheel | Duration |
-|-------|---------|
-| Favorites | 120 s |
-| Most Played | 117 s |
-| Recently Played | 120 s (4 × 30 s) |
-| Recompiled | 120 s (4 × 30 s) |
-
-**File:** `Media\Main Menu\Video\<SystemName>.mp4`
-
-**Required video format (HyperSpin / Windows 7 compatibility):**
-
-HyperSpin is built on Adobe AIR, which uses the AIR runtime's H.264 decoder.
-Windows 7 (without hardware-accelerated codec packs) and older DirectShow
-filters only support H.264 up to **Main Profile, Level 4.0**.
-
-| Property | Required value |
-|----------|---------------|
-| Container | MP4 |
-| Video codec | H.264 (libx264) |
-| Profile | **Main** (not High) |
-| Level | **4.0** (not 5.0+) |
-| Resolution | **1920×1080** (HyperSpin scales to fit; large resolutions force higher levels) |
-| B-frames | **0** (`-bf 0`) — see note below |
-| Pixel format | yuv420p |
-| Audio codec | AAC |
-
-> **Why not High Profile or 4K?**  The original 2752×1536 resolution forces H.264
-> Level 5.0, which the Windows 7 Adobe AIR runtime cannot decode — the video
-> track is silently dropped while audio still plays.  Encoding at 1920×1080 keeps
-> the level at 4.0 and plays correctly on all tested HyperSpin setups.
-
-> **Why no B-frames?**  These videos run at a very low 2 fps.  B-frames require
-> the decoder to hold a reorder buffer of several frames before it can display
-> the first one — at 2 fps, a 3-frame reorder buffer alone is ~1.5s.  The
-> practical symptom is audio starting immediately while the video stays blank
-> for a second or two before appearing.  `-bf 0` removes the reordering
-> entirely; at this frame rate B-frames provide no compression benefit anyway
-> (nothing here needs bidirectional prediction), so there's no quality/size
-> tradeoff for disabling them.
-
-**If you replace with your own video:** encode with the settings above.  An ffmpeg
-one-liner that produces a compatible file:
-
-```bat
-ffmpeg -loop 1 -i background.png -stream_loop -1 -i music.mp3 -t 57.7 ^
-  -vf scale=1920:1080 -c:v libx264 -profile:v main -level 4.0 -bf 0 -crf 28 ^
-  -c:a aac -b:a 192k -pix_fmt yuv420p -movflags +faststart Favorites.mp4
-```
-
-**To replace with your own:** Drop your `.mp4` at the path above, then rebuild.
-SpinDoctor detects the file exists and skips the install on every subsequent run.
-
----
-
-### HyperSpin video / audio not playing — settings checklist
-
-If attract-mode audio/video is not playing for a synthetic wheel, check:
-
-**`HyperSpin\Settings\HyperSpin.ini` — `[Main Menu]` section:**
-```ini
-[Main Menu]
-Use_Last_Playlist=false
-```
-
-**Theme zip must exist** — `Media\Main Menu\Themes\<System>.zip` is required.
-Without it HyperSpin ignores the video entirely.  SpinDoctor installs this
-automatically during `rebuild --apply` and `mainmenu add --apply`.
-
-**Videos only play during attract mode** (when the cabinet is idle).
-They do not play while you are actively browsing the main menu wheel.
-The `Attract_Mode_Time` setting controls how long the cabinet must be idle
-before attract mode starts; videos advance automatically when they end.
-
-> **Note on active-browsing music** — HyperSpin can play a separate `.mp3`
-> from `Media\Main Menu\Sound\<System>.mp3` while the user scrolls the wheel.
-> SpinDoctor does not bundle these files, so active-browsing plays silence.
-> To add browsing music, drop your own `.mp3` at that path manually.
-
----
-
-### Attract-mode theme
-
-A theme `.zip` contains `Theme.xml`, which tells HyperSpin where to render the video
-slot for a system during attract mode.  **Without a theme zip HyperSpin silently skips
-the attract-mode audio/video entirely**, even if the `.mp4` file exists and is
-correctly encoded.
-
-**File:** `Media\Main Menu\Themes\<SystemName>.zip`
-
-**SpinDoctor installs this automatically** — `rebuild --apply` and `mainmenu add --apply`
-both write the bundled theme zip for each synthetic wheel (skip-if-exists on rebuild,
-always overwrite on `mainmenu add`).
-
-The bundled `Theme.xml` matches the reference layout provided by the cabinet owner:
-
-```xml
-<video w="1024" h="768" x="512" y="384" forceaspect="both"
-       time="0" delay="0" type="none" start="none" rest="none" .../>
-```
-
-Full-screen (1024×768), centred on HyperSpin's 1024×768 canvas, aspect ratio
-preserved.  The zip contains **only `Theme.xml`** — no `Info.txt`, no SWF files.
-
-#### Custom themes
-
-If you want a more animated or elaborate theme, replace the installed zip with your own:
-
-```
-Media\Main Menu\Themes\Favorites.zip
-Media\Main Menu\Themes\Most Played.zip
-Media\Main Menu\Themes\Recently Played.zip
-```
-
-Copy the `.zip` file (do **not** extract it — HyperSpin reads the archive directly).
-SpinDoctor's `rebuild --apply` will not overwrite a file that already exists.
-
-**Community themes:** available on EmuMovies, HyperSpin forums, and Hyperspin-FE.com.
-Look for a "Main Menu" theme pack.  If the community theme shows a full-size video
-overlay, the background PNG is still shown underneath — both layers are visible.
-
----
-
-### Navigation sounds (inside the game list)
-
-These are separate from attract-mode music.  They play when you move the cursor or
-select a game while browsing the game list **inside** a synthetic wheel.
-
-**Directory:** `Media\<SystemName>\Sound\`  ← note: inside the system, not Main Menu
-
-**Files HyperSpin looks for:**
-
-| Filename | When it plays |
-|----------|--------------|
-| `Wheel Click.mp3` | Every cursor move left/right |
-| `select.mp3` | Game selected (before launch) |
-| `back.mp3` | Wheel closed / back pressed |
-| `letter.mp3` | Jump-to-letter navigation |
-
-Not all files are required — HyperSpin falls back to its global sounds for any that
-are missing.
-
-**`Wheel Click.mp3` is bundled** — SpinDoctor installs it automatically during
-`rebuild --apply` (skip-if-exists).  The other navigation sounds (`select.mp3`,
-`back.mp3`, `letter.mp3`) are not bundled; add them manually if wanted.
-
-**Manually (non-Wheel Click sounds):**
-```bat
-spindoctor media-add --system "Favorites" --game "select" --type sound --file "path\to\select.mp3" --apply
-```
-
-Or copy `.mp3` files directly to `Media\Favorites\Sound\` (or `Most Played`, etc.).
-
----
-
-### Per-game theme fallback (`Default.zip`)
-
-When a game has no per-game theme zip in the source system, HyperSpin falls back
-to `Default.zip` in that system's Themes folder — a console-wide template that
-provides the layout (background, video position, overlays) for all games without
-their own theme.
-
-**During a media mirror, SpinDoctor copies the source system's `Default.zip` as
-`<GameName>.zip` in the synthetic wheel's Themes folder** whenever no per-game
-theme exists.  This gives the game the same themed background and video layout
-in Favorites / Recently Played / Most Played that it has in its native wheel.
-
-Example — Kirby's Adventure has no `Kirby's Adventure.zip` in the NES Themes
-folder.  SpinDoctor copies `Media\Nintendo Entertainment System\Themes\Default.zip`
-to `Media\Favorites\Themes\Kirby's Adventure.zip` so HyperSpin renders it with
-the NES console theme rather than a blank layout.
-
-**Fallback only fires when:** `Default.zip` exists at
-`Media\<SourceSystem>\Themes\Default.zip` and the game has no per-game theme.
-Systems that already have per-game themes are unaffected.
-
----
-
-## Replacing a bundled file with your own
-
-Drop your own file at the exact path shown in the table above, then run rebuild —
-SpinDoctor detects the file already exists and skips it on every subsequent run.
-
----
-
-## Complete media layout
-
-```
-HyperSpin\
-└── Media\
-    └── Main Menu\                         ← ALL system-level / attract-mode media lives here
-        ├── Images\
-        │   ├── Wheel\
-        │   │   ├── Favorites.png          ← AUTO: wheel logo
-        │   │   ├── Most Played.png        ← AUTO: wheel logo
-        │   │   ├── Recently Played.png    ← AUTO: wheel logo
-        │   │   └── Recompiled.png         ← AUTO: wheel logo
-        │   └── Backgrounds\
-        │       ├── Favorites.png          ← AUTO: attract-mode background
-        │       ├── Most Played.png        ← AUTO: attract-mode background
-        │       ├── Recently Played.png    ← AUTO: attract-mode background
-        │       └── Recompiled.png         ← AUTO: attract-mode background
-        ├── Sound\
-        │   ├── Favorites.mp3              ← AUTO: active-browsing music
-        │   ├── Most Played.mp3            ← AUTO: active-browsing music
-        │   ├── Recently Played.mp3        ← AUTO: active-browsing music
-        │   └── Recompiled.mp3             ← AUTO: active-browsing music
-        ├── Video\
-        │   ├── Favorites.mp4              ← AUTO: attract-mode video
-        │   ├── Most Played.mp4            ← AUTO: attract-mode video
-        │   ├── Recently Played.mp4        ← AUTO: attract-mode video
-        │   └── Recompiled.mp4             ← AUTO: attract-mode video
-        └── Themes\
-            ├── Favorites.zip              ← AUTO: attract-mode theme zip
-            ├── Most Played.zip            ← AUTO: attract-mode theme zip
-            ├── Recently Played.zip        ← AUTO: attract-mode theme zip
-            └── Recompiled.zip             ← AUTO: attract-mode theme zip
-
-    └── Favorites\                         ← per-game media (auto-mirrored from source systems)
-        ├── Images\
-        │   ├── Wheel\       ← per-game logos
-        │   ├── Backgrounds\ ← per-game backgrounds (shown by theme-fill blank theme)
-        │   ├── Artwork1\    ← per-game art (slot 1)
-        │   ├── Artwork2\    ← per-game art (slot 2)
-        │   ├── Artwork3\    ← per-game art (slot 3)
-        │   ├── Titles\      ← title-screen captures (shown in theme side-panels)
-        │   └── Letters\     ← alphabetic scroll-bar letter art
-        ├── Themes\          ← per-game themes (mirrored; Default.zip fallback applied;
-        │                      theme-fill can populate missing entries with a blank theme)
-        ├── Sound\
-        │   └── Wheel Click.mp3 ← AUTO: cursor-move click sound
-        └── Video\           ← per-game videos (.mp4 .wmv .mpeg .mpg .flv .avi .mkv …)
-            └── Trailers\    ← per-game trailers
-```
-
-**AUTO** = installed by `rebuild --apply` / `mainmenu add --apply` from bundled package assets.
-Only written when absent — existing user files are never overwritten.
-
-> The same layout applies to `Most Played\`, `Recently Played\`, and `Recompiled\`.
-
----
-
-## Per-game blank themes (`theme-fill`)
-
-For console wheels (MAME, SNES, etc.), games sometimes have a video or background screenshot but no per-game theme zip. Without a theme zip, HyperSpin may not display the video or image when the game is highlighted.
-
-`spindoctor theme-fill` fills these gaps by installing a minimal blank theme zip for every game that has a video but no theme. The blank theme shows the game's background image from `Images\Backgrounds\` as a full-screen backdrop, then overlays the video on top when one exists:
-
-```bat
-:: See which consoles have games with missing themes
-spindoctor theme-fill --all
-
-:: Preview what would be installed for MAME
+```text
 spindoctor theme-fill --system MAME
-
-:: Write blank themes for all MAME games missing one
-spindoctor theme-fill --system MAME --apply
-```
-
-Existing theme zips are never overwritten — `theme-fill` only adds missing entries. See [Command reference → theme-fill](commands.md#theme-fill) for full options.
-
-### Console-level default theme (`theme-fill --default`)
-
-Rather than one blank zip per game, `--default` installs a single `Media\<SYSTEM>\Themes\default.zip`. HyperSpin uses `default.zip` as the fallback theme for any game in that system without a theme of its own, so one file gives the whole console a full-screen video/background theme:
-
-```bat
-:: Preview: is MAME missing a console default.zip?
 spindoctor theme-fill --system MAME --default
-
-:: Install one default.zip fallback for MAME
-spindoctor theme-fill --system MAME --default --apply
-
-:: Backfill default.zip for every console that lacks one
-spindoctor theme-fill --all --default --apply
 ```
 
-This is the lighter-touch option: use it when you want a blanket fallback for a console without writing a separate zip for every game. An existing `default.zip` is never overwritten.
+The first previews missing per-game theme zips. `--default` installs one
+`Themes/default.zip` fallback instead. Repeat with `--apply`; existing themes
+are never overwritten. Use the default option when one shared fallback suffices.
+
+See [wheel setup](standalone-tools.md), [cabinet formats](cabinet-architecture-reference.md)
+and [troubleshooting](troubleshooting.md#media-and-wheels).

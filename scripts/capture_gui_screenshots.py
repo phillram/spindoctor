@@ -39,6 +39,12 @@ def _prepare_sample(root: Path) -> None:
         "<menu>{}</menu>".format(menu), encoding="utf-8",
     )
     for system in systems:
+        settings = cabinet / "HyperSpin" / "Settings"
+        settings.mkdir(exist_ok=True)
+        (settings / (system + ".ini")).write_text(
+            "[navigation]\nrandom_game=false\nuse_last_game=false\n",
+            encoding="utf-8",
+        )
         (database / system).mkdir()
         (cabinet / "ROMs" / system).mkdir()
         games = "".join(

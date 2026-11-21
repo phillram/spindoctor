@@ -1,132 +1,66 @@
-# SpinDoctor 🩺🕹️
+# SpinDoctor
 
-A librarian for [HyperSpin](http://www.hyperspin-fe.com/) + [RocketLauncher](https://rocketlauncher.net/) arcade cabinets — a full CLI plus an optional point-and-click GUI for cabinet owners who'd rather not touch `cmd.exe`.
+A GUI and CLI librarian for HyperSpin + RocketLauncher cabinets.
 
-**What it does:**
+- Audit ROMs, databases and media; verify against DATs; find duplicates and misplaced files.
+- Fetch metadata and artwork from ScreenScraper, TheGamesDB and Steam; import local media.
+- Manage systems, PC games, wheel order and first/last/random wheel starts.
+- Build Favorites, Recently Played and Most Played wheels.
+- Configure LEDBlinky profiles, colors and animations, and Sinden/DemulShooter hooks.
+- Launch-test games with screenshots and HTML reports; manage intro videos and cabinet helpers.
+- Back up, restore and migrate libraries, with command-specific recovery.
 
-- **Audits and verifies the library** — compares ROMs against the HyperSpin databases and media, validates ROM integrity against No-Intro / Redump / TOSEC DATs, finds duplicates and misplaced files
-- **Fills in metadata and artwork** — downloads game descriptions, wheel art, backgrounds, and videos, and keeps the HyperSpin XML in sync with what's on disk
-- **Builds smart wheels** — cross-system Favorites, Recently Played, and Most Played, plus playtime reports
-- **Wires up hardware** — Sinden / DemulShooter light guns per system, and LEDBlinky button lighting that gives every game a profile lighting only the buttons it uses
-- **Protects and moves the library** — dated backups, whole-library migration between drives or PCs, and undo for almost every destructive operation
-- **Knows your cabinet** — inventories the third-party arcade tools already installed and reports which ones SpinDoctor replaces
+SpinDoctor does **not** install HyperSpin, RocketLauncher or emulators, or download ROMs/BIOS.
 
-SpinDoctor is a librarian, **not** an installer. It does not install HyperSpin, RocketLauncher, or any emulator, and it does not download ROMs or BIOS. Get those in place, then SpinDoctor automates the rest.
+## Start here
 
-It's also careful by default: commands that change cabinet files preview their plan until re-run with `--apply` (only SpinDoctor's own settings and lists, such as `config set` and `fav add`, save immediately), and most destructive commands write an undo manifest. See the [command reference](docs/commands.md) for the full safety model.
+**Windows, no Python:** download the GUI zip from [Releases](https://github.com/phillram/spindoctor/releases),
+extract it and open **`spindoctor.exe`**. Choose `win10` for Windows 10/11 or
+`win7` for Windows 7 SP1/8/8.1. The optional CLI zip contains `spindoctor-cli.exe`.
+Each EXE works alone. [Binary guide](docs/windows-binaries.md).
 
-## Pick your install route
+**From source, Python 3.8+:**
 
-SpinDoctor ships in three forms — pick whichever matches your cabinet:
-
-| | Best for | What you get | Walkthrough |
-|---|---|---|---|
-| 🪟 **Prebuilt Windows binaries** | Cabinets where you don't want to install Python | Separate GUI and CLI downloads for **Windows 10/11** and **Windows 7 SP1+**. Each zip holds one single-file EXE (`spindoctor.exe` for the GUI, `spindoctor-cli.exe` for the CLI) with all workers and bundled media. | [docs/windows-binaries.md](docs/windows-binaries.md) |
-| 🐍 **Pip install from source** | Dev machines, custom builds, anyone already running Python 3.8+ | Same CLI plus `spindoctor-gui` console script, importable as a package. Cross-platform (Windows / macOS / Linux). | [docs/installation.md](docs/installation.md) |
-| 📂 **Source-on-disk, no install** | Locked-down boxes where `pip install` isn't an option but Python is | The `.py` wrappers in [`scripts/`](scripts/) run directly from a checkout via `python scripts\spindoctor-fav.py …`. | [docs/installation.md#running-without-pip-install](docs/installation.md#running-without-pip-install) |
-
-Then pick how you want to *use* it:
-
-| | When to use it | How to launch |
-|---|---|---|
-| 🖱️ **GUI launcher** | First-time setup, refreshing wheels, casual use, anyone who'd rather not touch `cmd.exe` | Double-click **`spindoctor.exe`** (binary route) or run **`spindoctor-gui`** (pip route). Full tab tour at [docs/gui.md](docs/gui.md). |
-| ⌨️ **CLI** | Every command, scripts, scheduled tasks, advanced workflows | Open `cmd.exe` and run `spindoctor-cli …` (binary) or `spindoctor …` (pip) — it's a console app, so launch it from a terminal, not by double-clicking `spindoctor-cli.exe` ([why](docs/windows-binaries.md#double-clicking-spindoctorexe-flashes-a-window-that-closes-instantly)). See the [Command reference](docs/commands.md). |
-
-### Five-minute quick start (binaries)
-
-1. Grab the right zip from the [latest release](https://github.com/phillram/spindoctor/releases):
-   - **GUI:** `spindoctor-gui-win10.zip` (Windows 10/11) or `spindoctor-gui-win7.zip` (Windows 7 SP1 / 8 / 8.1)
-   - **CLI (optional):** `spindoctor-cli-win10.zip` or `spindoctor-cli-win7.zip`
-2. Extract the EXE to a location of your choice (e.g. `C:\spindoctor\`). The GUI does not need the CLI. See [docs/windows-binaries.md](docs/windows-binaries.md).
-3. **Double-click `spindoctor.exe`**, fill in the Setup tab (paths + optional scraper credentials), click Save. Done. Prefer to be walked through it? Click **Run first-run wizard** at the top of that tab ([details](docs/gui.md#first-run-wizard)).
-
-### Five-minute quick start (pip)
-
-```bat
-git clone https://github.com/phillram/spindoctor C:\spindoctor
-cd C:\spindoctor
-pip install -e .[all]
-spindoctor-gui                 :: GUI — fills out config.json via the Setup tab
-:: ── or ──
-spindoctor config init         :: CLI wizard, equivalent
-spindoctor systems
-spindoctor add-system "Nintendo Entertainment System" --apply
+```text
+git clone https://github.com/phillram/spindoctor
+cd spindoctor
+python -m pip install -e ".[all]"
+spindoctor-gui
 ```
 
-For a complete first-time walkthrough on a blank Windows PC (Python, HyperSpin, RocketLauncher, emulators, BIOS, ROMs), see [First-time setup](docs/setup.md).
+In **Setup**, save your cabinet paths, then run **Diagnostics**.
+The sidebar selects a system across pages. **Apply changes** starts off;
+review previews before enabling it. Settings and lists can save immediately,
+and Toolkit power/display/hardware actions are live. Not every write has undo.
+See the [safety model](docs/commands.md#safety).
 
-## What's in the GUI
+![Current GUI, using synthetic sample data](docs/screenshots/02-diagnostics.png)
 
-Dedicated tabs cover the most-used workflows directly, plus a free-form **Console** tab whose preset dropdown covers the full CLI surface — anything in the [CLI cheatsheet](docs/cli-cheatsheet.md) also works as a click from inside the GUI. Tabs appear in new-user journey order; each one links to its section of the [GUI walkthrough](docs/gui.md):
+## CLI
 
-| Tab | Use it to… |
-|---|---|
-| [Setup](docs/gui.md#setup) | Enter cabinet paths and scraper credentials, test them, and run the first-run wizard |
-| [Diagnostics](docs/gui.md#diagnostics) | Check cabinet health and scan the whole library — everything read-only |
-| [Systems](docs/gui.md#systems) | Curate HyperSpin's main-menu carousel, add new arcade or PC systems, and teach SpinDoctor about niche systems |
-| [Games](docs/gui.md#games) | Manage games within a system — reorder or prune the wheel, rename or clone a game, add newly installed PC games, fix one that launches the wrong program |
-| [Metadata & Media](docs/gui.md#metadata--media) | Download game descriptions and artwork — the whole refresh chain in one click, or step by step |
-| [Maintenance](docs/gui.md#maintenance) | Thin region/revision duplicates with a per-row preview, and clean up caches |
-| [Custom Wheels](docs/gui.md#custom-wheels) | Build the Favorites / Recently Played / Most Played wheels and wire them into HyperSpin |
-| [Intro Video](docs/gui.md#intro-video) | Manage which videos HyperSpin's boot-time intro plays from, swap between them, and auto-run the swap on Windows login |
-| [LEDBlinky](docs/gui.md#ledblinky) | Generate and tune button-lighting controls and colors |
-| [Lightgun](docs/gui.md#lightgun) | Detect light-gun software and wire it up per system |
-| [Backup & Restore](docs/gui.md#backup--restore) | Take dated backups of any part of the library, and restore from them |
-| [Migration](docs/gui.md#migration) | Move the whole library to a new drive or PC, with undo |
-| [Console](docs/gui.md#console) | Run any CLI command from categorized, editable presets |
-| [History](docs/gui.md#history) | Review every run this session — dry-run, success, or failure |
+Examples use the pip command `spindoctor`; binary users use `spindoctor-cli`.
 
-The full tour — including the menubar, keyboard shortcuts, find bar, dark mode, and per-tab details — is at [docs/gui.md](docs/gui.md).
-
-## CLI commands
-
-A curated cheatsheet with copy-paste examples for common workflows lives at **[docs/cli-cheatsheet.md](docs/cli-cheatsheet.md)**. For command behavior and options, see **[docs/commands.md](docs/commands.md)**; `spindoctor <command> --help` gives the installed release's complete flag syntax.
-
-A few greatest hits to get oriented:
-
-```bat
-spindoctor --help                                :: every command
-spindoctor doctor                                :: self-diagnose the cabinet
-spindoctor audit --system MAME                   :: compare ROMs vs the HyperSpin DB
-spindoctor verify --system NES --dat path\to.dat :: check ROM integrity against a DAT
-spindoctor backup create --target E:\Backups --apply   :: dated backup to another drive
-spindoctor migrate --target E:\Cab --apply              :: move the whole library
-spindoctor fav rebuild --apply && spindoctor recent rebuild --apply && spindoctor stats-report build-wheel --apply   :: rebuild the custom wheels
+```text
+spindoctor config init
+spindoctor doctor
+spindoctor audit --system MAME
+spindoctor wheel-start
+spindoctor test --system MAME --count 3
+spindoctor --help
 ```
-
-Everything above also works from the GUI's Console tab — every one of these has a matching entry in its preset dropdown.
 
 ## Documentation
 
-Start at [docs/index.md](docs/index.md) for a guided table of contents, or skim [CHANGELOG.md](CHANGELOG.md) for what shipped in each release.
-
-**Install & launch**
-
-| | |
+| Need | Guide |
 |---|---|
-| [Windows binaries](docs/windows-binaries.md) | Standalone `.exe` files — no Python required. Includes the GUI launcher. |
-| [Installation (pip)](docs/installation.md) | Python install, optional extras, console scripts including `spindoctor-gui`. |
-| [First-time setup](docs/setup.md) | Step-by-step from a blank Windows PC to a working cabinet. |
-| [Migrating from 1.x](docs/migrating-from-1.x.md) | What changed, what didn't, and how to roll back. |
+| Install or configure | [Installation](docs/installation.md), [setup](docs/setup.md), [configuration](docs/configuration.md) |
+| Use the GUI | [Page guide and current screenshots](docs/gui.md) |
+| Run commands | [Cheatsheet](docs/cli-cheatsheet.md), [complete command index](docs/commands.md) |
+| Maintain, back up or move | [Workflows and recovery](docs/workflows.md) |
+| Diagnose a problem | [Troubleshooting](docs/troubleshooting.md), [storage](docs/spindoctor-files.md) |
+| Find a specialist guide | [Documentation index](docs/index.md) |
+| Contribute | [Architecture](docs/architecture.md), [tests](docs/testing.md), [Windows builds](build/README.md) |
 
-**Use**
-
-| | |
-|---|---|
-| [GUI walkthrough](docs/gui.md) | Tab-by-tab tour, first-run wizard, menubar, keyboard shortcuts, dark mode |
-| [Configuration](docs/configuration.md) | Config keys, per-system overrides, filesystem considerations |
-| [CLI cheatsheet](docs/cli-cheatsheet.md) | Quick "if you want to do X, run Y" copy-paste sampler, grouped by intent |
-| [Command reference](docs/commands.md) | Every command, grouped by purpose — including which commands are read-only, dry-run behavior, and `--undo` |
-| [Workflows](docs/workflows.md) | First-system add, daily refresh, weekly maintenance, backup, migration, recovery from mistakes |
-| [Standalone tools](docs/standalone-tools.md) | Favorites / Recent / Most Played wheels — Tools menu and boot wiring; tools-audit for cataloguing other arcade utilities |
-| [Idle tour](docs/idle-tour.md) | HyperSpin's idle mode visits random consoles: setup, settings, how it reads HyperSpin's log, hazards |
-| [Light guns](docs/lightgun.md) | Sinden + DemulShooter wiring per system |
-| [Where SpinDoctor stores its files](docs/spindoctor-files.md) | Every file and directory it creates — config, caches, logs, undo manifests |
-| [Troubleshooting](docs/troubleshooting.md) | FAQ + common errors |
-| [Software architecture](docs/architecture.md) | Package boundaries, data flow, and safety limits |
-| [Example cabinet reference](docs/cabinet-architecture-reference.md) | HyperSpin/RocketLauncher layouts and hardware integration examples |
-| [Privacy and sharing diagnostics](docs/privacy.md) | Review logs, configuration and screenshots before sharing |
-
-## Reporting issues
-
-Check [Troubleshooting](docs/troubleshooting.md) first. If yours isn't covered, open an issue at the [project repository](https://github.com/phillram/spindoctor/issues). Include the version, command and a small reviewed error excerpt, not your full configuration or logs. See [Privacy and sharing diagnostics](docs/privacy.md).
+See [CHANGELOG.md](CHANGELOG.md) for release history. For
+[issues](https://github.com/phillram/spindoctor/issues), include the version,
+command and a short error excerpt. [Review logs and screenshots before sharing](docs/privacy.md).
