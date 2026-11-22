@@ -158,7 +158,7 @@ it registers the library for your Windows user only and needs no administrator r
 0 means it worked. Run it again if Future Pinball moves.
 
 ```powershell
-$exe = 'D:\Arcade\Emulators\Future Pinball\Future Pinball.exe'
+$exe = 'E:\Cabinet\Emulators\Future Pinball\Future Pinball.exe'
 Add-Type -TypeDefinition @"
 using System; using System.Runtime.InteropServices; using CT = System.Runtime.InteropServices.ComTypes;
 public static class FpTypeLib {
