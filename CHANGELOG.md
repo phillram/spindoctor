@@ -8,6 +8,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Documentation
 
+- **One wheel for several programs has its own page.** [docs/combined-wheels.md](docs/combined-wheels.md)
+  covers RocketLauncher's per-game `System=` redirect: what it switches, how to check it
+  in the log, what an old wheel must keep when it is retired (the list and media that
+  RocketLauncher, Recently Played and Most Played still read), and a genre that shares
+  the wheel's name. Troubleshooting links to it.
 - Refresh and shorten current guides, replace all GUI screenshots with the
   15-page sidebar layout, and add generated-command/link/screenshot drift checks.
 
