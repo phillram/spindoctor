@@ -45,6 +45,8 @@ Do not remove a keymapper still needed for another emulator or gun setup.
 ## Emulator input
 
 Bind emulators to the intended virtual pad, not a transient physical DS4 device.
+Cxbx-Reloaded is an exception: it misses a virtual pad that appears as it starts,
+so bind its [real pads through SDL](xbox.md#ps4-pads).
 Dolphin can combine keyboard-encoder and pad inputs, but GameCube keyboard
 bindings need explicit device qualifiers when the selected pad is disconnected.
 Per-game Dolphin profiles can overwrite global controller edits.

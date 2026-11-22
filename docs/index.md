@@ -14,6 +14,7 @@ CLI examples use `spindoctor` (pip); Windows binaries use `spindoctor-cli`.
 | Install wheel refreshers and Toolkit helpers | [Standalone tools](standalone-tools.md) |
 | Configure synthetic-wheel art and sound | [Synthetic-wheel media](synthetic-wheel-media.md) |
 | Tour consoles while idle | [Idle tour](idle-tour.md) |
+| Run Xbox games | [Cxbx-Reloaded](xbox.md) |
 | Configure guns or controllers | [Light guns](lightgun.md), [DS4Windows example](controller-input.md) |
 | Diagnose failures | [Troubleshooting](troubleshooting.md), [files and storage](spindoctor-files.md) |
 | Share diagnostics safely | [Privacy](privacy.md) |

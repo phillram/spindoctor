@@ -31,6 +31,7 @@ command-specific; do not delete manifests to silence errors.
 | ROMs launch but audit misses them | Use a current release; audit now honors configured RL ROM paths and game overrides. Confirm configuration points at that RL install. |
 | Content dupes have different sizes/SHA1s | Recognized NES/FDS/SNES ROM headers are ignored for content pairing. Wrapper equality is not required. |
 | “Cannot find Rom” | Check actual stem, allowed extensions, per-game emulator and every effective ROM path. |
+| “You do not have a RocketLauncher module for …” | RocketLauncher looks in a module folder named after the emulator entry. An entry that shares a module needs `Module=..\<folder>\<module>.ahk`: [two builds side by side](xbox.md#two-builds-side-by-side). |
 | Casual Games cannot locate program | Check `gamePath`, executable naming/fallback folder and matching placeholder; unrelated `.txt` files can match accidentally. |
 | AHK cannot launch a program | Inspect effective User Functions for stale helper paths and working directories. |
 | Double menu movement after certain games | A second mapper probably survived launch. Inspect User Functions and RL keymapper settings, not just Windows startup. |
@@ -135,6 +136,7 @@ Task registration is Windows-only and separate from startup wheel refresh.
 | Coin/Start fails in one game | Check game-specific device-only binds and effective AHK remap; bind to the key the emulator actually receives. |
 | Every game in one MAME loses panel keys | Inspect `default.cfg` for 0-byte/empty maps and a preserved controller/backup map. `doctor` warns about vulnerable old MAME pad codes; repair from a known-good map while closed. |
 | Daphne volume key pauses/quits | A zero key slot in `dapinput.ini` can match unmapped media keys. Assign valid deliberate SDL keys; back up first. |
+| PS4 pads do nothing in Xbox games | Cxbx-R misses a virtual Xbox pad that appears as it starts: [bind the real pads](xbox.md#ps4-pads). |
 | DemulShooter not found | Set its explicit path, verify the installation and run detection. |
 | Gun fails after configure | Check target, per-game ROM requirements, native RL gun settings and duplicate User Functions startup. |
 | Gun audit says partial coverage | Only some games/emulators have recognized direct startup. Indirect scripts may work but are not proof for the inspector. |
@@ -181,6 +183,10 @@ Check internal emulator paths, not only `Rom_Path`.
 - **Sideways Wii directions rotated:** use an appropriate per-game sideways profile.
 - **Mapper still starts:** inspect RL Keymapper/User Functions, not just Windows startup.
 - **Every launch slow:** check whether RL debug logging was left enabled.
+- **A game is unpacked again at every start:** RL keeps only the last ones, and only
+  while their size still matches: [unpacked games](xbox.md#unpacked-games).
+- **Xbox games crawl:** one full CPU core and an idle GPU point to Cxbx-R's
+  [core setting or build](xbox.md#one-cpu-core-is-full-and-the-game-crawls).
 - **Restoring to new drive letters:** preview `backup restore --use-current-paths`.
 
 SpinDoctor cannot universally rewrite third-party emulator internals.
