@@ -1,206 +1,99 @@
-# Standalone tools
+# Wheel refreshers and cabinet helpers
 
-Three minimal CLIs and a handful of `.bat` files designed to run on every system boot or directly from HyperSpin's Tools menu — without loading the full SpinDoctor CLI. They share `~/.spindoctor/config.json` with the main `spindoctor` command but use a light `argparse`-based entry point so they launch fast enough to use as a boot trigger.
+The GUI's **Custom Wheels** page manages refreshers, installation and startup
+scheduling. All tools share `.spindoctor/config.json`.
 
-```
-scripts/
-├── spindoctor-fav.py             ← Python wrapper (works without `pip install`)
-├── spindoctor-recent.py          ← Python wrapper (works without `pip install`)
-├── spindoctor-stats.py           ← Python wrapper (works without `pip install`)
-├── Refresh Favorites.bat         ← Drop into HyperSpin Tools or Windows Startup
-├── Refresh Recently Played.bat
-├── Refresh Most Played.bat
-└── Refresh All.bat              ← Run all three in sequence
-```
+## Wheel builders
 
-After `pip install -e .` the entry-point console scripts (`spindoctor-fav` / `spindoctor-recent` / `spindoctor-stats`) are on PATH from any directory — equivalent to running the wrappers in `scripts/`.
+| Main CLI | Pip helper | Source wrapper |
+|---|---|---|
+| `spindoctor fav` | `spindoctor-fav` | `scripts/spindoctor-fav.py` |
+| `spindoctor recent` | `spindoctor-recent` | `scripts/spindoctor-recent.py` |
+| `spindoctor stats-report` | `spindoctor-stats` | `scripts/spindoctor-stats.py` |
 
-## Do I need `pip install`?
-
-Generated `.bat` files from `install-tools` and GUI auto-refresh work without Python. On frozen Windows installs they embed the running EXE's full path plus `--run-tool <tool>`, so even a GUI-only install works without `PATH`. The convenience files in `scripts/` instead call the pip console-script names. Three working setups:
-
-1. **Standalone Windows binaries (no Python needed).** Download the appropriate zip from the [GitHub Releases](https://github.com/phillram/spindoctor/releases) page (`spindoctor-gui-win10.zip` for Windows 10/11; `spindoctor-gui-win7.zip` for Windows 7 SP1 and newer). Copy either EXE anywhere, then use the GUI's Tools-menu installer or `spindoctor.exe install-tools` to generate the bats. Both EXEs embed all three builders; for a hand-written bat use, for example, `start "" /B /WAIT "C:\spindoctor\spindoctor-gui.exe" --run-tool spindoctor-fav rebuild --apply`. See [`docs/windows-binaries.md`](windows-binaries.md) for the full walkthrough.
-2. **Full Python install.** `pip install -e .` from a checkout. Console scripts (`spindoctor-fav` / `spindoctor-recent` / `spindoctor-stats` / `spindoctor-gui`) land on `PATH`, the `.bat` files work as-is.
-3. **Source on disk, no install.** Copy the whole repo to the cabinet, install Python + dependencies (`pip install click rich requests lxml`), and rewrite each `.bat` to call the `.py` wrappers directly:
-   ```bat
-   python C:\path\to\spindoctor\scripts\spindoctor-fav.py rebuild --apply
-   ```
-   The wrappers `sys.path.insert(0, repo_root)` so `import spindoctor` resolves without an editable install. The GUI is also available as `python -m spindoctor.gui`.
-
-The `.py` wrappers in `scripts/` themselves require a Python install — they're for setup (3) only.
-
-The command examples below use pip console-script names. For v3 Windows binaries, replace the command name with `spindoctor.exe --run-tool <tool>` (or the GUI EXE via `start "" /B /WAIT`). Separate builder EXEs are no longer shipped; `build_windows.py --legacy-tools` can build them for old external scripts.
-
-Hard requirements: either the standalone Windows binaries, or Python 3.8+ with `lxml` and the `spindoctor` package importable.
-
-> **Want a windowed alternative to the `.bat` files?** The **Custom Wheels** tab in `spindoctor-gui` (Refresh custom wheels) has checkboxes for Favorites, Recently Played, and Most Played (all pre-ticked) plus a **Refresh selected** button — same outcome as `Refresh All.bat` when all three are checked, or any subset when you untick some, and no `cmd.exe` required. The `.bat` files remain the right answer for HyperSpin Tools menu entries and Windows Startup tasks; the GUI is the right answer for ad-hoc manual refreshes.
-
-## `spindoctor-fav`
-
-Cross-system Favorites wheel manager.
-
-```
-spindoctor-fav add SYSTEM ROM_NAME [--display-name NAME]
-spindoctor-fav remove SYSTEM ROM_NAME
-spindoctor-fav list
-spindoctor-fav sync [--verbose]
-spindoctor-fav rebuild [--media-mode {link,symlink,copy,auto,none}] [--apply] [--verbose]
-```
-
-`list` and `rebuild` order entries alphabetically by display title (case-insensitive). `rebuild` is idempotent — safe on every boot.
-
-`sync` (also run at the start of `rebuild`) crawls every console for favorites from three sources — a `favorite="1"` attribute in the system XML, a `<System>_Favorites.ini`, or a `favorites.txt` — and only parses a console's database when one of those is present, so favorite-free consoles cost almost nothing. In a terminal it shows a live `scanning <System> (i/N)…` counter; `--verbose` adds per-console detail.
-
-```bat
-spindoctor-fav add "Super Nintendo" "Chrono Trigger"
-spindoctor-fav rebuild              :: dry-run preview
-spindoctor-fav rebuild --apply      :: commit
-
-:: Equivalent without `pip install`:
-python scripts\spindoctor-fav.py rebuild --apply
-python -m spindoctor.favorites rebuild --apply
-```
-
-## `spindoctor-recent`
-
-Recently Played wheel from RocketLauncher's `Statistics.ini` files.
-
-```
-spindoctor-recent rebuild [--limit N] [--target-system NAME]
-                          [--media-mode {link,symlink,copy,auto,none}] [--apply]
-spindoctor-recent list
-```
-
-Default limit is 20; sorted by `last_played` desc (newest first), deduped on `(system, rom_name)`. `list` doesn't currently expose `--limit`.
-
-```bat
+```text
+spindoctor-fav rebuild --apply
 spindoctor-recent rebuild --limit 20 --apply
-python scripts\spindoctor-recent.py list
+spindoctor-stats build-wheel --limit 25 --apply
 ```
 
-## `spindoctor-stats`
+Favorites sorts by display title and imports HyperSpin favorites during rebuild.
+Recent sorts by last played; Most Played ranks total time with play count as a
+tiebreaker. Recent/Most Played read RocketLauncher statistics.
 
-Playtime reports + Most Played wheel.
+Windows v3 ships no separate helper EXEs. Either standalone EXE embeds them:
 
-```
-spindoctor-stats summary [--top N]
-spindoctor-stats top     [--top N] [--system NAME]
-spindoctor-stats recent  [--top N]
-spindoctor-stats system
-spindoctor-stats build-wheel [--limit N] [--target-system NAME]
-                             [--media-mode {link,symlink,copy,auto,none}]
-                             [--apply]
+```text
+spindoctor-cli.exe --run-tool spindoctor-fav rebuild --apply
 ```
 
-`top` sorts by `total_seconds` desc with `times_played` as tiebreaker. `recent` sorts by `last_played` desc; records with no timestamp are dropped. `summary` defaults to top 10. All others default to 20.
+A `.bat` invoking the windowed GUI must wait:
 
 ```bat
-spindoctor-stats summary
-spindoctor-stats top --system MAME --top 25
-spindoctor-stats build-wheel --apply
+start "" /B /WAIT "C:\SpinDoctor\spindoctor.exe" --run-tool spindoctor-fav rebuild --apply
 ```
+
+The checkout's convenience `.bat` files call pip helper names on PATH, not the
+embedded workers. Prefer generated wrappers for binary installations.
 
 ## Wiring into HyperSpin Tools menu
 
-Three integration patterns, in roughly increasing order of "how much you want it to feel like part of HyperSpin":
+```text
+spindoctor install-tools --tool refresh-all
+spindoctor install-tools --tool refresh-all --add-to-system Toolkit --apply
+spindoctor uninstall-tools --tool refresh-all --add-to-system Toolkit --apply
+```
 
-Tick the helpers you want in the GUI's **Custom Wheels** tab, or name them with `--tool` (see [`install-tools`](commands.md#install-tools) for the list). Only those are written; helpers you installed earlier stay as they are.
+Select helpers explicitly with repeated/comma-separated `--tool`. Other installed
+helpers remain untouched. Without `--add-to-system`, files default to
+`<rocketlauncher_dir>/Modules/HyperLaunch/Tools/spindoctor`; register their bats
+in HyperHQ's Tools menu. `--output-dir` overrides the destination.
 
-1. **HyperHQ → Tools menu (default).** The GUI's **Custom Wheels** tab → "Install for HyperHQ → Tools menu" runs, for example:
-   ```bat
-   spindoctor install-tools --tool refresh-favorites,refresh-recently-played,refresh-most-played,refresh-all
-   ```
-   Writes one `.bat` file per helper into `<RocketLauncher>/Modules/HyperLaunch/Tools/spindoctor/`. Open `HyperHQ.exe`, go to the Tools tab, click Add, and point each entry at the matching `.bat`. They appear inside HyperSpin's in-cabinet Tools menu under their names, such as `Refresh Favorites` and `Refresh All`.
+For a wheel, the target database must exist and use PCLauncher. Installation
+uses its first `Rom_Path` when available, otherwise its PCLauncher folder, and
+adds database/module routing and missing bundled wheel art with `--apply`.
+**Helper files are written even without Apply; registration is what previews.**
+Existing custom art is preserved; uninstall only removes art still matching
+SpinDoctor's bytes.
 
-2. **As games inside an existing wheel system (`--add-to-system`).** If you've built a "Toolkit" or "Tools" wheel (a HyperSpin system whose "games" are maintenance tasks), expose the helpers as wheel entries inside it. The GUI's **Custom Wheels** tab → "Install into an existing wheel system" runs, for example:
-   ```bat
-   spindoctor install-tools --tool refresh-all --add-to-system Toolkit
-   ```
-   Writes the bats and per-game PCLauncher INIs under `<RocketLauncher>/Modules/PCLauncher/Toolkit/`, and adds `<game>` entries (with `genre=Tools`, `manufacturer=SpinDoctor`) to `<HyperSpin>/Databases/Toolkit/Toolkit.xml`. Idempotent on re-run. The target system must already exist and use PCLauncher as its emulator.
+## Available helpers
 
-   > **Why this fixes "PCLauncher does not know what exe / FadeTitle to watch for":** the helpers are `.bat` files that run and exit — there's no persistent process for PCLauncher to monitor. `install-tools` writes `[Settings]`-format INIs (`ApplicationPath` / `StartIn`) instead of the `[exe info]` format, which doesn't require a `fadetitle` or monitored executable at all. If you previously created your own INIs using `[exe info]` and left those fields blank, re-running this command overwrites them with the correct format. See [Troubleshooting → PCLauncher error](troubleshooting.md#pclauncher-does-not-know-what-exe-fadetitle-andor-steamid-to-watch-for-when-launching-a-toolkit-helper) for the full diagnosis.
+| `--tool` | Runs |
+|---|---|
+| `refresh-favorites`, `refresh-recently-played`, `refresh-most-played` | Individual rebuild |
+| `refresh-all` | All three rebuilds |
+| `shut-down-cabinet`, `restart-cabinet` | Cancelable countdown, close frontend, shut down/restart Windows |
+| `exit-to-windows` | Close frontend and restore desktop/taskbar |
+| `reset-button-lights` | Clear PAC-LED64 onboard flash speeds |
+| `set-windows-resolution` | Restore primary display to HyperSpin's configured resolution |
+| `idle-tour` | Start alongside HyperSpin, not from a wheel/menu |
 
-3. **Manual** — copy the generated `.bat` files (or the `scripts/` convenience files for pip installs) wherever you want and register them yourself.
-
-The **Idle Tour** helper is neither: it runs beside HyperSpin for as long as it's open, so `install-tools --tool idle-tour --apply` adds it to HyperSpin's Startup Script instead. See [Idle tour](idle-tour.md).
+Toolkit power/display/LED actions run **immediately**, not behind `--apply`.
+Shutdown/restart force-close Windows applications after the countdown; save work.
+Esc cancels the countdown. Exit To Windows restarts Explorer to restore the
+taskbar. Resolution changes are saved. LED reset needs the compatible
+`PacDrive32.dll`. Actions log to `.spindoctor/toolkit.log`.
 
 ## Wiring into Windows startup
 
-The GUI's **Custom Wheels** tab has a Windows-only "Auto-refresh on cabinet startup" section: click *Enable auto-run* to register a Task Scheduler `ONLOGON` task with a configurable post-log-on delay (default 2 min — gives HyperSpin / RocketLauncher time to settle before the rebuild kicks in). Companion *Disable auto-run* and *Check task status* buttons round out the lifecycle. Internally it shells out to `schtasks.exe`, so no `pywin32` or admin rights required. (These are the same button names as the Intro Video tab's Auto-run section — both wrap the identical Task Scheduler mechanism, just for a different scheduled task.)
+In **Custom Wheels → Auto-refresh on cabinet startup**, enable the logon task
+with a delay, or disable/check it. Generated BAT/VBS shims run embedded workers
+hidden at low priority. Task Scheduler permissions depend on local policy.
+The intro-video task is separate.
 
-**This is the recommended method.** The GUI generates two companion files:
+After moving the EXE or upgrading from older releases, regenerate installed
+helpers and re-enable both tasks to refresh absolute paths. `doctor` flags
+missing helper executables. Installing the app alone schedules nothing.
 
-| File | Purpose |
-|---|---|
-| `spindoctor-refresh-wheels.bat` | Runs the three rebuild commands; each wrapped with `START /LOW /B /WAIT ""` so the spindoctor processes run at Windows **IDLE priority** — only consuming CPU that HyperSpin and RocketLauncher aren't using. Frozen installs call the running EXE's embedded workers with `--run-tool`. |
-| `spindoctor-refresh-wheels.vbs` | Calls the bat with `WshShell.Run(bat, 0, True)` — window style `0` = hidden — so **no `cmd.exe` window** ever appears on the cabinet screen. |
+The [idle tour](idle-tour.md) instead joins HyperSpin's Startup Script list;
+it exits when HyperSpin closes and must not have a broad EXE-kill Exit entry.
 
-The scheduled task points at the VBS shim via `wscript.exe //B spindoctor-refresh-wheels.vbs`.
+## Tools audit
 
-> **If you have an existing task registered before v2.4.11**, click *Disable auto-run* then *Enable auto-run* again. The old task used `cmd /c bat` (normal priority, visible window). Re-registering generates the new shim pair and points the task at the VBS instead.
-
-> **Upgrading to v3 or moving the EXE?** Re-run `install-tools` (with the same `--tool` picks) and click *Enable auto-run* again once to rewrite embedded paths. For intro-video rotation, also re-run `introvideo install-autorun --apply` (or enable it again in the GUI). Status checks flag stale tasks, and `spindoctor doctor`'s **SpinDoctor helpers** check flags `install-tools` `.bat` files that still name the old EXE.
-
-### Manual registration
-
-If you need to register by hand (e.g. a group-policy environment that restricts the GUI), generate the script pair first by clicking *Enable auto-run* once, then adapt the task to point at the generated VBS:
-
-```bat
-:: Step 1 — let the GUI write the .bat/.vbs pair.
-::   The GUI output panel shows the exact path it used, e.g.:
-::   [Auto-refresh] wrote hidden-run shim → D:\SpinDoctor\spindoctor-refresh-wheels.vbs
-::   Use that path in step 2.
-::
-:: Step 2 — register the task manually (replace the path with the one from step 1):
-schtasks /create /sc onlogon /tn "SpinDoctor Refresh Wheels" /rl LIMITED /f ^
-  /delay 0002:00 ^
-  /tr "wscript.exe //B \"D:\SpinDoctor\spindoctor-refresh-wheels.vbs\""
+```text
+spindoctor tools-audit --extra-path D:\ArcadeUtilities --show-unknown
 ```
 
-> **Where is the VBS?** The generated auto-refresh files live in `%USERPROFILE%\.spindoctor\`
-> for both frozen and source/`pip install` setups. On frozen installs the `.bat` embeds the running
-> EXE's full path plus `--run-tool`; it need not sit next to the EXE and works with only the GUI installed.
-> The GUI output panel always prints the exact path used — check there rather than guessing.
-
-> **Do not** register `cmd.exe /c bat.bat` directly — that runs at normal process priority and opens a console window, both of which can stall the cabinet frontend.
-
-Or drop the `.bat` files written by `install-tools` (or from `scripts/` for pip installs) into the Windows Startup folder (`shell:startup`) for a lower-ceremony alternative — these use normal priority and are also fine for Tools-menu or manual invocations.
-
-For macOS, schedule via `crontab -e` with an `@reboot` line, or write a launchd plist under `~/Library/LaunchAgents/`. For Linux, `crontab -e` or a `systemd --user` unit.
-
-### Shutdown safety
-
-Every XML write in SpinDoctor uses a **temp-file + atomic rename** pattern. The live `.xml` path is only replaced once the new content is fully written to a sibling `.tmp` file — so a forced shutdown or power cut mid-save leaves the previous complete version in place, never a truncated file. A timestamped `.bak` of the previous version is also kept alongside each XML so recovery is always one copy-paste away.
-
-By default each `*.tmp` file lives next to the real file (in the system's Databases folder). If you'd rather keep all temp files in one dedicated place:
-
-```bat
-spindoctor config set atomic_tmp_dir D:\SpinDoctorTemp
-```
-
-Or set it in the **Setup tab** of the GUI — it appears after the Backup root directory field. The folder must be on the **same drive** as `hyperspin_dir`; SpinDoctor silently falls back to writing next to the target for any file on a different drive.
-
-If a shutdown happens mid-write, any orphaned `*.tmp` files are detected by `spindoctor self-doctor` (they're flagged at WARN if older than 5 minutes) and cleaned up by `spindoctor self-doctor --fix` or `spindoctor cleanup run --include stale-atomic-writes --apply`. Both commands scan the configured `atomic_tmp_dir` as well as the Databases tree and `~/.spindoctor/`.
-
-## Tools audit — what other arcade utilities does this cabinet already have?
-
-A typical HyperSpin cabinet accumulates a graveyard of third-party utilities — Tur-RemoveDupes, FatMatch, FuzzyRename, HyperSync, Don's HyperTools, HyperT00ls, the CUE Renamer, Hypersearch, plus drivers and mappers like Sinden, DemulShooter, XPadder, JoyToKey, DS4Windows, XOutput. `spindoctor tools-audit` scans `HyperSpin\Tools`, `RocketLauncher\Modules`, the emulators tree, and Program Files for known tools and tells you which ones spindoctor already replaces.
-
-```bat
-spindoctor tools-audit
-spindoctor tools-audit --extra-path "C:\arcade-utils" --show-unknown
-```
-
-| Category | Tools | Replaced by |
-|---|---|---|
-| ROM / media tools | HyperSpin Checker, HyperT00ls, Don's HyperTools, FatMatch, Tur-Matcher, Tur-RemoveDupes, HyperSpin CUE Renamer, FuzzyRename 3, HyperSync, Hypersearch | `audit`, `verify`, `find-orphan-media`, `find-dupes`, `rename`, `fetch-meta`, `fetch-media`, `find-global` |
-| Light gun | Sinden Lightgun, DemulShooter, Arcade Guns Utility | `lightgun configure` (Sinden + DemulShooter wiring per system) |
-| Controllers / input | XPadder, JoyToKey, DS4Windows, XOutput, Arcade-One profiles, Atari Fightstick, Arcaid | not absorbed — keep external; expose via `install-tools` |
-| Frontend / config GUIs | HyperSpin, HyperHQ, RocketLauncherUI | not absorbed — keep external, useful for one-offs |
-| Shaders / visual | SweetFX | out of scope |
-
-The audit never uninstalls anything. Once you've confirmed the spindoctor equivalent works on your library, the listed ROM/media tools are safe to remove. Lightgun and input gear stay installed — spindoctor wraps them rather than replacing them.
-
-## Why these are kept separate from the package
-
-The actual logic lives in `spindoctor/favorites.py`, `spindoctor/recent.py`, and `spindoctor/playtime.py` so the rest of the package can import it. The `scripts/` folder holds only thin runnable shims and Windows convenience files — keeping them separate makes it obvious which files are package internals vs. things the cabinet end-user is meant to invoke directly.
+Inventories known utilities and suggests overlapping SpinDoctor commands.
+It never uninstalls software. Drivers, mappers, HyperHQ, RocketLauncherUI and
+gun software remain external dependencies where your cabinet uses them.

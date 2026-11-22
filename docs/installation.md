@@ -1,104 +1,50 @@
 # Installation
 
-SpinDoctor ships in three forms — pick whichever fits your cabinet:
-
-| Route | Best for | Python required? | Includes GUI? |
-|---|---|---|---|
-| 🪟 [Prebuilt Windows binaries](windows-binaries.md) | Cabinets where Python isn't an option. Win 7 SP1 / 8 / 8.1 / 10 / 11. | No | Yes — `spindoctor-gui.exe` |
-| 🐍 [Pip install from source](#pip-install-from-source) | Dev machines, custom builds, anyone already on Python 3.8+. Cross-platform. | Yes (≥ 3.8) | Yes — `spindoctor-gui` console script |
-| 📂 [Source-on-disk, no install](#running-without-pip-install) | Locked-down boxes where Python is available but `pip install` isn't. | Yes (≥ 3.8) | Yes — `python -m spindoctor.gui` |
-
-> Once installed, you can use SpinDoctor through the **GUI launcher** (double-click `spindoctor-gui.exe` or run `spindoctor-gui`) or the **CLI** (`spindoctor …` from `cmd.exe`). They share the same `~/.spindoctor/config.json`, so anything you do in one is visible to the other.
-
----
+For Windows without Python, use the [standalone binaries](windows-binaries.md).
+Source installs require Python 3.8+; the cabinet integration target is Windows.
+Library-management code also runs on macOS/Linux, but Windows hardware,
+Task Scheduler and game-launch integration do not.
 
 ## Pip install from source
 
-**Requirements:** Python 3.8+. Windows is the primary target (HyperSpin is a Windows app), but the CLI and GUI both run on macOS and Linux for development and testing.
-
-```bat
-git clone https://github.com/phillram/spindoctor C:\spindoctor
-cd C:\spindoctor
-pip install -e .[all]
-```
-
-`[all]` pulls in every optional extra. If you'd rather pick à-la-carte:
-
-| Extra | Pulls in | What it enables |
-|---|---|---|
-| `[xml]` | `lxml` | Lossless XML round-trips — preserves comments and attribute order written by HyperHQ. Strongly recommended. |
-| `[archives]` | `py7zr`, `rarfile` | `verify` and `find-dupes --by-content` can hash inside `.7z` / `.rar`. `.zip`, `.gz`, and `.chd` are built-in either way. |
-| `[preview]` | `Pillow` | `spindoctor preview --format png` builds composited PNG contact sheets. HTML mode works without it. |
-| `[gui]` | `tkinterdnd2` | Drag-a-folder-from-Explorer support on the GUI's Setup tab. The GUI works without it — Browse and paste still work. |
-| `[all]` | All of the above | Everything in one install. |
-
-```bat
-pip install -e .[archives]
-pip install -e .[preview]
-```
-
-The GUI uses Tkinter, which ships with the standard python.org Windows installer — no extra dependency. On Linux you may need `apt install python3-tk`; on macOS the official Python installer bundles it.
-
-## Verify
-
-```bat
+```text
+git clone https://github.com/phillram/spindoctor
+cd spindoctor
+python -m pip install -e ".[all]"
 spindoctor --version
-spindoctor systems         :: lists configured systems (after `config init`)
-spindoctor tools-audit     :: inventory of third-party arcade utilities, read-only
-spindoctor-gui --version   :: confirms the GUI binary loads (without opening a window)
+spindoctor-gui
 ```
 
-`tools-audit` is the safest first command on a cabinet — it never touches files, and the report tells you which legacy tools (Tur-RemoveDupes, FatMatch, FuzzyRename, HyperSync, Sinden, DemulShooter, …) are now redundant with built-in spindoctor commands. See [Standalone tools → Tools audit](standalone-tools.md#tools-audit--what-other-arcade-utilities-does-this-cabinet-already-have).
+The GUI needs Tkinter (usually included with Windows Python; install your OS's
+Tk package on Linux). A virtual environment is recommended.
+
+| Extra | Adds |
+|---|---|
+| `xml` | `lxml`, preserving XML comments and attribute order |
+| `archives` | `.7z`/`.rar` reading (`rarfile` can need an external extraction tool) |
+| `preview` | Pillow for PNG previews |
+| `gui` | Optional folder drag-and-drop |
+| `all` | All runtime extras above |
+| `dev` | pytest and lxml; see [testing](testing.md) for other tools |
+
+Base install: `python -m pip install -e .`. ZIP/GZip reading and CHD-header
+verification need no archive extra.
 
 ## Console scripts installed
 
-| Command | Purpose |
-|---|---|
-| `spindoctor` | Full CLI |
-| `spindoctor-gui` | Tkinter GUI launcher — see [GUI walkthrough](gui.md) for the tab tour, first-run wizard, menubar, and keyboard shortcuts. |
-| `spindoctor-fav` | Standalone Favorites wheel manager |
-| `spindoctor-recent` | Standalone Recently Played rebuild |
-| `spindoctor-stats` | Standalone playtime reports + Most Played wheel |
+`spindoctor`, `spindoctor-gui`, `spindoctor-fav`, `spindoctor-recent` and
+`spindoctor-stats`. The three wheel helpers share the main configuration.
 
-The three standalone wheel scripts are minimal `argparse` wrappers around the same library functions — useful for boot triggers and Tools menu entries because they skip the rich/click overhead. See [Standalone tools](standalone-tools.md).
+## Running without pip install
 
-`spindoctor-gui` shells out to `spindoctor` (and the wheel scripts) under the hood, so anything you can do via a button or form in the window is also available — and identical — on the command line. See the [GUI walkthrough](gui.md) for a tab-by-tab tour (the layout is the same on all platforms).
+From the checkout root, with dependencies installed:
 
-Other commonly-used commands that ship only inside the full `spindoctor` CLI (no separate console script):
-
-| Command | Purpose | Read-only? |
-|---|---|---|
-| `spindoctor tools-audit` | Inventory installed arcade utilities; flags spindoctor replacements | yes |
-| `spindoctor find-global "title"` | Search every system's HyperSpin database for a title | yes |
-| `spindoctor lightgun detect / audit / configure` | Wire Sinden + DemulShooter into per-system RocketLauncher hooks | `detect`/`audit` read-only; `configure` dry-run by default |
-
-See [Light guns](lightgun.md) for the Sinden / DemulShooter walkthrough.
-
-## Running without `pip install`
-
-If you can't (or don't want to) install the package, the wrappers in `scripts/` work directly from a checkout — they `sys.path.insert` the repo root so `import spindoctor` resolves:
-
-```bat
-python C:\spindoctor\scripts\spindoctor-fav.py rebuild --apply
-python -m spindoctor.cli systems
-python -m spindoctor.gui                 :: GUI launcher
+```text
+python -m spindoctor.cli --help
+python -m spindoctor.gui
+python scripts/spindoctor-fav.py rebuild
+python scripts/spindoctor-recent.py rebuild
+python scripts/spindoctor-stats.py summary
 ```
 
-You still need Python and the runtime dependencies. From the repo root:
-
-```bat
-pip install click rich requests lxml
-```
-
-(Or run `pip install -e .` once to grab everything declared in `pyproject.toml`.)
-
-## Windows binaries (no Python required)
-
-No Python installation is needed for the release bundles. Use the
-[Windows binary guide](windows-binaries.md) for the current compatibility table,
-download names, extraction layout, updates and self-build instructions. Both
-bundles ship two independent single-file EXEs; either can be copied anywhere alone.
-
-After extraction, double-click `spindoctor-gui.exe` or open a terminal for
-`spindoctor.exe`. The [GUI walkthrough](gui.md) is shared by binary and source
-installs; there is no separate binary-only tab tour.
+Use **Setup** or `spindoctor config init` next. See [first-time setup](setup.md).

@@ -35,13 +35,19 @@ jobs:
         run: ruff check .
 
   test:
-    name: Tests (${{ matrix.os }} / Python ${{ matrix.python-version }})
+    # Job names are the required status checks in main's branch protection;
+    # renaming one leaves PRs stuck on "Expected — waiting for status".
+    # check-os keeps a leg's reported name stable when its runner is pinned.
+    name: Tests (${{ matrix.check-os || matrix.os }} / Python ${{ matrix.python-version }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       # Coverage rationale:
-      # * ubuntu-latest × {3.8, 3.12} — catches Python 3.8 stdlib/syntax
-      #   regressions (the Win 7 cabinet floor) and the modern interpreter.
+      # * ubuntu-22.04 × 3.8 — catches Python 3.8 stdlib/syntax regressions
+      #   (the Win 7 cabinet floor). Pinned off ubuntu-latest: that label moved
+      #   to Ubuntu 26.04, where actions/setup-python no longer ships a 3.8
+      #   build, so the job failed at setup time on every PR (PRs #568–#570).
+      # * ubuntu-latest × 3.12 — the modern interpreter.
       # * windows-2022 × 3.12 — catches Windows-specific path / encoding /
       #   filesystem behaviour. We don't run windows-2022 × 3.8 here because
       #   Defender + NTFS make it 4× slower than 3.12 (≈21min vs ≈5min)
@@ -49,7 +55,8 @@ jobs:
       #   wouldn't already catch.
       matrix:
         include:
-          - os: ubuntu-latest
+          - os: ubuntu-22.04
+            check-os: ubuntu-latest
             python-version: '3.8'
           - os: ubuntu-latest
             python-version: '3.12'

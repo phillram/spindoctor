@@ -7,7 +7,7 @@ description: Build, flash-check and sign LEDBlinky .lwax animations using the co
 
 Use the maintained implementation rather than duplicating animation geometry or
 reconstructing an old conversation. User-facing options and signing steps live in
-[Command reference](../../../docs/commands.md#ledblinky-lwax-fade); hardware and
+[Command reference](../../../docs/commands.md#ledblinky); hardware and
 format notes live in the
 [example cabinet reference](../../../docs/cabinet-architecture-reference.md#ledblinky-animation-files-lwax).
 
