@@ -10,6 +10,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - Refresh and shorten current guides, replace all GUI screenshots with the
   15-page sidebar layout, and add generated-command/link/screenshot drift checks.
+- **Pinball programs have their own page.** [docs/pinball.md](docs/pinball.md) covers
+  Future Pinball through BAM (default keys that clash with a keyboard-encoder panel,
+  and the type library that follows whichever copy ran last) and Visual Pinball X
+  10.8.0 under RocketLauncher (the stock module's `/exit`, the `-Ini` switch, its
+  scan-code keys, and the game list RocketLauncher wants). Troubleshooting links to it.
 
 ### Changed
 
