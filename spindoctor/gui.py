@@ -1458,6 +1458,9 @@ class _SpinDoctorGUI:
         # guided-setup aid that outlived its usefulness once cabinets are
         # configured and owners return only to tweak things.
         self._tab_base_names: list[str] = []
+        # Pages defer their widget construction until first selected —
+        # {label: (inner_frame, builder)}. See _ensure_page_built.
+        self._lazy_pages: dict = {}
 
         # Setup-tab field vars; populated in _build_setup_tab().
         self._setup_vars: dict[str, "tk_mod.StringVar"] = {}
@@ -2126,7 +2129,7 @@ class _SpinDoctorGUI:
         try:
             if not CONFIG_FILE.exists():
                 setup_idx = self._tab_base_names.index("Setup")
-                self._nb.select(setup_idx)
+                self._select_tab(setup_idx)
         except Exception:  # noqa: BLE001 — best-effort focus only
             pass
 
@@ -2586,6 +2589,9 @@ class _SpinDoctorGUI:
         nb = self.ttk.Notebook(main_paned, style="Sidebar.TNotebook")
         self._help_bodies: list[tuple[object, object]] = []
         self._nb = nb
+        # First tab-change binding, so deferred pages exist before the
+        # later add="+" handlers (autoload, sidebar sync) touch them.
+        nb.bind("<<NotebookTabChanged>>", self._on_tab_changed, add="+")
 
         # StringVar backing the status bar label — created early so
         # tab builders can safely call self._set_status() during
@@ -2870,9 +2876,17 @@ class _SpinDoctorGUI:
         # cleaner when we restore after all pages exist).
         if self._restore_page in self._tab_base_names:
             try:
-                self._nb.select(self._tab_base_names.index(self._restore_page))
+                self._select_page(self._restore_page)
             except Exception:  # noqa: BLE001 - guard against teardown races
                 pass
+        # Build the page the session opens on (the restored page, or
+        # Setup by default); every other page builds on first visit.
+        try:
+            self._ensure_page_built(
+                self._tab_base_names[int(self._nb.index("current"))]
+            )
+        except Exception:  # noqa: BLE001 - page builds on next selection
+            pass
 
     def _build_sidebar(self, nb) -> None:
         side = self.ttk.Frame(self.root, style="Sidebar.TFrame", padding=8)
@@ -2951,7 +2965,7 @@ class _SpinDoctorGUI:
                 btn = self.ttk.Radiobutton(
                     side, text=name, value=index_of[name],
                     variable=self._nav_var, style="Nav.Toolbutton",
-                    command=lambda: self._nb.select(self._nav_var.get()),
+                    command=lambda: self._select_tab(self._nav_var.get()),
                 )
                 btn.pack(fill="x")
                 self._nav_buttons[name] = btn
@@ -3055,12 +3069,57 @@ class _SpinDoctorGUI:
 
     def _select_page(self, name: str) -> None:
         if name in self._tab_base_names:
+            self._ensure_page_built(name)
             self._nb.select(self._tab_base_names.index(name))
 
     def _select_tab(self, idx: int) -> None:
         """Switch to tab at zero-based index, ignoring out-of-range."""
         if 0 <= idx < len(self._tab_base_names):
+            self._ensure_page_built(self._tab_base_names[idx])
             self._nb.select(idx)
+
+    def _on_tab_changed(self, _event=None) -> None:
+        """Build a deferred page before other tab-change handlers run.
+
+        Bound first on the notebook, so handlers bound later with
+        ``add=\"+\"`` (game-wheel autoload, sidebar sync) always see the
+        selected page's widgets.
+        """
+        try:
+            self._ensure_page_built(
+                self._tab_base_names[int(self._nb.index("current"))]
+            )
+        except Exception:  # noqa: BLE001 - widget race during teardown
+            pass
+
+    def _ensure_page_built(self, name: str) -> None:
+        """Construct a deferred page's widgets the first time it is shown."""
+        pending = getattr(self, "_lazy_pages", None)
+        if not pending or name not in pending:
+            return
+        inner, builder = pending.pop(name)
+        builder(inner).pack(fill="both", expand=True)
+        # Eagerly built pages get context menus and type-ahead from the
+        # window-wide walks at the end of _build_layout; a lazily built
+        # page missed those, so scope the same walks to it now.
+        try:
+            _walk_attach_context_menus(inner, self.tk)
+            _walk_attach_combobox_typeahead(inner)
+        except Exception:  # noqa: BLE001 - cosmetic affordances only
+            pass
+        # Sync the new page's pickers with the latest system scan/filter
+        # and its help text with the View-menu toggle.
+        try:
+            self._apply_system_filter()
+        except Exception:  # noqa: BLE001 - next scan repopulates
+            pass
+        if self._show_help_var.get():
+            self._apply_help_visibility()
+
+    def _build_all_pages(self) -> None:
+        """Build every deferred page now (tests, whole-window walks)."""
+        for name in list(getattr(self, "_lazy_pages", {})):
+            self._ensure_page_built(name)
 
     def _copy_output(self) -> None:
         """Copy the current Output panel contents to the clipboard."""
@@ -3099,8 +3158,11 @@ class _SpinDoctorGUI:
         # pack that frame edge-to-edge.
         inner = self.ttk.Frame(canvas)
         self._page_header(inner, label).pack(fill="x")
-        builder_frame = builder(inner)
-        builder_frame.pack(fill="both", expand=True)
+        # The page's own widgets are built on first selection — building
+        # all 15 pages up front costs ~0.5s of Tk layout before the
+        # window can paint. Cross-page readers guard with getattr for
+        # exactly this reason.
+        self._lazy_pages[label] = (inner, builder)
 
         inner_id = canvas.create_window((0, 0), window=inner, anchor="nw")
 

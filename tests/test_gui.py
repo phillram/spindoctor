@@ -948,6 +948,10 @@ def test_gui_constructs_against_real_tk(monkeypatch):
     monkeypatch.setattr(autostart_mod, "task_exists", lambda name=None: False)
 
     app = gui._SpinDoctorGUI(tk, ttk, filedialog, messagebox, scrolledtext)
+    # Pages build lazily on first selection; force them all so the
+    # assertions below (and the builder-crash regression guard) still
+    # cover every tab.
+    app._build_all_pages()
 
     try:
         app.root.update_idletasks()
@@ -1016,6 +1020,52 @@ def test_gui_constructs_against_real_tk(monkeypatch):
     finally:
         app.root.destroy()
 
+def test_pages_build_lazily_on_first_selection(monkeypatch):
+    """Pages other than the opening one defer widget construction.
+
+    Startup cost is the whole point of the deferral, so pin both halves:
+    unvisited pages have no widgets yet, and selecting a page (by
+    sidebar/keyboard path or by a direct notebook tab click) builds it
+    exactly once before the autoload/sidebar-sync handlers run.
+    """
+    try:
+        import tkinter as tk
+        from tkinter import filedialog, messagebox, scrolledtext, ttk
+    except ImportError:
+        pytest.skip("Tkinter not available")
+
+    monkeypatch.setattr(gui._SpinDoctorGUI, "_start_update_check", lambda self: None)
+    monkeypatch.setattr(autostart_mod, "task_exists", lambda name=None: False)
+
+    app = gui._SpinDoctorGUI(tk, ttk, filedialog, messagebox, scrolledtext)
+    try:
+        assert len(app._tab_base_names) == 15
+        opening = app._tab_base_names[int(app._nb.index("current"))]
+        # History fills its own space so it stays eager; everything else
+        # except the opening page is deferred.
+        assert set(app._lazy_pages) == (
+            set(app._tab_base_names) - {opening, "History"}
+        )
+        assert not hasattr(app, "_gwm_system_var")
+
+        # Sidebar / Ctrl+N / nav path.
+        app._select_page("Games")
+        assert "Games" not in app._lazy_pages
+        assert app._gwm_system_var is not None
+        built_tree = app._gwm_tree
+        app._select_page(opening)
+        app._select_page("Games")
+        # Re-selecting does not rebuild the page's widgets.
+        assert app._gwm_tree is built_tree
+
+        # A direct notebook tab click takes the tab-change binding.
+        idx = app._tab_base_names.index("Metadata & Media")
+        app._nb.select(idx)
+        app.root.update()
+        assert "Metadata & Media" not in app._lazy_pages
+        assert app._meta_system_var is not None
+    finally:
+        app.root.destroy()
 
 def test_gui_menu_commands_are_safe_to_invoke(monkeypatch):
     """Walk every File / View / Help menu entry and invoke it.
@@ -1066,6 +1116,8 @@ def test_gui_menu_commands_are_safe_to_invoke(monkeypatch):
                         "_manual_update_check", lambda self: None)
 
     app = gui._SpinDoctorGUI(tk, ttk, filedialog, messagebox, scrolledtext)
+    # Menu commands must work against fully built pages.
+    app._build_all_pages()
     callback_errors = []
     monkeypatch.setattr(
         app.root, "report_callback_exception",
@@ -1415,6 +1467,8 @@ def _build_gui_for_test(monkeypatch):
     monkeypatch.setattr(autostart_mod, "task_exists", lambda name=None: False)
 
     app = gui._SpinDoctorGUI(tk, ttk, filedialog, messagebox, scrolledtext)
+    # Tests reach page widgets directly; build every page up front.
+    app._build_all_pages()
     return app, tk
 
 
