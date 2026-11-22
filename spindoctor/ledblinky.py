@@ -51,7 +51,7 @@ from ._text import read_editable_text as _read_editable_text, write_windows_text
 from .config import CONFIG_DIR, Config
 
 if TYPE_CHECKING:
-    from .ledblinky_library import Library, WheelScope
+    from .ledblinky_library import Library, RawIni, WheelScope
 
 # Hide the console window when ``subprocess.run`` launches MAME from
 # the GUI on Windows. Without this, every ``audit`` / ``controls
@@ -896,6 +896,7 @@ def audit_coverage(
     library: "Optional[Library]" = None,
     listxml: Optional[dict] = None,
     scope: "Optional[WheelScope]" = None,
+    live: "Optional[tuple[RawIni, RawIni]]" = None,
 ) -> list[CoverageRow]:
     """Return per-ROM coverage info: existing entries vs. library / -listxml.
 
@@ -906,9 +907,7 @@ def audit_coverage(
     """
     from . import ledblinky_library as _library
 
-    src_base = Path(config.ledblinky_dir) if config.ledblinky_dir else None
-    live_controls = _library.RawIni.load(src_base / CONTROLS_INI_NAME if src_base else None)
-    live_colors = _library.RawIni.load(src_base / COLORS_INI_NAME if src_base else None)
+    live_controls, live_colors = live if live is not None else _library.load_live_inis(config)
     lib = library if library is not None else _library.Library()
     if listxml is None:
         listxml = load_listxml_for_system(config, "MAME")
@@ -2169,14 +2168,6 @@ def normalize_colors_ini(
 
 
 # ─── Colors.ini default-entry fill ────────────────────────────────────────────
-
-# Controls that make up the "default" entry for an unsupported ROM.
-_DEFAULT_FILL_CONTROLS = (
-    ("P1_BUTTON1", "P1_BUTTON2", "P1_BUTTON3",
-     "P1_BUTTON4", "P1_BUTTON5", "P1_BUTTON6"),  # indexed, trimmed to n_buttons
-    ("P1_JOYSTICK", "P1_START", "P1_COIN"),       # always included
-)
-
 
 @dataclass
 class FillDefaultsResult:

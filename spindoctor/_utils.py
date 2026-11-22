@@ -16,10 +16,13 @@ shape looks similar across modules; their semantics diverge.
 """
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 import shutil
+import stat
 import tempfile
+import zlib
 from pathlib import Path
 from typing import Optional
 
@@ -96,6 +99,37 @@ def win_safe_stem(name: str) -> str:
     return name + "_" if name.upper() in _WIN_RESERVED_NAMES else name
 
 
+def export_safe_stem(name: str) -> str:
+    """Replace forbidden filename characters for human-facing exports."""
+    for ch in _WIN_FILENAME_FORBIDDEN:
+        name = name.replace(ch, "_")
+    return name.strip().rstrip(".") or "_"
+
+
+def hash_stream(stream, *, want_sha1: bool = True, want_crc: bool = False,
+                chunk: int = 1 << 20, body=None) -> tuple[Optional[str], Optional[str], int]:
+    """Return (SHA1, CRC32, size), optionally feeding a second digest consumer."""
+    sha1 = hashlib.sha1() if want_sha1 else None
+    crc = 0
+    size = 0
+    while True:
+        block = stream.read(chunk)
+        if not block:
+            break
+        if sha1 is not None:
+            sha1.update(block)
+        if want_crc:
+            crc = zlib.crc32(block, crc)
+        size += len(block)
+        if body is not None:
+            body.update(block)
+    return (
+        sha1.hexdigest() if sha1 is not None else None,
+        f"{crc & 0xFFFFFFFF:08x}" if want_crc else None,
+        size,
+    )
+
+
 def format_bytes(n: int) -> str:
     """Render a non-negative byte count as a short human string.
 
@@ -143,18 +177,28 @@ def free_bytes(path: Path) -> int:
 
 def dir_size(path: Path) -> int:
     """Total bytes in a file or tree, skipping missing or unreadable files."""
-    if not path.exists():
+    try:
+        info = path.stat()
+    except OSError:
         return 0
-    if path.is_file():
-        try:
-            return path.stat().st_size
-        except OSError:
-            return 0
+    if stat.S_ISREG(info.st_mode):
+        return info.st_size
     total = 0
-    for p in path.rglob("*"):
+    pending = [path]
+    while pending:
+        directory = pending.pop()
         try:
-            if p.is_file():
-                total += p.stat().st_size
+            with os.scandir(directory) as entries:
+                for entry in entries:
+                    try:
+                        if entry.is_dir(follow_symlinks=False):
+                            pending.append(entry.path)
+                        else:
+                            info = Path(entry.path).stat()
+                            if stat.S_ISREG(info.st_mode):
+                                total += info.st_size
+                    except OSError:
+                        pass
         except OSError:
             pass
     return total

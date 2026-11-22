@@ -21,7 +21,6 @@ accepted on the command line for convenience.
 """
 from __future__ import annotations
 
-import hashlib
 import json
 import shutil
 from dataclasses import asdict, dataclass, field
@@ -32,7 +31,7 @@ from typing import Iterable, Optional
 from ._utils import format_bytes, free_bytes  # noqa: F401 — re-export
 from .config import CONFIG_DIR, Config, load_config, save_config
 from ._utils import dir_size as _dir_size
-from ._utils import is_within, move_no_replace, numbered_path_key, unique_path
+from ._utils import hash_stream, is_within, move_no_replace, numbered_path_key, unique_path
 from ._undo import begin_step, checkpoint, complete_step, finish_undo, undo_entries
 
 
@@ -147,7 +146,6 @@ def _resolve_subfolder(component: str, src: Path, preserve_names: bool) -> str:
         if name:
             return name
     return COMPONENT_SUBFOLDER[component]
-
 
 
 
@@ -284,11 +282,8 @@ def _plan_roms_per_system(
 
 
 def _sha1(path: Path, chunk: int = 1024 * 1024) -> str:
-    h = hashlib.sha1()
     with path.open("rb") as f:
-        for block in iter(lambda: f.read(chunk), b""):
-            h.update(block)
-    return h.hexdigest()
+        return hash_stream(f, chunk=chunk)[0]
 
 
 def _verify_tree(src: Path, dest: Path) -> list[str]:

@@ -18,30 +18,30 @@ import requests
 from requests.adapters import HTTPAdapter
 
 
-class _TLS12Adapter(HTTPAdapter):
-    """HTTPAdapter that pins a TLS 1.2 floor on its connection pool.
+def _tls12_context() -> ssl.SSLContext:
+    """Default context with a TLS 1.2 floor.
 
     Falls back silently to the platform default when the running Python
     lacks the ``ssl.TLSVersion`` enum (3.6 and earlier — below our
     supported floor, but guarded for safety on exotic OpenSSL builds).
     """
+    ctx = ssl.create_default_context()
+    try:
+        ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+    except (AttributeError, ValueError):
+        pass
+    return ctx
+
+
+class _TLS12Adapter(HTTPAdapter):
+    """HTTPAdapter that pins a TLS 1.2 floor on its connection pool."""
 
     def init_poolmanager(self, *args, **kwargs):
-        ctx = ssl.create_default_context()
-        try:
-            ctx.minimum_version = ssl.TLSVersion.TLSv1_2
-        except (AttributeError, ValueError):
-            pass
-        kwargs["ssl_context"] = ctx
+        kwargs["ssl_context"] = _tls12_context()
         return super().init_poolmanager(*args, **kwargs)
 
     def proxy_manager_for(self, *args, **kwargs):
-        ctx = ssl.create_default_context()
-        try:
-            ctx.minimum_version = ssl.TLSVersion.TLSv1_2
-        except (AttributeError, ValueError):
-            pass
-        kwargs["ssl_context"] = ctx
+        kwargs["ssl_context"] = _tls12_context()
         return super().proxy_manager_for(*args, **kwargs)
 
 

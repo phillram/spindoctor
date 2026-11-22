@@ -8,7 +8,7 @@ import shutil
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 # Switch Windows stdio to UTF-8 before Rich's Console is constructed below —
 # otherwise the cp1252 default codepage can't encode the tree glyphs (✓ ⚠ ✗)
@@ -22,16 +22,11 @@ from rich import box
 from rich.console import Console
 from rich.markup import escape
 from rich.panel import Panel
-from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 from rich.table import Table
 
 from . import __app_name__, __version__
-from .audit import RomPathIndex, SystemAuditResult, audit_system, build_stub_entry
 from .config import (
     Config, MEDIA_TYPES, get_game_override, get_systems, load_config, save_config,
-)
-from .scraper import (
-    extract_screenscraper_id, extract_thegamesdb_id, extract_steam_app_id,
 )
 from .database import GameEntry, HyperspinDatabase, load_database
 from ._utils import unique_path, atomic_write_bytes
@@ -39,12 +34,19 @@ from ._text import read_editable_text, write_windows_text
 from .backup import find_sidecars as _find_sidecars, sidecar_pattern as _sidecar_pattern
 from .wheel_start import MODES as WHEEL_START_MODES
 
+if TYPE_CHECKING:
+    from .audit import SystemAuditResult
+
 console = Console(soft_wrap=True)
 err_console = Console(stderr=True, soft_wrap=True)
 
 
-def _make_progress(*columns, **kwargs):
-    """Build a Rich ``Progress`` that disables Live in non-tty mode.
+def _make_progress(*, bar=True, count=False, elapsed=False, bold=False, **kwargs):
+    """Build a spinner + description Rich ``Progress`` that disables Live in non-tty mode.
+
+    ``bar``/``count``/``elapsed`` append a bar, a ``done/total`` counter and an
+    elapsed clock. ``rich.progress`` is imported here so commands that never
+    show progress don't pay for it at startup.
 
     Rich's Live display emits ANSI cursor-control sequences and
     carriage-return-terminated progress updates. When stdout is a pipe
@@ -59,6 +61,15 @@ def _make_progress(*columns, **kwargs):
     TTY users see no change. ``--apply`` callers piping output to a
     file or the GUI Output panel get clean, newline-terminated lines.
     """
+    from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
+
+    columns = [SpinnerColumn(), TextColumn("[bold]{task.description}" if bold else "{task.description}")]
+    if bar:
+        columns.append(BarColumn())
+    if count:
+        columns.append(TextColumn("{task.completed}/{task.total}"))
+    if elapsed:
+        columns.append(TimeElapsedColumn())
     kwargs.setdefault("disable", not sys.stdout.isatty())
     kwargs.setdefault("console", console)
     return Progress(*columns, **kwargs)
@@ -113,6 +124,55 @@ def _check_config(config: Config) -> None:
         sys.exit(1)
 
 
+def _checked_cfg() -> Config:
+    config = _cfg()
+    _check_config(config)
+    return config
+
+
+def _save_system_db(db, config, system_name, output_dir=None) -> Path:
+    tmp_dir = config.effective_atomic_tmp_dir
+    if output_dir:
+        return db.save(
+            output_path=Path(output_dir) / "Databases" / system_name / f"{system_name}.xml",
+            backup=False, tmp_dir=tmp_dir,
+        )
+    backup_dir = Path(config.backup_dir) if getattr(config, "backup_dir", "") else None
+    return db.save(backup=config.backup_before_modify,
+                   backup_dir=backup_dir, tmp_dir=tmp_dir)
+
+
+def _print_dry_run(apply_changes, message="No files will be written."):
+    if not apply_changes:
+        console.print(
+            f"[yellow bold][DRY RUN][/yellow bold] {message} "
+            "Re-run with [cyan]--apply[/cyan] to commit."
+        )
+
+
+def _write_dict_csv(path, fields, rows, *, extrasaction="raise"):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fields, extrasaction=extrasaction)
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def _transfer_plan_table(items, title, src_label="From", dest_label="To") -> Table:
+    """Component / source / destination / size table for backup, restore and migrate plans."""
+    from .backup import format_bytes
+
+    tbl = Table(title=title, box=box.SIMPLE)
+    tbl.add_column("Component", style="cyan")
+    tbl.add_column(src_label, style="yellow")
+    tbl.add_column("→")
+    tbl.add_column(dest_label, style="green")
+    tbl.add_column("Size", justify="right")
+    for item in items:
+        tbl.add_row(item.component, item.src, "→", item.dest, format_bytes(item.size_bytes))
+    return tbl
+
+
 def _status(value: bool) -> str:
     return "[green]✓[/green]" if value else "[red]✗[/red]"
 
@@ -153,6 +213,8 @@ def _auto_export_audit(
         paths_to_write.append(export_dir / f"audit_{stamp}.csv")
     if not paths_to_write:
         return
+    from .audit import RomPathIndex, audit_system
+
     rom_index = RomPathIndex(config)
     results = [audit_system(s, config, check_media_flag=True, rom_index=rom_index) for s in systems]
     if game_filter:
@@ -165,6 +227,35 @@ def _auto_export_audit(
             results, report_path, download_log=download_log, before_log=before_log,
         )
         console.print(f"\n[dim]Audit report:[/dim] {report_path}")
+
+
+def _system_options(func):
+    """The shared ``--system/-s`` + ``--all`` pair, in that order."""
+    func = click.option("--all", "all_systems", is_flag=True)(func)
+    return click.option("--system", "-s", default=None)(func)
+
+
+_LB_APPLY_HELP = "Commit writes (default: dry-run preview)."
+_LB_BACKUP_HELP = "Skip the automatic .bak backup before writing."
+
+
+def _apply_backup_options(apply_help, backup_help):
+    """``--apply`` then ``--no-backup``, with the given help texts."""
+    def decorate(func):
+        func = click.option("--no-backup", is_flag=True, help=backup_help)(func)
+        return click.option("--apply", "apply_changes", is_flag=True, help=apply_help)(func)
+    return decorate
+
+
+def _game_move_options(func):
+    """``--apply``, ``--verbose/-v`` and ``--output-dir`` for the game reorder commands."""
+    func = click.option("--output-dir", type=click.Path(), default=None,
+                        help="Write the edited DB into <output-dir>/Databases/<system>/ "
+                             "instead of the live HyperSpin tree.")(func)
+    func = click.option("--verbose", "-v", is_flag=True,
+                        help="Show full game metadata and file path.")(func)
+    return click.option("--apply", "apply_changes", is_flag=True,
+                        help="Commit the reorder. Without this flag, dry-run only.")(func)
 
 
 # ─── root command ─────────────────────────────────────────────────────────────
@@ -708,6 +799,8 @@ def config_game_override_set(system_name, game_name,
         )
         sys.exit(1)
 
+    from .scraper import extract_screenscraper_id, extract_steam_app_id, extract_thegamesdb_id
+
     screenscraper_id: Optional[int] = None
     if screenscraper_id_raw is not None:
         screenscraper_id = extract_screenscraper_id(screenscraper_id_raw)
@@ -904,8 +997,7 @@ def emulator_title_list():
 @cli.command("systems")
 def list_systems():
     """List all detected systems."""
-    config = _cfg()
-    _check_config(config)
+    config = _checked_cfg()
     systems = get_systems(config)
     if not systems:
         console.print("[yellow]No systems found.[/yellow]")
@@ -929,8 +1021,7 @@ def list_systems():
 # ─── audit ────────────────────────────────────────────────────────────────────
 
 @cli.command("audit")
-@click.option("--system", "-s", default=None)
-@click.option("--all", "all_systems", is_flag=True)
+@_system_options
 @click.option("--no-media", is_flag=True, help="Skip media checks (faster).")
 @click.option("--no-fuzzy", is_flag=True, help="Skip fuzzy ROM/DB matching.")
 @click.option("--detailed", is_flag=True,
@@ -950,14 +1041,14 @@ def audit(system, all_systems, no_media, no_fuzzy, detailed, report, show_matche
     Add --detailed to append a per-file breakdown (path, size, dimensions,
     video length) for every game that needs attention.
     """
-    config = _cfg()
-    _check_config(config)
+    config = _checked_cfg()
     systems = _resolve_systems(config, system, all_systems)
+
+    from .audit import RomPathIndex, audit_system
 
     all_results: list[SystemAuditResult] = []
     rom_index = RomPathIndex(config)  # one folder listing per run, however many wheels share it
-    with _make_progress(SpinnerColumn(), TextColumn("{task.description}"),
-                  BarColumn(), TimeElapsedColumn(), console=console) as prog:
+    with _make_progress(elapsed=True) as prog:
         task = prog.add_task("Auditing...", total=len(systems))
         for sys_name in systems:
             prog.update(task, description=f"Auditing [cyan]{sys_name}[/cyan]...")
@@ -1167,14 +1258,11 @@ def _write_audit_csv(
 
 def _write_ledblinky_audit_csv(rows, path: Path) -> None:
     """Write a LEDBlinky coverage audit to a CSV file."""
-    path.parent.mkdir(parents=True, exist_ok=True)
     fields = ["rom_name", "in_listxml", "has_input", "in_controls_ini", "in_colors_ini", "status",
               "in_library", "wheels", "parent_of"]
-    with open(path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=fields)
-        writer.writeheader()
+    def csv_rows():
         for row in rows:
-            writer.writerow({
+            yield {
                 "rom_name": row.rom_name,
                 "in_listxml": row.in_listxml,
                 "has_input": row.has_input,
@@ -1184,17 +1272,16 @@ def _write_ledblinky_audit_csv(rows, path: Path) -> None:
                 "in_library": row.in_library,
                 "wheels": "; ".join(row.wheels),
                 "parent_of": row.parent_of,
-            })
+            }
+
+    _write_dict_csv(path, fields, csv_rows())
 
 
 def _write_cleanup_audit_csv(reports, path: Path) -> None:
     """Write a cleanup audit summary to a CSV file."""
     from .cleanup import format_size
-    path.parent.mkdir(parents=True, exist_ok=True)
     fields = ["category", "label", "safe", "file_count", "total_bytes", "total_size", "oldest", "newest", "location"]
-    with open(path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=fields)
-        writer.writeheader()
+    def csv_rows():
         for r in reports.values():
             import datetime as _dt
             oldest = (
@@ -1205,7 +1292,7 @@ def _write_cleanup_audit_csv(reports, path: Path) -> None:
                 _dt.datetime.fromtimestamp(r.newest_mtime).strftime("%Y-%m-%d %H:%M:%S")
                 if r.newest_mtime is not None else ""
             )
-            writer.writerow({
+            yield {
                 "category": r.key,
                 "label": r.label,
                 "safe": r.safe,
@@ -1215,17 +1302,16 @@ def _write_cleanup_audit_csv(reports, path: Path) -> None:
                 "oldest": oldest,
                 "newest": newest,
                 "location": r.location,
-            })
+            }
+
+    _write_dict_csv(path, fields, csv_rows())
 
 
 def _write_tools_audit_csv(result, path: Path) -> None:
     """Write a tools-audit result to a CSV file."""
     from . import tools_audit as ta
-    path.parent.mkdir(parents=True, exist_ok=True)
     fields = ["category", "tool_name", "replaced_by", "notes", "path"]
-    with open(path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=fields)
-        writer.writeheader()
+    def csv_rows():
         grouped = result.by_category()
         for category in ta.CATEGORY_ORDER:
             items = grouped.get(category)
@@ -1234,13 +1320,15 @@ def _write_tools_audit_csv(result, path: Path) -> None:
             for finding in items:
                 entry = finding.entry
                 paths = "; ".join(str(p) for p in finding.matched_executables) if finding.matched_executables else ""
-                writer.writerow({
+                yield {
                     "category": ta.category_label(category),
                     "tool_name": entry.name,
                     "replaced_by": entry.superseded_by or "",
                     "notes": entry.notes or "",
                     "path": paths,
-                })
+                }
+
+    _write_dict_csv(path, fields, csv_rows())
 
 
 # ─── detailed file display helpers ───────────────────────────────────────────
@@ -1355,8 +1443,7 @@ def _print_detailed_section(
         f"[cyan]{len(needs_attention)}[/cyan] game(s) needing attention\n"
     )
 
-    with _make_progress(SpinnerColumn(), TextColumn("{task.description}"),
-                  BarColumn(), console=console) as prog:
+    with _make_progress() as prog:
         task = prog.add_task("Scanning files...", total=len(needs_attention))
         reports = []
         for sys_name, entry in needs_attention:
@@ -1416,8 +1503,7 @@ def inspect(system, game, all_games, fmt, output, no_path):
       # Export full file manifest to CSV
       spindoctor inspect --system MAME --all --format csv --output D:\\mame_files.csv
     """
-    config = _cfg()
-    _check_config(config)
+    config = _checked_cfg()
 
     from .fileinfo import scan_game
 
@@ -1431,6 +1517,8 @@ def inspect(system, game, all_games, fmt, output, no_path):
         game_names = sorted(db_games.keys())
     else:
         # needs-attention: run a quick audit, pick games with issues
+        from .audit import audit_system
+
         result = audit_system(system, config, check_media_flag=True)
         game_names = [e.rom_name for e in result.entries if e.needs_attention]
         if not game_names:
@@ -1447,9 +1535,7 @@ def inspect(system, game, all_games, fmt, output, no_path):
     )
 
     reports = []
-    with _make_progress(SpinnerColumn(), TextColumn("{task.description}"),
-                  BarColumn(), TextColumn("{task.completed}/{task.total}"),
-                  console=console) as prog:
+    with _make_progress(count=True) as prog:
         task = prog.add_task("Reading files...", total=len(game_names))
         for name in game_names:
             prog.update(task, description=f"[dim]{name[:45]}[/dim]")
@@ -1564,11 +1650,7 @@ def _write_inspect_csv(reports, path) -> None:
     ]
 
     if path:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with open(path, "w", newline="", encoding="utf-8") as f:
-            writer = csv.DictWriter(f, fieldnames=columns, extrasaction="ignore")
-            writer.writeheader()
-            writer.writerows(rows)
+        _write_dict_csv(path, columns, rows, extrasaction="ignore")
     else:
         # Print CSV to stdout
         import io
@@ -1582,8 +1664,7 @@ def _write_inspect_csv(reports, path) -> None:
 # ─── find-dupes / find-misplaced / lint ──────────────────────────────────────
 
 @cli.command("find-dupes")
-@click.option("--system", "-s", default=None)
-@click.option("--all", "all_systems", is_flag=True)
+@_system_options
 @click.option("--cross-systems", is_flag=True,
               help="Also report titles that appear under more than one system.")
 @click.option("--by-content", is_flag=True,
@@ -1601,8 +1682,7 @@ def find_dupes(system, all_systems, cross_systems, by_content):
     """
     from .dupes import find_cross_system_duplicates, find_duplicates_in_system
 
-    config = _cfg()
-    _check_config(config)
+    config = _checked_cfg()
     systems = _resolve_systems(config, system, all_systems)
 
     total = 0
@@ -1642,8 +1722,7 @@ def find_dupes(system, all_systems, cross_systems, by_content):
 
 
 @cli.command("find-misplaced")
-@click.option("--system", "-s", default=None)
-@click.option("--all", "all_systems", is_flag=True)
+@_system_options
 @click.option("--apply", "apply_moves_flag", is_flag=True,
               help="Move each misplaced ROM into its first suggested system "
                    "folder. Writes a manifest so the change can be undone.")
@@ -1671,8 +1750,7 @@ def find_misplaced(system, all_systems, apply_moves_flag, undo, verbose):
         find_misplaced_in_system, undo_moves,
     )
 
-    config = _cfg()
-    _check_config(config)
+    config = _checked_cfg()
 
     if undo:
         manifest = find_latest_misplaced_manifest(Path(config.roms_dir))
@@ -1747,8 +1825,7 @@ def find_misplaced(system, all_systems, apply_moves_flag, undo, verbose):
 
 
 @cli.command("curate")
-@click.option("--system", "-s", default=None)
-@click.option("--all", "all_systems", is_flag=True)
+@_system_options
 @click.option("--regions", default=None,
               help="Comma-separated region preference order (e.g. 'USA,Japan'). "
                    "Overrides config.region_preferences for this run.")
@@ -1840,8 +1917,7 @@ def curate(system, all_systems, regions, include_proto, prefer_revision,
         return
 
     # ── plan path ─────────────────────────────────────────────────────────────
-    config = _cfg()
-    _check_config(config)
+    config = _checked_cfg()
 
     if regions:
         prefs = parse_regions(regions)
@@ -2010,8 +2086,7 @@ def lint_cmd(source, category):
 # ─── find-orphan-media / check-discs / verify / stats ────────────────────────
 
 @cli.command("find-orphan-media")
-@click.option("--system", "-s", default=None)
-@click.option("--all", "all_systems", is_flag=True)
+@_system_options
 @click.option("--apply", "apply_changes", is_flag=True,
               help="Delete the reported orphans (irreversible, no undo). "
                    "Default: dry-run preview.")
@@ -2027,8 +2102,7 @@ def find_orphan_media(system, all_systems, apply_changes, verbose):
     """
     from .orphan_media import delete_orphans, find_orphan_media as _find
 
-    config = _cfg()
-    _check_config(config)
+    config = _checked_cfg()
     systems = _resolve_systems(config, system, all_systems)
 
     grand_total = 0
@@ -2084,8 +2158,7 @@ def find_orphan_media(system, all_systems, apply_changes, verbose):
 
 
 @cli.command("check-discs")
-@click.option("--system", "-s", default=None)
-@click.option("--all", "all_systems", is_flag=True)
+@_system_options
 def check_discs_cmd(system, all_systems):
     """Validate multi-disc games and .m3u playlists.
 
@@ -2096,8 +2169,7 @@ def check_discs_cmd(system, all_systems):
     """
     from .discs import check_discs
 
-    config = _cfg()
-    _check_config(config)
+    config = _checked_cfg()
     systems = _resolve_systems(config, system, all_systems)
 
     total_issues = 0
@@ -2155,8 +2227,7 @@ def check_archive_ext(system, all_systems):
     from .archive_scan import scan_system_archive_extensions
     from .rocketlauncher import read_rl_rom_extensions
 
-    config = _cfg()
-    _check_config(config)
+    config = _checked_cfg()
     systems = _resolve_systems(config, system, all_systems)
 
     rl_dir = Path(config.rocketlauncher_dir) if getattr(config, "rocketlauncher_dir", None) else None
@@ -2254,8 +2325,7 @@ def verify_cmd(system, dat_path, show_good, match_mode):
     """
     from .verify import verify_system
 
-    config = _cfg()
-    _check_config(config)
+    config = _checked_cfg()
 
     report = verify_system(
         system, Path(dat_path), Path(config.roms_dir), match_mode=match_mode,
@@ -2308,8 +2378,7 @@ def stats_cmd(system, all_systems):
     """
     from .stats import collect_stats, top_missing_media
 
-    config = _cfg()
-    _check_config(config)
+    config = _checked_cfg()
     if system:
         systems = [system]
     else:
@@ -2477,8 +2546,7 @@ def fav_sync(verbose):
     either workflow.
     """
     from .favorites import load_store, save_store
-    config = _cfg()
-    _check_config(config)
+    config = _checked_cfg()
     store = load_store()
     n, sync_warns, sync_notes = _run_native_sync(store, config, verbose)
     save_store(store, tmp_dir=config.effective_atomic_tmp_dir)
@@ -2517,8 +2585,7 @@ def fav_rebuild(media_mode, apply_changes, verbose):
     """
     from .favorites import load_store, rebuild, save_store
     from .medialink import LinkMode
-    config = _cfg()
-    _check_config(config)
+    config = _checked_cfg()
     _warn_rocketlauncher_dir(config)
     # Print the dry-run banner up front so it isn't buried under the sync
     # step's output (sync merges HyperSpin's F-key favorites into the store
@@ -2574,11 +2641,7 @@ def fav_clear(apply_changes):
     from .favorites import clear_favorites, load_store
     config = _cfg()
     store = load_store()
-    if not apply_changes:
-        console.print(
-            "[yellow bold][DRY RUN][/yellow bold] No changes will be made. "
-            "Re-run with [cyan]--apply[/cyan] to commit."
-        )
+    _print_dry_run(apply_changes, "No changes will be made.")
     result = clear_favorites(store, config, dry_run=not apply_changes)
     verb = "Would remove" if not apply_changes else "Removed"
     target_system = store.target_system
@@ -2619,16 +2682,11 @@ def recent_rebuild(limit, target_system, media_mode, apply_changes, verbose):
     """
     from .medialink import LinkMode
     from .recent import rebuild
-    config = _cfg()
-    _check_config(config)
+    config = _checked_cfg()
     _warn_rocketlauncher_dir(config)
     skip_media = media_mode == "none"
     mode = LinkMode.AUTO if skip_media else LinkMode(media_mode)
-    if not apply_changes:
-        console.print(
-            "[yellow bold][DRY RUN][/yellow bold] No files will be written. "
-            "Re-run with [cyan]--apply[/cyan] to commit."
-        )
+    _print_dry_run(apply_changes)
     from ._testrun import ActiveRunError
     try:
         summary = rebuild(
@@ -2714,15 +2772,7 @@ def recent_clear(target_system, apply_changes):
     RocketLauncher Statistics.ini files are never modified — the wheel
     can be rebuilt at any time with [cyan]recent rebuild --apply[/cyan].
     """
-    from .recent import clear_wheel_artifacts
-    config = _cfg()
-    if not apply_changes:
-        console.print(
-            "[yellow bold][DRY RUN][/yellow bold] No files will be deleted. "
-            "Re-run with [cyan]--apply[/cyan] to commit."
-        )
-    summary = clear_wheel_artifacts(config, target_system, dry_run=not apply_changes)
-    _print_clear_wheel_summary(target_system, summary, apply_changes)
+    _clear_synthetic_wheel(target_system, apply_changes)
 
 
 def _print_clear_wheel_summary(target_system: str, summary, apply_changes: bool) -> None:
@@ -3179,8 +3229,7 @@ def _stats_report_show(system, top_n, by_system, recent_only,
         format_duration, load_all_playtime, most_recent,
         top_games, total_seconds, total_sessions,
     )
-    config = _cfg()
-    _check_config(config)
+    config = _checked_cfg()
 
     read_warnings: list[str] = []
     stats = load_all_playtime(config, warnings=read_warnings)
@@ -3253,19 +3302,7 @@ def _stats_report_show(system, top_n, by_system, recent_only,
 
     by_sys = aggregate_by_system(stats)
     if by_system:
-        tbl = Table(title="Per-system playtime", box=box.ROUNDED)
-        tbl.add_column("System", style="cyan")
-        tbl.add_column("Total", justify="right")
-        tbl.add_column("Games", justify="right")
-        tbl.add_column("Sessions", justify="right")
-        for s in by_sys:
-            tbl.add_row(
-                s.system,
-                format_duration(s.total_seconds),
-                str(s.unique_games_played),
-                str(s.times_played),
-            )
-        console.print(tbl)
+        console.print(_playtime_system_table(by_sys, "Per-system playtime"))
         return
 
     # Default: full summary view
@@ -3305,19 +3342,7 @@ def _stats_report_show(system, top_n, by_system, recent_only,
         )
     console.print(rec_tbl)
 
-    sys_tbl = Table(title="Per-system summary", box=box.ROUNDED)
-    sys_tbl.add_column("System", style="cyan")
-    sys_tbl.add_column("Total", justify="right")
-    sys_tbl.add_column("Games", justify="right")
-    sys_tbl.add_column("Sessions", justify="right")
-    for s in by_sys:
-        sys_tbl.add_row(
-            s.system,
-            format_duration(s.total_seconds),
-            str(s.unique_games_played),
-            str(s.times_played),
-        )
-    console.print(sys_tbl)
+    console.print(_playtime_system_table(by_sys, "Per-system summary"))
 
 
 @stats_report_group.command("build-wheel")
@@ -3350,8 +3375,7 @@ def stats_report_build_wheel(limit, target_system, media_mode,
     from .playtime import (
         build_most_played_wheel, format_duration, load_all_playtime, top_games,
     )
-    config = _cfg()
-    _check_config(config)
+    config = _checked_cfg()
 
     if not apply_changes:
         stats = load_all_playtime(config)
@@ -3433,15 +3457,33 @@ def stats_report_clear_wheel(target_system, apply_changes):
     RocketLauncher Statistics.ini files are never modified — the wheel
     can be rebuilt at any time with [cyan]stats-report build-wheel --apply[/cyan].
     """
+    _clear_synthetic_wheel(target_system, apply_changes)
+
+
+def _clear_synthetic_wheel(target, apply_changes):
     from .recent import clear_wheel_artifacts
     config = _cfg()
-    if not apply_changes:
-        console.print(
-            "[yellow bold][DRY RUN][/yellow bold] No files will be deleted. "
-            "Re-run with [cyan]--apply[/cyan] to commit."
+    _print_dry_run(apply_changes, "No files will be deleted.")
+    summary = clear_wheel_artifacts(config, target, dry_run=not apply_changes)
+    _print_clear_wheel_summary(target, summary, apply_changes)
+
+
+def _playtime_system_table(systems, title):
+    from .playtime import format_duration
+
+    tbl = Table(title=title, box=box.ROUNDED)
+    tbl.add_column("System", style="cyan")
+    tbl.add_column("Total", justify="right")
+    tbl.add_column("Games", justify="right")
+    tbl.add_column("Sessions", justify="right")
+    for s in systems:
+        tbl.add_row(
+            s.system,
+            format_duration(s.total_seconds),
+            str(s.unique_games_played),
+            str(s.times_played),
         )
-    summary = clear_wheel_artifacts(config, target_system, dry_run=not apply_changes)
-    _print_clear_wheel_summary(target_system, summary, apply_changes)
+    return tbl
 
 
 def _collect_stat_files(rl: Path) -> list[Path]:
@@ -3504,19 +3546,7 @@ def _scrub_backup(
         from .favorites import collect_native_fav_files
         ini_files, txt_files, xml_files = collect_native_fav_files(config)
         db_root = config.databases_dir
-        for f in ini_files + txt_files:
-            try:
-                rel = f.relative_to(db_root)
-            except ValueError:
-                rel = Path(f.name)
-            dest = backup_folder / "hs_favorites" / rel
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            _shutil.copy2(f, dest)
-            manifest.append({
-                "original": str(f),
-                "backup": str(Path("hs_favorites") / rel),
-            })
-        for f in xml_files:
+        for f in ini_files + txt_files + xml_files:
             try:
                 rel = f.relative_to(db_root)
             except ValueError:
@@ -3607,11 +3637,7 @@ def scrub_cmd(scrub_favorites, scrub_stats, scrub_hs_favorites, backup_dir, appl
     if not scrub_favorites and not scrub_stats and not scrub_hs_favorites:
         scrub_favorites = scrub_stats = True
 
-    if not apply_changes:
-        console.print(
-            "[yellow bold][DRY RUN][/yellow bold] No changes will be made. "
-            "Re-run with [cyan]--apply[/cyan] to commit."
-        )
+    _print_dry_run(apply_changes, "No changes will be made.")
 
     # ── Optional backup ───────────────────────────────────────────────────────
     # --backup-dir works in both apply and dry-run modes.  During a dry-run it
@@ -3767,11 +3793,7 @@ def scrub_restore_cmd(backup_path: Path, apply_changes: bool):
         f"([dim]created {created}[/dim])"
     )
 
-    if not apply_changes:
-        console.print(
-            "[yellow bold][DRY RUN][/yellow bold] No files will be written. "
-            "Re-run with [cyan]--apply[/cyan] to commit."
-        )
+    _print_dry_run(apply_changes)
 
     if not files:
         console.print("[yellow]No files in manifest — nothing to restore.[/yellow]")
@@ -3800,12 +3822,6 @@ def scrub_restore_cmd(backup_path: Path, apply_changes: bool):
                 f"[bold]{backup_path}[/bold][/green]"
             )
 
-
-def _sibling_exe(name: str) -> str:
-    """Compatibility name for the current install's embedded-tool command."""
-    from ._runtime import tool_command_text
-
-    return tool_command_text(name)
 
 
 def _make_install_tools_bats(helpers=None) -> "dict[str, str]":
@@ -4027,8 +4043,7 @@ def theme_scan(system, keyword, output):
     """
     from . import themes
 
-    config = _cfg()
-    _check_config(config)
+    config = _checked_cfg()
 
     assets = themes.scan_frontend_art(config)
     assets = themes.filter_assets(assets, system=system, keyword=keyword)
@@ -4301,8 +4316,7 @@ def theme_pack_create(output_dir, target):
     """
     from . import themes
 
-    config = _cfg()
-    _check_config(config)
+    config = _checked_cfg()
 
     out = Path(output_dir).expanduser()
     console.print(Panel(f" theme-pack-create → {out} ", style="bold blue"))
@@ -4393,8 +4407,7 @@ def theme_fill(system, all_systems, default_theme, apply, verbose):
         console.print("[red]--system and --all are mutually exclusive.[/red]")
         raise SystemExit(1)
 
-    config = _cfg()
-    _check_config(config)
+    config = _checked_cfg()
     hs_dir = getattr(config, "hyperspin_dir", None)
     if not hs_dir:
         console.print("[red]hyperspin_dir is not set.[/red] Run: spindoctor config set hyperspin_dir <PATH>")
@@ -5893,8 +5906,7 @@ def match_clear(system: Optional[str]):
 # ─── fetch-meta ───────────────────────────────────────────────────────────────
 
 @cli.command("fetch-meta")
-@click.option("--system", "-s", default=None)
-@click.option("--all", "all_systems", is_flag=True)
+@_system_options
 @click.option("--game", "-g", default=None,
               help="Limit to a single game name (exact match, no extension). Requires --system.")
 @click.option("--source", default=None,
@@ -5928,8 +5940,7 @@ def fetch_meta(system, all_systems, game, source, fetch_all,
     If multiple candidates are found you can select the correct one interactively;
     your choice is saved to ~/.spindoctor/match_cache/ and reused on future runs.
     """
-    config = _cfg()
-    _check_config(config)
+    config = _checked_cfg()
 
     # `game` (the --game filter) gets shadowed below by per-system `for
     # game in targets:` loops — capture the original value now so the
@@ -5964,11 +5975,7 @@ def fetch_meta(system, all_systems, game, source, fetch_all,
         sys.exit(1)
 
     out_base = Path(output_dir) if output_dir else None
-    if not apply_changes:
-        console.print(
-            "[yellow bold][DRY RUN][/yellow bold] No files will be written. "
-            "Re-run with [cyan]--apply[/cyan] to commit."
-        )
+    _print_dry_run(apply_changes)
 
     if game and not system:
         err_console.print("[red]--game requires --system NAME (one system at a time).[/red]")
@@ -6020,9 +6027,7 @@ def fetch_meta(system, all_systems, game, source, fetch_all,
         fetch_errors: list[str] = []
 
         scraper_aborted = False
-        with _make_progress(SpinnerColumn(), TextColumn("{task.description}"),
-                      BarColumn(), TextColumn("{task.completed}/{task.total}"),
-                      console=console) as prog:
+        with _make_progress(count=True) as prog:
             task = prog.add_task("Searching…", total=len(targets))
             for game in targets:
                 if scraper_aborted:
@@ -6117,16 +6122,7 @@ def fetch_meta(system, all_systems, game, source, fetch_all,
         )
 
         if apply_changes and updated > 0:
-            _tmp = config.effective_atomic_tmp_dir
-            if out_base:
-                saved = db.save(
-                    output_path=out_base / "Databases" / sys_name / f"{sys_name}.xml",
-                    backup=False, tmp_dir=_tmp,
-                )
-            else:
-                _bak_dir = Path(config.backup_dir) if getattr(config, "backup_dir", "") else None
-                saved = db.save(backup=config.backup_before_modify,
-                                backup_dir=_bak_dir, tmp_dir=_tmp)
+            saved = _save_system_db(db, config, sys_name, out_base)
             console.print(f"  [green]Saved:[/green] {saved}")
 
     # Consolidated cross-system summary, mirroring fetch-media's — read
@@ -6178,8 +6174,7 @@ def _is_network_error(msg: str) -> bool:
 
 
 @cli.command("fetch-media")
-@click.option("--system", "-s", default=None)
-@click.option("--all", "all_systems", is_flag=True)
+@_system_options
 @click.option("--game", "-g", default=None,
               help="Limit to a single game name (exact match, no extension). Requires --system.")
 @click.option("--types", default=",".join(MEDIA_TYPES),
@@ -6217,8 +6212,7 @@ def fetch_media(system, all_systems, game, types, source, overwrite, pick_media,
     style theme packs, drop the files into a folder and use
     ``spindoctor media-scan SOURCE_DIR --apply`` to bulk-import them.
     """
-    config = _cfg()
-    _check_config(config)
+    config = _checked_cfg()
     systems = _resolve_systems(config, system, all_systems)
 
     # `game` (the --game filter) gets shadowed below by per-system `for
@@ -6247,11 +6241,7 @@ def fetch_media(system, all_systems, game, types, source, overwrite, pick_media,
     downloader = MediaDownloader(config, output_dir_override=out_path)
     workers = max(1, config.max_concurrent_downloads)
 
-    if not apply_changes:
-        console.print(
-            "[yellow bold][DRY RUN][/yellow bold] No files will be written. "
-            "Re-run with [cyan]--apply[/cyan] to commit."
-        )
+    _print_dry_run(apply_changes)
 
     if game and not system:
         err_console.print("[red]--game requires --system NAME (one system at a time).[/red]")
@@ -6317,9 +6307,7 @@ def fetch_media(system, all_systems, game, types, source, overwrite, pick_media,
         total_fail = 0
         scraper_aborted = False            # set True on fatal API or network error
         consecutive_net_errors = 0
-        with _make_progress(SpinnerColumn(), TextColumn("{task.description}"),
-                      BarColumn(), TextColumn("{task.completed}/{task.total}"),
-                      console=console) as prog:
+        with _make_progress(count=True) as prog:
             task = prog.add_task("Resolving metadata…", total=len(games))
             for game in games:
                 if scraper_aborted:
@@ -6443,9 +6431,7 @@ def fetch_media(system, all_systems, game, types, source, overwrite, pick_media,
                         )
         else:
             if all_jobs:
-                with _make_progress(SpinnerColumn(), TextColumn("{task.description}"),
-                              BarColumn(), TextColumn("{task.completed}/{task.total}"),
-                              console=console) as prog:
+                with _make_progress(count=True) as prog:
                     task = prog.add_task("Downloading…", total=len(all_jobs))
 
                     def _on_done(r):
@@ -6666,7 +6652,7 @@ def fetch_steam_media(system, game, steam_id_raw, types,
       spindoctor fetch-steam-media -s "PC Games" -g "Hades" \\
           --steam-id 1145360 --types video --apply
     """
-    from .scraper import MetadataError, SteamClient
+    from .scraper import MetadataError, SteamClient, extract_steam_app_id
     from .media import MediaDownloader
     from .matcher import pick_media
 
@@ -6850,8 +6836,7 @@ def media_add(system, game, media_type, source_file, move, overwrite,
       spindoctor media-add --system MAME --game 1942 --type trailer \\
           --file C:\\Downloads\\1942_trailer.mp4 --apply
     """
-    config = _cfg()
-    _check_config(config)
+    config = _checked_cfg()
 
     from .media import MediaDownloader
     out_path = Path(output_dir) if output_dir else None
@@ -7115,8 +7100,7 @@ def media_scan_cmd(
 # ─── update-db ────────────────────────────────────────────────────────────────
 
 @cli.command("update-db")
-@click.option("--system", "-s", default=None)
-@click.option("--all", "all_systems", is_flag=True)
+@_system_options
 @click.option("--add-missing/--no-add-missing", "add_missing", default=True,
               help="Add stub DB entries for ROMs missing from the database "
                    "(default: on; --no-add-missing to skip).")
@@ -7139,8 +7123,7 @@ def update_db(system, all_systems, add_missing, remove_orphans, apply_changes,
     with no matching ROM.  Variant ROM names (region, version, revision) are
     each written as their own individual database entry.
     """
-    config = _cfg()
-    _check_config(config)
+    config = _checked_cfg()
     systems = _resolve_systems(config, system, all_systems)
     out_base = Path(output_dir) if output_dir else None
 
@@ -7150,11 +7133,9 @@ def update_db(system, all_systems, add_missing, remove_orphans, apply_changes,
         else config.strip_variant_tags_in_display_name
     )
 
-    if not apply_changes:
-        console.print(
-            "[yellow bold][DRY RUN][/yellow bold] No files will be written. "
-            "Re-run with [cyan]--apply[/cyan] to commit."
-        )
+    _print_dry_run(apply_changes)
+
+    from .audit import RomPathIndex, audit_system, build_stub_entry
 
     grand_added = grand_removed = grand_in_sync = 0
     rom_index = RomPathIndex(config)
@@ -7201,16 +7182,7 @@ def update_db(system, all_systems, add_missing, remove_orphans, apply_changes,
         console.print(f"  Added: [green]{added}[/green]  Removed: [red]{removed}[/red]")
 
         if apply_changes and (added or removed):
-            _tmp = config.effective_atomic_tmp_dir
-            if out_base:
-                saved = db.save(
-                    output_path=out_base / "Databases" / sys_name / f"{sys_name}.xml",
-                    backup=False, tmp_dir=_tmp,
-                )
-            else:
-                _bak_dir = Path(config.backup_dir) if getattr(config, "backup_dir", "") else None
-                saved = db.save(backup=config.backup_before_modify,
-                                backup_dir=_bak_dir, tmp_dir=_tmp)
+            saved = _save_system_db(db, config, sys_name, out_base)
             console.print(f"  [green]Saved:[/green] {saved}")
         elif not added and not removed:
             console.print("  [green]Database already in sync.[/green]")
@@ -7307,8 +7279,7 @@ def generate_config(all_systems, system, gen_rl, gen_menu, gen_stubs,
       # Write in-place (requires rocketlauncher_dir to be configured)
       spindoctor generate-config --apply
     """
-    config = _cfg()
-    _check_config(config)
+    config = _checked_cfg()
 
     from .config import get_system_overrides as _get_sys_overrides
     from .rocketlauncher import (
@@ -7345,11 +7316,7 @@ def generate_config(all_systems, system, gen_rl, gen_menu, gen_stubs,
             + ", ".join(f"[cyan]{s}[/cyan]" for s in skipped_managed)
         )
 
-    if not apply_changes:
-        console.print(
-            "[yellow bold][DRY RUN][/yellow bold] No files will be written. "
-            "Re-run with [cyan]--apply[/cyan] to commit."
-        )
+    _print_dry_run(apply_changes)
 
     # ── backup helper ──────────────────────────────────────────────────────────
     # Mirrors the pattern in HyperspinDatabase.save(): copy the existing file
@@ -7374,15 +7341,9 @@ def generate_config(all_systems, system, gen_rl, gen_menu, gen_stubs,
                if skipped_managed else "")
         )
         def _read_existing_rom_path(ini_path: Path) -> Optional[str]:
-            """Return the first Rom_Path= value from an existing INI, or None."""
-            try:
-                for line in ini_path.read_text(encoding="utf-8", errors="replace").splitlines():
-                    stripped = line.strip()
-                    if stripped.lower().startswith("rom_path="):
-                        return stripped.split("=", 1)[1].strip()
-            except OSError:
-                pass
-            return None
+            from .rocketlauncher import _read_rom_path_from_ini
+
+            return _read_rom_path_from_ini(ini_path)
 
         def _find_existing_ini(rl_base: Path, sys_name: str) -> Optional[Path]:
             """Return the INI path that currently holds the system's Rom_Path.
@@ -7723,8 +7684,7 @@ def mainmenu_show(system, apply, output_dir):
     """
     from .mainmenu import discover_systems, show as _show
 
-    config = _cfg()
-    _check_config(config)
+    config = _checked_cfg()
     menu = _load_menu_or_exit(config)
 
     if system:
@@ -7765,6 +7725,23 @@ def _apply_or_preview(label: str, menu, config, output_dir, apply: bool):
     _save_with_message(menu, config, output_dir)
 
 
+def _run_menu_mutation(mutation, system, label, apply, output_dir, *args,
+                       detailed_error=False):
+    config = _checked_cfg()
+    menu = _load_menu_or_exit(config)
+    try:
+        mutation(menu, system, *args)
+    except (KeyError, ValueError) as exc:
+        if detailed_error:
+            err_console.print(f"[red]{exc}[/red]")
+        elif isinstance(exc, KeyError):
+            err_console.print(f"[red]not in Main Menu:[/red] {system}")
+        else:
+            raise
+        sys.exit(1)
+    _apply_or_preview(label, menu, config, output_dir, apply)
+
+
 @mainmenu_group.command("reorder")
 @click.argument("system")
 @click.argument("position", type=int)
@@ -7773,16 +7750,7 @@ def _apply_or_preview(label: str, menu, config, output_dir, apply: bool):
 def mainmenu_reorder(system, position, apply, output_dir):
     """Move SYSTEM to POSITION (1-indexed)."""
     from .mainmenu import reorder
-    config = _cfg()
-    _check_config(config)
-    menu = _load_menu_or_exit(config)
-    try:
-        reorder(menu, system, position)
-    except (KeyError, ValueError) as e:
-        err_console.print(f"[red]{e}[/red]")
-        sys.exit(1)
-    _apply_or_preview(f"reorder {system} → {position}", menu, config,
-                      output_dir, apply)
+    _run_menu_mutation(reorder, system, f"reorder {system} → {position}", apply, output_dir, position, detailed_error=True)
 
 
 @mainmenu_group.command("up")
@@ -7792,15 +7760,7 @@ def mainmenu_reorder(system, position, apply, output_dir):
 def mainmenu_up(system, apply, output_dir):
     """Move SYSTEM up by one slot."""
     from .mainmenu import move_up
-    config = _cfg()
-    _check_config(config)
-    menu = _load_menu_or_exit(config)
-    try:
-        move_up(menu, system)
-    except KeyError:
-        err_console.print(f"[red]not in Main Menu:[/red] {system}")
-        sys.exit(1)
-    _apply_or_preview(f"move up: {system}", menu, config, output_dir, apply)
+    _run_menu_mutation(move_up, system, f"move up: {system}", apply, output_dir)
 
 
 @mainmenu_group.command("down")
@@ -7810,15 +7770,7 @@ def mainmenu_up(system, apply, output_dir):
 def mainmenu_down(system, apply, output_dir):
     """Move SYSTEM down by one slot."""
     from .mainmenu import move_down
-    config = _cfg()
-    _check_config(config)
-    menu = _load_menu_or_exit(config)
-    try:
-        move_down(menu, system)
-    except KeyError:
-        err_console.print(f"[red]not in Main Menu:[/red] {system}")
-        sys.exit(1)
-    _apply_or_preview(f"move down: {system}", menu, config, output_dir, apply)
+    _run_menu_mutation(move_down, system, f"move down: {system}", apply, output_dir)
 
 
 @mainmenu_group.command("hide")
@@ -7828,15 +7780,7 @@ def mainmenu_down(system, apply, output_dir):
 def mainmenu_hide(system, apply, output_dir):
     """Hide SYSTEM (sets enabled=\"No\")."""
     from .mainmenu import hide
-    config = _cfg()
-    _check_config(config)
-    menu = _load_menu_or_exit(config)
-    try:
-        hide(menu, system)
-    except KeyError:
-        err_console.print(f"[red]not in Main Menu:[/red] {system}")
-        sys.exit(1)
-    _apply_or_preview(f"hide: {system}", menu, config, output_dir, apply)
+    _run_menu_mutation(hide, system, f"hide: {system}", apply, output_dir)
 
 
 @mainmenu_group.command("add")
@@ -7864,8 +7808,7 @@ def mainmenu_add(system, apply, output_dir):
         install_bundled_system_assets,
         write_hyperspin_system_ini,
     )
-    config = _cfg()
-    _check_config(config)
+    config = _checked_cfg()
     menu = _load_menu_or_exit(config)
     added = add_system(menu, system)
     if not added:
@@ -7943,8 +7886,7 @@ def mainmenu_add(system, apply, output_dir):
 def mainmenu_remove(system, apply, output_dir):
     """Remove SYSTEM from the Main Menu."""
     from .mainmenu import remove_system
-    config = _cfg()
-    _check_config(config)
+    config = _checked_cfg()
     menu = _load_menu_or_exit(config)
     if not remove_system(menu, system):
         console.print(f"[yellow]not on the menu:[/yellow] {system}")
@@ -7959,8 +7901,7 @@ def mainmenu_remove(system, apply, output_dir):
 def mainmenu_sort(strategy, apply, output_dir):
     """Sort the menu: alpha, manufacturer, or year."""
     from .mainmenu import sort_alphabetical, sort_by_field
-    config = _cfg()
-    _check_config(config)
+    config = _checked_cfg()
     menu = _load_menu_or_exit(config)
     if strategy == "alpha":
         sort_alphabetical(menu)
@@ -7990,8 +7931,7 @@ def mainmenu_edit(output_dir):
         add_system, hide, move_down, move_up, remove_system, reorder,
         show as _show, sort_alphabetical, sort_by_field,
     )
-    config = _cfg()
-    _check_config(config)
+    config = _checked_cfg()
     menu = _load_menu_or_exit(config)
     dirty = False
 
@@ -8676,6 +8616,35 @@ def _ledblinky_targets(config, system, all_roms, warnings=None):
     return scope.names(), scope, listxml, label, empty
 
 
+def _print_sync_player_counts(result, verbose, detail_verb):
+    verb = "would update" if result.dry_run else "updated"
+    keys_detail = f"[cyan]{result.keys_added}[/cyan] added"
+    if result.keys_overwritten:
+        keys_detail += f", [yellow]{result.keys_overwritten}[/yellow] replaced"
+    console.print(
+        f"  ROMs {verb:16s}: [green]{result.roms_updated}[/green]"
+        f"  ({keys_detail})"
+    )
+    console.print(
+        f"  ROMs skipped (already complete) : [dim]{result.roms_skipped_complete}[/dim]"
+    )
+    console.print(
+        f"  ROMs skipped (no controls.ini)  : [dim]{result.roms_skipped_no_controls}[/dim]"
+    )
+
+    if verbose and result.details:
+        _SAMPLE = 50
+        shown = result.details[:_SAMPLE]
+        console.print(
+            f"\n[dim][verbose] first {len(shown)} updated ROMs "
+            f"(of {result.roms_updated}):[/dim]"
+        )
+        for rom_name, keys in shown:
+            console.print(f"[dim]  {rom_name:<30s}  {detail_verb}: {', '.join(keys)}[/dim]")
+        if len(result.details) > _SAMPLE:
+            console.print(f"[dim]  … {len(result.details) - _SAMPLE} more[/dim]")
+
+
 def _print_generate_counts(result, verbose: bool) -> None:
     """The counts ``ledblinky generate`` and ``setup`` print after step 1."""
     console.print(
@@ -8731,8 +8700,7 @@ def ledblinky_generate(system, all_roms, overwrite, apply_changes, output_dir, v
     LEDBlinky loads every entry when it starts, so tens of thousands of them
     delay its start.
     """
-    config = _cfg()
-    _check_config(config)
+    config = _checked_cfg()
 
     if not config.mame_executable:
         err_console.print(
@@ -8801,10 +8769,7 @@ def ledblinky_generate(system, all_roms, overwrite, apply_changes, output_dir, v
                    "library), not just the games in the wheels.")
 @click.option("--overwrite", is_flag=True,
               help="Overwrite existing entries (default: preserve community-maintained ones).")
-@click.option("--apply", "apply_changes", is_flag=True,
-              help="Commit writes (default: dry-run preview).")
-@click.option("--no-backup", is_flag=True,
-              help="Skip the automatic .bak backup before writing.")
+@_apply_backup_options(_LB_APPLY_HELP, _LB_BACKUP_HELP)
 @click.option("--verbose", is_flag=True,
               help="Print per-ROM detail from each step.")
 def ledblinky_setup(all_roms, overwrite, apply_changes, no_backup, verbose):
@@ -8832,8 +8797,7 @@ def ledblinky_setup(all_roms, overwrite, apply_changes, no_backup, verbose):
     """
     from . import ledblinky as lb
 
-    config = _cfg()
-    _check_config(config)
+    config = _checked_cfg()
 
     if not config.mame_executable:
         err_console.print(
@@ -8893,32 +8857,7 @@ def ledblinky_setup(all_roms, overwrite, apply_changes, no_backup, verbose):
         console.print(f"[red]Error:[/red] {exc}")
         raise SystemExit(1)
 
-    verb = "would update" if sync_result.dry_run else "updated"
-    keys_detail = f"[cyan]{sync_result.keys_added}[/cyan] added"
-    if sync_result.keys_overwritten:
-        keys_detail += f", [yellow]{sync_result.keys_overwritten}[/yellow] replaced"
-    console.print(
-        f"  ROMs {verb:16s}: [green]{sync_result.roms_updated}[/green]"
-        f"  ({keys_detail})"
-    )
-    console.print(
-        f"  ROMs skipped (already complete) : [dim]{sync_result.roms_skipped_complete}[/dim]"
-    )
-    console.print(
-        f"  ROMs skipped (no controls.ini)  : [dim]{sync_result.roms_skipped_no_controls}[/dim]"
-    )
-
-    if verbose and sync_result.details:
-        _SAMPLE = 50
-        shown = sync_result.details[:_SAMPLE]
-        console.print(
-            f"\n[dim][verbose] first {len(shown)} updated ROMs "
-            f"(of {sync_result.roms_updated}):[/dim]"
-        )
-        for rom_name, keys in shown:
-            console.print(f"[dim]  {rom_name:<30s}  added: {', '.join(keys)}[/dim]")
-        if len(sync_result.details) > _SAMPLE:
-            console.print(f"[dim]  … {len(sync_result.details) - _SAMPLE} more[/dim]")
+    _print_sync_player_counts(sync_result, verbose, "added")
 
     if not apply_changes:
         console.print(
@@ -9092,8 +9031,7 @@ def ledblinky_audit(system, all_roms, report_csv):
     ("would-synth"). Also counts the live entries for games in no wheel,
     which `ledblinky prune` removes. Read-only.
     """
-    config = _cfg()
-    _check_config(config)
+    config = _checked_cfg()
 
     from .ledblinky import audit_coverage
     from .ledblinky_library import Library, unused_entries
@@ -9190,8 +9128,7 @@ def ledblinky_prune(apply_changes, no_backup, verbose):
     is added to a wheel, and `ledblinky generate --all-roms --apply` puts them
     all back. Dry-run by default.
     """
-    config = _cfg()
-    _check_config(config)
+    config = _checked_cfg()
 
     from .ledblinky_library import prune_entries
 
@@ -9242,8 +9179,7 @@ def ledblinky_prune(apply_changes, no_backup, verbose):
 # ─── report ───────────────────────────────────────────────────────────────────
 
 @cli.command("report")
-@click.option("--system", "-s", default=None)
-@click.option("--all", "all_systems", is_flag=True)
+@_system_options
 @click.option("--format", "fmt", default="summary",
               type=click.Choice(["table", "csv", "summary"]))
 @click.option("--output", "-o", type=click.Path(), default=None,
@@ -9253,13 +9189,14 @@ def ledblinky_prune(apply_changes, no_backup, verbose):
 @click.option("--no-fuzzy", is_flag=True, help="Skip fuzzy ROM/DB matching.")
 def report(system, all_systems, fmt, output, no_media, no_fuzzy):
     """Generate a read-only audit report without making any changes."""
-    config = _cfg()
-    _check_config(config)
+    config = _checked_cfg()
     systems = _resolve_systems(config, system, all_systems)
+
+    from .audit import RomPathIndex, audit_system
 
     all_results: list[SystemAuditResult] = []
     rom_index = RomPathIndex(config)
-    with _make_progress(SpinnerColumn(), TextColumn("{task.description}"), console=console) as prog:
+    with _make_progress(bar=False) as prog:
         task = prog.add_task("Scanning…", total=len(systems))
         for sys_name in systems:
             prog.update(task, description=f"Scanning [cyan]{sys_name}[/cyan]…")
@@ -9362,8 +9299,7 @@ def preview_cmd(system, all_systems, output_dir, fmt, columns,
         pillow_available,
     )
 
-    config = _cfg()
-    _check_config(config)
+    config = _checked_cfg()
 
     if fmt in ("png", "both") and not pillow_available():
         console.print(
@@ -9542,18 +9478,13 @@ def ledblinky_fix(apply_changes, output_dir, no_backup, menus):
     """
     from . import ledblinky as lb
 
-    config = _cfg()
-    _check_config(config)
+    config = _checked_cfg()
     # ledblinky fix is an in-place patcher — do NOT fall back to config.output_dir.
     # Only use an explicit --output-dir when one is passed on the command line.
     out_base = Path(output_dir) if output_dir else None
     menu_list = [m.strip() for m in menus.split(",") if m.strip()]
 
-    if not apply_changes:
-        console.print(
-            "[yellow bold][DRY RUN][/yellow bold] No files will be written. "
-            "Re-run with [cyan]--apply[/cyan] to commit."
-        )
+    _print_dry_run(apply_changes)
 
     result = lb.apply_fix(
         config,
@@ -9678,14 +9609,9 @@ def ledblinky_patch_settings(fe_lwa, ss_lwa, game_lwa, apply_changes, no_backup,
     """
     from . import ledblinky as lb
 
-    config = _cfg()
-    _check_config(config)
+    config = _checked_cfg()
 
-    if not apply_changes:
-        console.print(
-            "[yellow bold][DRY RUN][/yellow bold] No files will be written. "
-            "Re-run with [cyan]--apply[/cyan] to commit."
-        )
+    _print_dry_run(apply_changes)
 
     try:
         result = lb.patch_ledblinky_settings(
@@ -9766,8 +9692,7 @@ def ledblinky_colors_list():
     from pathlib import Path as _Path
     from . import ledblinky as lb
 
-    config = _cfg()
-    _check_config(config)
+    config = _checked_cfg()
 
     path = _Path(config.ledblinky_dir) / lb.COLOR_RGB_NAME
     if not path.exists():
@@ -9833,8 +9758,7 @@ def ledblinky_colors_edit(color_name, new_name, hex_color, rgb_values, apply_cha
     from pathlib import Path as _Path
     from . import ledblinky as lb
 
-    config = _cfg()
-    _check_config(config)
+    config = _checked_cfg()
 
     # ── Inspect-only (no options given) ──────────────────────────────────────
     if new_name is None and hex_color is None and rgb_values is None:
@@ -9887,11 +9811,7 @@ def ledblinky_colors_edit(color_name, new_name, hex_color, rgb_values, apply_cha
 
     resolved_name = new_name if new_name is not None else color_name
 
-    if not apply_changes:
-        console.print(
-            "[yellow bold][DRY RUN][/yellow bold] No files will be written. "
-            "Re-run with [cyan]--apply[/cyan] to commit."
-        )
+    _print_dry_run(apply_changes)
 
     try:
         result = lb.apply_color_rename(
@@ -9971,8 +9891,7 @@ def ledblinky_colors_add(name, hex_color, rgb_values, apply_changes, no_backup):
     """
     from . import ledblinky as lb
 
-    config = _cfg()
-    _check_config(config)
+    config = _checked_cfg()
 
     if hex_color and rgb_values:
         console.print("[red]Error: --hex and --rgb are mutually exclusive.[/red]")
@@ -10000,11 +9919,7 @@ def ledblinky_colors_add(name, hex_color, rgb_values, apply_changes, no_backup):
             console.print("[red]Error: --rgb values must be integers, e.g. 0,38,42.[/red]")
             raise SystemExit(1)
 
-    if not apply_changes:
-        console.print(
-            "[yellow bold][DRY RUN][/yellow bold] No files will be written. "
-            "Re-run with [cyan]--apply[/cyan] to commit."
-        )
+    _print_dry_run(apply_changes)
     try:
         result = lb.add_color(config, name, r, g, b,
                               dry_run=not apply_changes, backup=not no_backup)
@@ -10024,10 +9939,7 @@ def ledblinky_colors_add(name, hex_color, rgb_values, apply_changes, no_backup):
 
 
 @ledblinky_colors_group.command("normalize")
-@click.option("--apply", "apply_changes", is_flag=True,
-              help="Commit writes (default: dry-run preview).")
-@click.option("--no-backup", is_flag=True,
-              help="Skip the automatic .bak backup before writing.")
+@_apply_backup_options(_LB_APPLY_HELP, _LB_BACKUP_HELP)
 @click.option("--verbose", is_flag=True,
               help="Print each section converted and the key mapping applied.")
 def ledblinky_colors_normalize(apply_changes, no_backup, verbose):
@@ -10112,10 +10024,7 @@ def ledblinky_colors_normalize(apply_changes, no_backup, verbose):
               help="Target brightness level (0–100).  "
                    "100 = maximum brightness (all colors normalized to full intensity). "
                    "50 = half brightness.  10 = near-dark night mode.  0 = all off.")
-@click.option("--apply", "apply_changes", is_flag=True,
-              help="Commit writes (default: dry-run preview).")
-@click.option("--no-backup", is_flag=True,
-              help="Skip the automatic .bak backup before writing.")
+@_apply_backup_options(_LB_APPLY_HELP, _LB_BACKUP_HELP)
 @click.option("--verbose", is_flag=True, help="Print the Color-RGB.ini path and color count scaled.")
 def ledblinky_colors_brightness(scale_pct, apply_changes, no_backup, verbose):
     """Set all Color-RGB.ini colors to a uniform brightness level.
@@ -10182,10 +10091,7 @@ def ledblinky_colors_brightness(scale_pct, apply_changes, no_backup, verbose):
 @click.option("--seed", type=int, default=None,
               help="Integer seed for reproducible output.  "
                    "Omit for a fresh random shuffle every run.")
-@click.option("--apply", "apply_changes", is_flag=True,
-              help="Commit writes (default: dry-run preview).")
-@click.option("--no-backup", is_flag=True,
-              help="Skip the automatic .bak backup before writing.")
+@_apply_backup_options(_LB_APPLY_HELP, _LB_BACKUP_HELP)
 @click.option("--verbose", is_flag=True,
               help="Print the Colors.ini path, palette size, and sections updated.")
 def ledblinky_colors_randomize(seed, apply_changes, no_backup, verbose):
@@ -10284,10 +10190,7 @@ def ledblinky_colors_randomize(seed, apply_changes, no_backup, verbose):
 
 
 @ledblinky_colors_group.command("sync-players")
-@click.option("--apply", "apply_changes", is_flag=True,
-              help="Commit writes (default: dry-run preview).")
-@click.option("--no-backup", is_flag=True,
-              help="Skip the automatic .bak backup before writing.")
+@_apply_backup_options(_LB_APPLY_HELP, _LB_BACKUP_HELP)
 @click.option("--override", is_flag=True,
               help="Replace existing P2+ color entries with the current P1-mirrored "
                    "color. Without this flag, existing entries are never changed.")
@@ -10338,30 +10241,7 @@ def ledblinky_colors_sync_players(apply_changes, no_backup, override, verbose):
     console.print(
         f"\n[blue bold]Colors.ini[/blue bold]  {result.colors_ini_path}"
     )
-    verb = "would update" if result.dry_run else "updated"
-    keys_detail = f"[cyan]{result.keys_added}[/cyan] added"
-    if result.keys_overwritten:
-        keys_detail += f", [yellow]{result.keys_overwritten}[/yellow] replaced"
-    console.print(f"  ROMs {verb:16s}: [green]{result.roms_updated}[/green]"
-                  f"  ({keys_detail})")
-    console.print(
-        f"  ROMs skipped (already complete) : [dim]{result.roms_skipped_complete}[/dim]"
-    )
-    console.print(
-        f"  ROMs skipped (no controls.ini)  : [dim]{result.roms_skipped_no_controls}[/dim]"
-    )
-
-    if verbose and result.details:
-        _SAMPLE = 50
-        shown = result.details[:_SAMPLE]
-        console.print(
-            f"\n[dim][verbose] first {len(shown)} updated ROMs "
-            f"(of {result.roms_updated}):[/dim]"
-        )
-        for rom_name, keys in shown:
-            console.print(f"[dim]  {rom_name:<30s}  added/replaced: {', '.join(keys)}[/dim]")
-        if len(result.details) > _SAMPLE:
-            console.print(f"[dim]  … {len(result.details) - _SAMPLE} more[/dim]")
+    _print_sync_player_counts(result, verbose, "added/replaced")
 
     if result.dry_run and result.roms_updated:
         console.print(
@@ -10372,10 +10252,7 @@ def ledblinky_colors_sync_players(apply_changes, no_backup, override, verbose):
 
 
 @ledblinky_group.command("profiles")
-@click.option("--apply", "apply_changes", is_flag=True,
-              help="Commit writes (default: dry-run preview).")
-@click.option("--no-backup", is_flag=True,
-              help="Skip the automatic .bak backup before writing.")
+@_apply_backup_options(_LB_APPLY_HELP, _LB_BACKUP_HELP)
 @click.option("--verbose", "-v", is_flag=True,
               help="List unresolved games and every warning.")
 def ledblinky_profiles(apply_changes, no_backup, verbose):
@@ -10489,10 +10366,7 @@ def _sync_ledblinky_collection(config, target_system: str, apply_changes: bool) 
 @click.option("--system", default=None, metavar="SYSTEM",
               help="Process only this HyperSpin system.  Default: all systems "
                    "(including Favorites / Recently Played / Most Played).")
-@click.option("--apply", "apply_changes", is_flag=True,
-              help="Commit writes (default: dry-run preview).")
-@click.option("--no-backup", is_flag=True,
-              help="Skip the automatic .bak backup before writing.")
+@_apply_backup_options(_LB_APPLY_HELP, _LB_BACKUP_HELP)
 @click.option("--verbose", is_flag=True, help="Print the Colors.ini path and add/override/skip counts.")
 def ledblinky_fill_defaults(
     default_color, n_buttons, n_players, admin_buttons, admin_color,
@@ -10669,10 +10543,7 @@ def ledblinky_admin_buttons_group():
               help="Single color applied to all admin buttons (combine with --count).")
 @click.option("--count", "button_count", default=6, show_default=True, type=int,
               help="Number of buttons when using --color (ignored with --colors).")
-@click.option("--apply", "apply_changes", is_flag=True,
-              help="Commit writes (default: dry-run preview).")
-@click.option("--no-backup", is_flag=True,
-              help="Skip the automatic .bak backup before writing.")
+@_apply_backup_options(_LB_APPLY_HELP, _LB_BACKUP_HELP)
 @click.option("--verbose", is_flag=True, help="Print the Colors.ini path and sections updated.")
 def ledblinky_admin_buttons_set(
     admin_player, colors_csv, uniform_color, button_count, apply_changes, no_backup, verbose,
@@ -10725,11 +10596,7 @@ def ledblinky_admin_buttons_set(
         raise SystemExit(1)
 
     config = _cfg()
-    if not apply_changes:
-        console.print(
-            "[yellow bold][DRY RUN][/yellow bold] No files will be written. "
-            "Re-run with [cyan]--apply[/cyan] to commit."
-        )
+    _print_dry_run(apply_changes)
     try:
         result = lb.patch_admin_button_colors(
             config,
@@ -10913,8 +10780,7 @@ def ledblinky_admin_leds_show(emulator, by_console):
               help="Light the Right Mouse button in-game (rides on the Pause control).")
 @click.option("--emulator", default=None,
               help="Limit to one emulator's games (default: every game).")
-@click.option("--apply", "apply_changes", is_flag=True, help="Commit writes (default: dry-run).")
-@click.option("--no-backup", is_flag=True, help="Skip the automatic .bak backup.")
+@_apply_backup_options("Commit writes (default: dry-run).", "Skip the automatic .bak backup.")
 def ledblinky_admin_leds_set(exit_, pause_, select_, search_off, lmouse_off,
                              rmouse_off, search_on, lmouse_on, rmouse_on,
                              emulator, apply_changes, no_backup):
@@ -10987,8 +10853,7 @@ def ledblinky_admin_leds_set(exit_, pause_, select_, search_off, lmouse_off,
               help="Force true per-game variety for these ROMs: each gets its "
                    "own control group (cloned from the emulator's DEFAULT) so it "
                    "draws its own random colors. Requires --emulator.")
-@click.option("--apply", "apply_changes", is_flag=True, help="Commit writes (default: dry-run).")
-@click.option("--no-backup", is_flag=True, help="Skip the automatic .bak backup.")
+@_apply_backup_options("Commit writes (default: dry-run).", "Skip the automatic .bak backup.")
 def ledblinky_admin_leds_randomize(buttons, seed, emulator, games, apply_changes, no_backup):
     """Assign a random admin color per control group (per-game variety).
 
@@ -11027,8 +10892,7 @@ def ledblinky_admin_leds_randomize(buttons, seed, emulator, games, apply_changes
 @click.option("--exit", "exit_", default="Red", show_default=True, help="Color for the added Exit button.")
 @click.option("--pause", "pause_", default="Yellow", show_default=True, help="Color for the added Pause button.")
 @click.option("--select", "select_", default="Green", show_default=True, help="Color for the added Select button.")
-@click.option("--apply", "apply_changes", is_flag=True, help="Commit writes (default: dry-run).")
-@click.option("--no-backup", is_flag=True, help="Skip the automatic .bak backup.")
+@_apply_backup_options("Commit writes (default: dry-run).", "Skip the automatic .bak backup.")
 def ledblinky_admin_leds_add(emulator, exit_, pause_, select_, apply_changes, no_backup):
     """Add the admin LED buttons to games/consoles that don't have them.
 
@@ -11059,8 +10923,7 @@ def ledblinky_admin_leds_add(emulator, exit_, pause_, select_, apply_changes, no
 @ledblinky_admin_leds_group.command("remove")
 @click.option("--emulator", default=None,
               help="Console/emulator to remove admin LEDs from (default: every emulator).")
-@click.option("--apply", "apply_changes", is_flag=True, help="Commit writes (default: dry-run).")
-@click.option("--no-backup", is_flag=True, help="Skip the automatic .bak backup.")
+@_apply_backup_options("Commit writes (default: dry-run).", "Skip the automatic .bak backup.")
 def ledblinky_admin_leds_remove(emulator, apply_changes, no_backup):
     """Remove the admin LED buttons (they go dark in-game).
 
@@ -11165,16 +11028,7 @@ def ledblinky_lwax_fade(hex_colors, labels, steps_per_leg, duration_ms, name, ou
         err_console.print(f"[red]{e}[/red]")
         sys.exit(1)
 
-    if output_path:
-        out_path = Path(output_path)
-    elif config.output_dir:
-        out_path = Path(config.output_dir) / "LEDBlinky" / "lwax" / f"{name}.lwax"
-    else:
-        err_console.print(
-            "[red]Pass --output PATH, or configure output_dir "
-            "(spindoctor config set output_dir <path>).[/red]"
-        )
-        sys.exit(1)
+    out_path = _lwax_output_path(config, output_path, name)
 
     target_labels = label_list if label_list is not None else animation.labels
     console.print(f"Input map    : [cyan]{input_map_path}[/cyan]")
@@ -11183,17 +11037,8 @@ def ledblinky_lwax_fade(hex_colors, labels, steps_per_leg, duration_ms, name, ou
     console.print(f"Colors       : {' -> '.join(hex_colors)} -> (loop)")
     console.print(f"Frames       : [cyan]{len(animation.frames)}[/cyan] @ {duration_ms}ms")
 
-    if not apply_changes:
-        console.print(f"\n[yellow]Would write:[/yellow] {out_path}")
-        console.print("[dim]Dry-run — pass --apply to write the file.[/dim]")
+    if not _write_or_preview_lwax(animation, out_path, apply_changes):
         return
-
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    # newline="" via open() (not write_text, whose newline= is 3.10+ only) so
-    # Python's text-mode translation doesn't double the \r on Windows.
-    with out_path.open("w", encoding="utf-8", newline="") as _fh:
-        _fh.write(animation.render())
-    console.print(f"\n[green]Wrote:[/green] {out_path}")
     console.print(
         "\n[yellow]This file is not signed yet.[/yellow] Open it in "
         "[cyan]LEDBlinkyAnimationEditor.exe[/cyan] "
@@ -11228,25 +11073,7 @@ def ledblinky_lwax_batch(output_dir, apply_changes):
     config = _cfg()
 
     from . import lwax_patterns
-    from .lwax import resolve_input_map_path
-
-    # Prefer the cabinet's configured input map, else a fresh ~/Downloads export
-    # or the committed reference copy (so it works even before config is set).
-    input_map_path = None
-    try:
-        input_map_path = resolve_input_map_path(config)
-        if not Path(input_map_path).exists():
-            input_map_path = None
-    except ValueError:
-        input_map_path = None
-    input_map_path = lwax_patterns.resolve_input_map(input_map_path)
-    if input_map_path is None:
-        err_console.print(
-            "[red]No LEDBlinkyInputMap.xml found.[/red] Configure ledblinky_dir "
-            "(spindoctor config set ledblinky_dir <path>), or drop a copy in "
-            "~/Downloads."
-        )
-        sys.exit(1)
+    input_map_path = _lwax_input_map_or_exit(config)
 
     out_dir = Path(output_dir) if output_dir else lwax_patterns.default_output_dir()
 
@@ -11277,6 +11104,32 @@ def ledblinky_lwax_batch(output_dir, apply_changes):
         "[cyan]Animation -> Save As[/cyan] (no edits), then copy into "
         "<ledblinky_dir>\\lwa\\. See the folder's README.md for details."
     )
+
+
+def _lwax_output_path(config, output_path, name) -> Path:
+    if output_path:
+        return Path(output_path)
+    if config.output_dir:
+        return Path(config.output_dir) / "LEDBlinky" / "lwax" / f"{name}.lwax"
+    err_console.print(
+        "[red]Pass --output PATH, or configure output_dir "
+        "(spindoctor config set output_dir <path>).[/red]"
+    )
+    sys.exit(1)
+
+
+def _write_or_preview_lwax(animation, path, apply_changes):
+    if not apply_changes:
+        console.print(f"\n[yellow]Would write:[/yellow] {path}")
+        console.print("[dim]Dry-run — pass --apply to write the file.[/dim]")
+        return False
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    # Disable newline translation without requiring Python 3.10's write_text.
+    with path.open("w", encoding="utf-8", newline="") as fh:
+        fh.write(animation.render())
+    console.print(f"\n[green]Wrote:[/green] {path}")
+    return True
 
 
 def _lwax_input_map_or_exit(config) -> Path:
@@ -11412,16 +11265,7 @@ def ledblinky_lwax_cute(list_only, theme_name, pattern_key, colors1, colors2, co
         err_console.print(f"[red]{e}[/red]")
         sys.exit(1)
 
-    if output_path:
-        out_path = Path(output_path)
-    elif config.output_dir:
-        out_path = Path(config.output_dir) / "LEDBlinky" / "lwax" / f"{file_name}.lwax"
-    else:
-        err_console.print(
-            "[red]Pass --output PATH, or configure output_dir "
-            "(spindoctor config set output_dir <path>).[/red]"
-        )
-        sys.exit(1)
+    out_path = _lwax_output_path(config, output_path, file_name)
 
     frame_ms = animation.frames[0].duration_ms
     console.print(f"Input map    : [cyan]{input_map_path}[/cyan]")
@@ -11438,15 +11282,8 @@ def ledblinky_lwax_cute(list_only, theme_name, pattern_key, colors1, colors2, co
                   f"({len(animation.frames) * frame_ms / 1000:.1f} s loop)")
     console.print(f"Flash check  : {score.tier_title}")
 
-    if not apply_changes:
-        console.print(f"\n[yellow]Would write:[/yellow] {out_path}")
-        console.print("[dim]Dry-run — pass --apply to write the file.[/dim]")
+    if not _write_or_preview_lwax(animation, out_path, apply_changes):
         return
-
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    with out_path.open("w", encoding="utf-8", newline="") as _fh:
-        _fh.write(animation.render())
-    console.print(f"\n[green]Wrote:[/green] {out_path}")
     console.print(
         "\n[yellow]This file is not signed yet.[/yellow] Open it in "
         "[cyan]LEDBlinkyAnimationEditor.exe[/cyan] and use "
@@ -11567,24 +11404,9 @@ def ledblinky_lwax_calibrate(labels, name, output_path, apply_changes):
     config = _cfg()
 
     from . import lwax_patterns
-    from .lwax import parse_input_map, resolve_input_map_path
+    from .lwax import parse_input_map
 
-    # Same map resolution as `lwax batch`: configured ledblinky_dir, else a
-    # ~/Downloads export, else the committed reference copy.
-    input_map_path = None
-    try:
-        input_map_path = resolve_input_map_path(config)
-        if not Path(input_map_path).exists():
-            input_map_path = None
-    except ValueError:
-        input_map_path = None
-    input_map_path = lwax_patterns.resolve_input_map(input_map_path)
-    if input_map_path is None:
-        err_console.print(
-            "[red]No LEDBlinkyInputMap.xml found.[/red] Configure ledblinky_dir "
-            "(spindoctor config set ledblinky_dir <path>), or drop a copy in ~/Downloads."
-        )
-        sys.exit(1)
+    input_map_path = _lwax_input_map_or_exit(config)
 
     try:
         controllers = parse_input_map(Path(input_map_path))
@@ -11594,31 +11416,15 @@ def ledblinky_lwax_calibrate(labels, name, output_path, apply_changes):
         err_console.print(f"[red]{e}[/red]")
         sys.exit(1)
 
-    if output_path:
-        out_path = Path(output_path)
-    elif config.output_dir:
-        out_path = Path(config.output_dir) / "LEDBlinky" / "lwax" / f"{name}.lwax"
-    else:
-        err_console.print(
-            "[red]Pass --output PATH, or configure output_dir "
-            "(spindoctor config set output_dir <path>).[/red]"
-        )
-        sys.exit(1)
+    out_path = _lwax_output_path(config, output_path, name)
 
     console.print(f"Input map    : [cyan]{input_map_path}[/cyan]")
     console.print("\n[bold]Calibration legend[/bold] (physical label -> colour):")
     for label, color_name in legend:
         console.print(f"  [cyan]{label:<10}[/cyan] = {color_name}")
 
-    if not apply_changes:
-        console.print(f"\n[yellow]Would write:[/yellow] {out_path}")
-        console.print("[dim]Dry-run — pass --apply to write the file.[/dim]")
+    if not _write_or_preview_lwax(animation, out_path, apply_changes):
         return
-
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    with out_path.open("w", encoding="utf-8", newline="") as _fh:
-        _fh.write(animation.render())
-    console.print(f"\n[green]Wrote:[/green] {out_path}")
     console.print(
         "\n[yellow]Not signed yet.[/yellow] Open in [cyan]LEDBlinkyAnimationEditor.exe[/cyan] -> "
         "[cyan]Save As[/cyan] (no edits), copy into <ledblinky_dir>\\lwa\\, assign it as the FE "
@@ -11675,16 +11481,11 @@ def add_system(system_name, no_menu, no_system_media, no_db, no_game_media,
     )
     from .scraper import MetadataError, build_client
 
-    config = _cfg()
-    _check_config(config)
+    config = _checked_cfg()
 
     out_base = Path(output_dir) if output_dir else None
 
-    if not apply_changes:
-        console.print(
-            "[yellow bold][DRY RUN][/yellow bold] No files will be written. "
-            "Re-run with [cyan]--apply[/cyan] to commit."
-        )
+    _print_dry_run(apply_changes)
 
     console.print(Panel(f" add-system: {system_name} ", style="bold blue"))
 
@@ -11827,16 +11628,7 @@ def add_system(system_name, no_menu, no_system_media, no_db, no_game_media,
                     db.upsert_game(stub)
                 new_count += 1
             if apply_changes and new_count:
-                _tmp = config.effective_atomic_tmp_dir
-                if out_base:
-                    saved = db.save(
-                        output_path=out_base / "Databases" / system_name / f"{system_name}.xml",
-                        backup=False, tmp_dir=_tmp,
-                    )
-                else:
-                    _bak_dir = Path(config.backup_dir) if getattr(config, "backup_dir", "") else None
-                    saved = db.save(backup=config.backup_before_modify,
-                                    backup_dir=_bak_dir, tmp_dir=_tmp)
+                saved = _save_system_db(db, config, system_name, out_base)
                 console.print(f"  [green]+[/green] {new_count} stub(s) → {saved}")
             elif new_count:
                 console.print(f"  [yellow]would add {new_count} stub(s)[/yellow]")
@@ -11972,8 +11764,7 @@ def add_pc_system(system_name, rename, no_interactive, no_menu, no_system_media,
     """
     from .config import reset_override_cache
 
-    config = _cfg()
-    _check_config(config)
+    config = _checked_cfg()
 
     out_base = Path(output_dir) if output_dir else None
 
@@ -12061,9 +11852,11 @@ def add_pc_system(system_name, rename, no_interactive, no_menu, no_system_media,
     else:
         # No interactive review — accept proposed titles, drop duplicates.
         title_to_path = {}
+        seen_titles: set[str] = set()
         for path, proposed in proposals:
-            if proposed in title_to_path.values():
+            if proposed in seen_titles:
                 continue
+            seen_titles.add(proposed)
             title_to_path[path] = proposed
 
     # Invert {path: title} → {title: path} for DB + INI writes.
@@ -12121,6 +11914,8 @@ def add_pc_system(system_name, rename, no_interactive, no_menu, no_system_media,
             if not _dry_new and not _dry_stale:
                 console.print("  [yellow]database already in sync with titles[/yellow]")
     else:
+        from .audit import build_stub_entry
+
         db = load_database(system_name, config.databases_dir)
         existing = set(db.games().keys())
         stale_titles = sorted(existing - set(by_title))
@@ -12137,16 +11932,7 @@ def add_pc_system(system_name, rename, no_interactive, no_menu, no_system_media,
         for title in stale_titles:
             db.remove_game(title)
         if new_titles or stale_titles:
-            _tmp = config.effective_atomic_tmp_dir
-            if out_base:
-                saved = db.save(
-                    output_path=out_base / "Databases" / system_name / f"{system_name}.xml",
-                    backup=False, tmp_dir=_tmp,
-                )
-            else:
-                _bak_dir = Path(config.backup_dir) if getattr(config, "backup_dir", "") else None
-                saved = db.save(backup=config.backup_before_modify,
-                                backup_dir=_bak_dir, tmp_dir=_tmp)
+            saved = _save_system_db(db, config, system_name, out_base)
             if new_titles:
                 console.print(f"  [green]+[/green] {len(new_titles)} stub(s) added")
                 if verbose:
@@ -12335,8 +12121,7 @@ def pc_rename(system_name, no_pclauncher, overwrite_pclauncher, no_interactive,
     Existing INIs are left alone unless --overwrite-pclauncher is passed.
     The INI write is dry-run by default — re-run with --apply to commit.
     """
-    config = _cfg()
-    _check_config(config)
+    config = _checked_cfg()
     proposals = _propose_pc_titles(system_name, config)
     if not proposals:
         rom_dir = Path(config.roms_dir) / system_name
@@ -12392,6 +12177,7 @@ def pc_rename(system_name, no_pclauncher, overwrite_pclauncher, no_interactive,
     new_titles: list[str] = []
     stale_titles: list[str] = []
     current_titles: list[str] = []
+    on_disk_paths: dict[str, str] = {}
     for title in sorted(by_title):
         stem = _win_safe_stem(title)
         ini = module_dir / f"{stem}.ini" if module_dir else None
@@ -12400,6 +12186,7 @@ def pc_rename(system_name, no_pclauncher, overwrite_pclauncher, no_interactive,
         else:
             section = title_to_section.get(title, title)
             on_disk = read_pclauncher_ini_application_path(ini, section_name=section)
+            on_disk_paths[title] = on_disk
             expected = str(resolved_exe[title])
             if on_disk.lower() != expected.lower():
                 stale_titles.append(title)
@@ -12417,10 +12204,7 @@ def pc_rename(system_name, no_pclauncher, overwrite_pclauncher, no_interactive,
                 console.print(f"  [green]new[/green]  [bold]{title}[/bold]")
                 console.print(f"       {exe}")
             elif title in stale_titles_set:
-                stem = _win_safe_stem(title)
-                ini = module_dir / f"{stem}.ini"  # type: ignore[operator]
-                section = title_to_section.get(title, title)
-                on_disk = read_pclauncher_ini_application_path(ini, section_name=section)
+                on_disk = on_disk_paths[title]
                 console.print(f"  [red]stale[/red]  [bold]{title}[/bold]")
                 console.print(f"       Resolved : {exe}")
                 console.print(f"       INI has  : {on_disk}")
@@ -12530,8 +12314,7 @@ def pc_fix_exe(system_name, game, exe_path, list_candidates, apply_changes):
         rewrite_pclauncher_application,
     )
 
-    config = _cfg()
-    _check_config(config)
+    config = _checked_cfg()
 
     game_dir = Path(config.roms_dir) / system_name / game
 
@@ -12706,8 +12489,7 @@ def repath_system(system_name, new_rom_path, apply_changes):
         repath_pclauncher_system_ini,
     )
 
-    config = _cfg()
-    _check_config(config)
+    config = _checked_cfg()
 
     rl_base = Path(config.rocketlauncher_dir) if config.rocketlauncher_dir else None
     if not rl_base:
@@ -12860,8 +12642,7 @@ def organize(system_name, no_sort, axes, overwrite_sort, restructure,
         apply_restructure, find_latest_manifest, plan_restructure, undo_restructure,
     )
 
-    config = _cfg()
-    _check_config(config)
+    config = _checked_cfg()
 
     console.print(Panel(f" organize: {system_name} ", style="bold blue"))
 
@@ -13055,15 +12836,7 @@ def backup_create(target, include, label, apply_changes, verbose):
         console.print("\n[green]Nothing to back up.[/green]")
         return
 
-    tbl = Table(title="Backup plan", box=box.SIMPLE)
-    tbl.add_column("Component", style="cyan")
-    tbl.add_column("From", style="yellow")
-    tbl.add_column("→")
-    tbl.add_column("To", style="green")
-    tbl.add_column("Size", justify="right")
-    for it in plan.items:
-        tbl.add_row(it.component, it.src, "→", it.dest, format_bytes(it.size_bytes))
-    console.print(tbl)
+    console.print(_transfer_plan_table(plan.items, "Backup plan"))
     console.print(f"Backup root: [bold]{plan.backup_root}[/bold]")
     total = plan.total_bytes
     console.print(f"Total to copy: [bold]{format_bytes(total)}[/bold]")
@@ -13083,14 +12856,7 @@ def backup_create(target, include, label, apply_changes, verbose):
         )
         return
 
-    with _make_progress(
-        SpinnerColumn(),
-        TextColumn("[bold]{task.description}"),
-        BarColumn(),
-        TextColumn("{task.completed}/{task.total}"),
-        TimeElapsedColumn(),
-        console=console,
-    ) as progress:
+    with _make_progress(bold=True, count=True, elapsed=True) as progress:
         task = progress.add_task("Backing up", total=len(plan.items))
 
         def _cb(item, status):
@@ -13292,15 +13058,7 @@ def backup_restore(backup_path, include, use_current_paths, overwrite, apply_cha
         console.print("\n[green]Nothing to restore.[/green]")
         return
 
-    tbl = Table(title="Restore plan", box=box.SIMPLE)
-    tbl.add_column("Component", style="cyan")
-    tbl.add_column("From backup", style="yellow")
-    tbl.add_column("→")
-    tbl.add_column("Restored to", style="green")
-    tbl.add_column("Size", justify="right")
-    for it in plan.items:
-        tbl.add_row(it.component, it.src, "→", it.dest, format_bytes(it.size_bytes))
-    console.print(tbl)
+    console.print(_transfer_plan_table(plan.items, "Restore plan", "From backup", "Restored to"))
     console.print(f"Total to restore: [bold]{format_bytes(plan.total_bytes)}[/bold]")
 
     # Warn about clobbering
@@ -13326,14 +13084,7 @@ def backup_restore(backup_path, include, use_current_paths, overwrite, apply_cha
         )
         return
 
-    with _make_progress(
-        SpinnerColumn(),
-        TextColumn("[bold]{task.description}"),
-        BarColumn(),
-        TextColumn("{task.completed}/{task.total}"),
-        TimeElapsedColumn(),
-        console=console,
-    ) as progress:
+    with _make_progress(bold=True, count=True, elapsed=True) as progress:
         task = progress.add_task("Restoring", total=len(plan.items))
 
         def _cb(item, status):
@@ -13804,15 +13555,7 @@ def migrate(target, include, systems, apply_changes, keep_source, verify,
         console.print("\n[green]Nothing to migrate.[/green]")
         return
 
-    tbl = Table(title="Migration plan", box=box.SIMPLE)
-    tbl.add_column("Component", style="cyan")
-    tbl.add_column("From", style="yellow")
-    tbl.add_column("→")
-    tbl.add_column("To", style="green")
-    tbl.add_column("Size", justify="right")
-    for m in plan.moves:
-        tbl.add_row(m.component, m.src, "→", m.dest, format_bytes(m.size_bytes))
-    console.print(tbl)
+    console.print(_transfer_plan_table(plan.moves, "Migration plan"))
 
     total = plan.total_bytes
     console.print(f"Total to transfer: [bold]{format_bytes(total)}[/bold]")
@@ -13840,14 +13583,7 @@ def migrate(target, include, systems, apply_changes, keep_source, verify,
         return
 
     # ── execute ───────────────────────────────────────────────────────────────
-    with _make_progress(
-        SpinnerColumn(),
-        TextColumn("[bold]{task.description}"),
-        BarColumn(),
-        TextColumn("{task.completed}/{task.total}"),
-        TimeElapsedColumn(),
-        console=console,
-    ) as progress:
+    with _make_progress(bold=True, count=True, elapsed=True) as progress:
         task = progress.add_task("Migrating", total=len(plan.moves))
 
         def _cb(move, status):
@@ -14283,8 +14019,7 @@ def game_list_cmd(system, verbose):
       spindoctor game list --system "Nintendo 64"
       spindoctor game list --system MAME --verbose
     """
-    config = _cfg()
-    _check_config(config)
+    config = _checked_cfg()
     db = load_database(system, config.databases_dir)
     games = list(db.iter_xml_order())
     if not games:
@@ -14343,14 +14078,9 @@ def game_remove_cmd(system, game_name, apply_changes, verbose, remove_pclauncher
       spindoctor game remove --system MAME "1942" --apply --verbose
       spindoctor game remove --system "PC Games" "Peglin" --remove-pclauncher --apply
     """
-    config = _cfg()
-    _check_config(config)
+    config = _checked_cfg()
 
-    if not apply_changes:
-        console.print(
-            "[yellow bold][DRY RUN][/yellow bold] No files will be written. "
-            "Re-run with [cyan]--apply[/cyan] to commit."
-        )
+    _print_dry_run(apply_changes)
 
     db = load_database(system, config.databases_dir)
     game = db.get(game_name)
@@ -14400,17 +14130,7 @@ def game_remove_cmd(system, game_name, apply_changes, verbose, remove_pclauncher
 
     if apply_changes:
         db.remove_game(game_name)
-        _tmp = config.effective_atomic_tmp_dir
-        out_base = Path(output_dir) if output_dir else None
-        if out_base:
-            saved = db.save(
-                output_path=out_base / "Databases" / system / f"{system}.xml",
-                backup=False, tmp_dir=_tmp,
-            )
-        else:
-            _bak_dir = Path(config.backup_dir) if getattr(config, "backup_dir", "") else None
-            saved = db.save(backup=config.backup_before_modify,
-                            backup_dir=_bak_dir, tmp_dir=_tmp)
+        saved = _save_system_db(db, config, system, output_dir)
         console.print(f"  [green]Saved:[/green] {saved}")
         if pclauncher_ini is not None:
             pclauncher_ini.unlink()
@@ -14423,14 +14143,9 @@ def game_remove_cmd(system, game_name, apply_changes, verbose, remove_pclauncher
 
 def _game_move_impl(system, game_name, direction_or_pos, apply_changes, verbose, output_dir):
     """Shared logic for game move / move-up / move-down."""
-    config = _cfg()
-    _check_config(config)
+    config = _checked_cfg()
 
-    if not apply_changes:
-        console.print(
-            "[yellow bold][DRY RUN][/yellow bold] No files will be written. "
-            "Re-run with [cyan]--apply[/cyan] to commit."
-        )
+    _print_dry_run(apply_changes)
 
     db = load_database(system, config.databases_dir)
     games = list(db.iter_xml_order())
@@ -14483,17 +14198,7 @@ def _game_move_impl(system, game_name, direction_or_pos, apply_changes, verbose,
 
     if apply_changes:
         db.reorder_games(names)
-        _tmp = config.effective_atomic_tmp_dir
-        out_base = Path(output_dir) if output_dir else None
-        if out_base:
-            saved = db.save(
-                output_path=out_base / "Databases" / system / f"{system}.xml",
-                backup=False, tmp_dir=_tmp,
-            )
-        else:
-            _bak_dir = Path(config.backup_dir) if getattr(config, "backup_dir", "") else None
-            saved = db.save(backup=config.backup_before_modify,
-                            backup_dir=_bak_dir, tmp_dir=_tmp)
+        saved = _save_system_db(db, config, system, output_dir)
         console.print(f"  [green]Saved:[/green] {saved}")
     else:
         console.print("  [dim](dry run — pass --apply to write)[/dim]")
@@ -14503,13 +14208,7 @@ def _game_move_impl(system, game_name, direction_or_pos, apply_changes, verbose,
 @click.option("--system", "-s", required=True, help="System containing the game.")
 @click.argument("game_name")
 @click.argument("position", type=int)
-@click.option("--apply", "apply_changes", is_flag=True,
-              help="Commit the reorder. Without this flag, dry-run only.")
-@click.option("--verbose", "-v", is_flag=True,
-              help="Show full game metadata and file path.")
-@click.option("--output-dir", type=click.Path(), default=None,
-              help="Write the edited DB into <output-dir>/Databases/<system>/ "
-                   "instead of the live HyperSpin tree.")
+@_game_move_options
 def game_move_cmd(system, game_name, position, apply_changes, verbose, output_dir):
     """Move a game to a specific position in the wheel order.
 
@@ -14526,13 +14225,7 @@ def game_move_cmd(system, game_name, position, apply_changes, verbose, output_di
 @game_group.command("move-up")
 @click.option("--system", "-s", required=True, help="System containing the game.")
 @click.argument("game_name")
-@click.option("--apply", "apply_changes", is_flag=True,
-              help="Commit the reorder. Without this flag, dry-run only.")
-@click.option("--verbose", "-v", is_flag=True,
-              help="Show full game metadata and file path.")
-@click.option("--output-dir", type=click.Path(), default=None,
-              help="Write the edited DB into <output-dir>/Databases/<system>/ "
-                   "instead of the live HyperSpin tree.")
+@_game_move_options
 def game_move_up_cmd(system, game_name, apply_changes, verbose, output_dir):
     """Move a game up one position in the wheel order.
 
@@ -14547,13 +14240,7 @@ def game_move_up_cmd(system, game_name, apply_changes, verbose, output_dir):
 @game_group.command("move-down")
 @click.option("--system", "-s", required=True, help="System containing the game.")
 @click.argument("game_name")
-@click.option("--apply", "apply_changes", is_flag=True,
-              help="Commit the reorder. Without this flag, dry-run only.")
-@click.option("--verbose", "-v", is_flag=True,
-              help="Show full game metadata and file path.")
-@click.option("--output-dir", type=click.Path(), default=None,
-              help="Write the edited DB into <output-dir>/Databases/<system>/ "
-                   "instead of the live HyperSpin tree.")
+@_game_move_options
 def game_move_down_cmd(system, game_name, apply_changes, verbose, output_dir):
     """Move a game down one position in the wheel order.
 
@@ -14590,14 +14277,9 @@ def game_sort_cmd(system, sort_by, apply_changes, verbose, output_dir):
       spindoctor game sort --system MAME --apply
       spindoctor game sort --system MAME --by name --apply
     """
-    config = _cfg()
-    _check_config(config)
+    config = _checked_cfg()
 
-    if not apply_changes:
-        console.print(
-            "[yellow bold][DRY RUN][/yellow bold] No files will be written. "
-            "Re-run with [cyan]--apply[/cyan] to commit."
-        )
+    _print_dry_run(apply_changes)
 
     db = load_database(system, config.databases_dir)
     games = list(db.iter_xml_order())
@@ -14631,17 +14313,7 @@ def game_sort_cmd(system, sort_by, apply_changes, verbose, output_dir):
 
     if apply_changes:
         db.reorder_games(sorted_names)
-        _tmp = config.effective_atomic_tmp_dir
-        out_base = Path(output_dir) if output_dir else None
-        if out_base:
-            saved = db.save(
-                output_path=out_base / "Databases" / system / f"{system}.xml",
-                backup=False, tmp_dir=_tmp,
-            )
-        else:
-            _bak_dir = Path(config.backup_dir) if getattr(config, "backup_dir", "") else None
-            saved = db.save(backup=config.backup_before_modify,
-                            backup_dir=_bak_dir, tmp_dir=_tmp)
+        saved = _save_system_db(db, config, system, output_dir)
         console.print(f"  [green]Saved:[/green] {saved}")
     else:
         console.print("  [dim](dry run — pass --apply to write)[/dim]")
@@ -14672,14 +14344,9 @@ def game_save_order_cmd(system, order_file, apply_changes, output_dir):
       spindoctor game save-order --system MAME --order-file order.txt
       spindoctor game save-order --system MAME --order-file order.txt --apply
     """
-    config = _cfg()
-    _check_config(config)
+    config = _checked_cfg()
 
-    if not apply_changes:
-        console.print(
-            "[yellow bold][DRY RUN][/yellow bold] No files will be written. "
-            "Re-run with [cyan]--apply[/cyan] to commit."
-        )
+    _print_dry_run(apply_changes)
 
     names = Path(order_file).read_text(encoding="utf-8").splitlines()
     names = [n for n in names if n.strip()]
@@ -14691,17 +14358,7 @@ def game_save_order_cmd(system, order_file, apply_changes, output_dir):
 
     if apply_changes:
         db.reorder_games(names)
-        _tmp = config.effective_atomic_tmp_dir
-        out_base = Path(output_dir) if output_dir else None
-        if out_base:
-            saved = db.save(
-                output_path=out_base / "Databases" / system / f"{system}.xml",
-                backup=False, tmp_dir=_tmp,
-            )
-        else:
-            _bak_dir = Path(config.backup_dir) if getattr(config, "backup_dir", "") else None
-            saved = db.save(backup=config.backup_before_modify,
-                            backup_dir=_bak_dir, tmp_dir=_tmp)
+        saved = _save_system_db(db, config, system, output_dir)
         console.print(f"  [green]Saved:[/green] {saved}")
     else:
         console.print("  [dim](dry run — pass --apply to write)[/dim]")
@@ -15005,8 +14662,7 @@ def find_global(query: str, limit: int, exact: bool):
 
     Replaces Hypersearch — type a title, get every system that has it.
     """
-    config = _cfg()
-    _check_config(config)
+    config = _checked_cfg()
     systems = get_systems(config)
     if not systems:
         err_console.print("[red]No systems configured.[/red]")
@@ -15032,14 +14688,17 @@ def find_global(query: str, limit: int, exact: bool):
             skipped.append((sys_name, f"{type(exc).__name__}: {exc}"))
             continue
         per_system = 0
-        for name, entry in sorted(db.games().items()):
-            haystack = f"{name} {entry.description}".lower()
-            if exact:
-                hit = (q == name.lower() or q == entry.description.lower())
-            else:
-                hit = q in haystack
-            if not hit:
-                continue
+        if exact:
+            matches = [
+                (name, entry) for name, entry in db.games().items()
+                if q == name.lower() or q == entry.description.lower()
+            ]
+        else:
+            matches = [
+                (name, entry) for name, entry in db.games().items()
+                if q in f"{name} {entry.description}".lower()
+            ]
+        for name, entry in sorted(matches, key=lambda item: item[0]):
             tbl.add_row(sys_name, name, entry.description or "")
             total += 1
             per_system += 1

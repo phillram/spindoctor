@@ -277,9 +277,13 @@ class Cleanup:
     def _handle(self, candidates: set[str], label: str) -> int:
         # Everything inside a new folder is new too (the watcher can miss files
         # written the moment a folder appears).
-        for path in list(candidates):
+        walked: set[str] = set()
+        for path in sorted(candidates, key=len):
+            if os.path.normcase(path) in walked:
+                continue
             if os.path.isdir(path) and self._is_new(path):
                 for folder, dirs, files in os.walk(path):
+                    walked.add(os.path.normcase(folder))
                     candidates.update(os.path.join(folder, n) for n in dirs + files)
         new = sorted(p for p in candidates
                      if os.path.normcase(p) not in self.done and self._is_new(p))

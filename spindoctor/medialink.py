@@ -93,10 +93,6 @@ class LinkPlan:
     actions: list[LinkAction] = field(default_factory=list)
 
     @property
-    def to_apply(self) -> list[LinkAction]:
-        return [a for a in self.actions if not a.skip_reason]
-
-    @property
     def skipped(self) -> list[LinkAction]:
         return [a for a in self.actions if a.skip_reason]
 
@@ -147,6 +143,24 @@ def _read_hs_video_dir(settings_dir: Path, system: str) -> Optional[Path]:
     return p if p.is_dir() else None
 
 
+class MirrorSourceIndex:
+    """Lazy, operation-local snapshot of source files grouped by exact stem."""
+
+    def __init__(self, media_root: Path):
+        self.media_root = media_root
+        self._files: dict[Path, dict[str, list[Path]]] = {}
+
+    def files(self, directory: Path, stem: str) -> list[Path]:
+        if directory not in self._files:
+            by_stem: dict[str, list[Path]] = {}
+            if directory.is_dir():
+                for entry in directory.iterdir():
+                    if entry.is_file() and entry.suffix.lower() in _FILE_EXTS:
+                        by_stem.setdefault(entry.stem, []).append(entry)
+            self._files[directory] = by_stem
+        return self._files[directory].get(stem, [])
+
+
 def plan_mirror(
     media_root: Path,
     source_system: str,
@@ -156,6 +170,7 @@ def plan_mirror(
     *,
     video_dir_override: Optional[Path] = None,
     refresh: bool = False,
+    source_index: Optional[MirrorSourceIndex] = None,
 ) -> LinkPlan:
     """Build the action list to mirror one game's media from src→target.
 
@@ -169,6 +184,9 @@ def plan_mirror(
     system settings INI (``[video defaults]`` → ``path=``).  This handles
     MAME subsystems ("4-Player Games", "Driving Games", etc.) that store all
     their videos under ``Media/MAME/Video/`` rather than a per-system folder.
+
+    Pass one ``source_index`` across a wheel build to list each source slot
+    only once. Create a fresh index for each operation.
 
     ``refresh`` permits replacing stale targets. Only wheel builders that have
     validated ownership should enable it; ordinary mirrors preserve conflicts.
@@ -186,6 +204,8 @@ def plan_mirror(
     if not source_stem or not target_stem:
         return plan
 
+    if source_index is None:
+        source_index = MirrorSourceIndex(media_root)
     src_root = media_root / source_system
     dst_root = media_root / target_system
     if not src_root.exists():
@@ -199,22 +219,14 @@ def plan_mirror(
         # often create the directory skeleton without populating it, so checking
         # is_dir() alone is not sufficient — an empty directory must also
         # trigger the fallback.
-        if sub == "Video" and video_dir_override:
-            has_own_video = src_dir.is_dir() and any(
-                e.is_file() and e.stem == source_stem
-                and e.suffix.lower() in _FILE_EXTS
-                for e in src_dir.iterdir()
-            )
-            if not has_own_video:
-                src_dir = video_dir_override
+        matches = source_index.files(src_dir, source_stem)
+        if sub == "Video" and video_dir_override and not matches:
+            src_dir = video_dir_override
+            matches = source_index.files(src_dir, source_stem)
         if not src_dir.is_dir():
             continue
         theme_found = False
-        for entry in src_dir.iterdir():
-            if not entry.is_file():
-                continue
-            if entry.stem != source_stem or entry.suffix.lower() not in _FILE_EXTS:
-                continue
+        for entry in matches:
             if sub == "Themes":
                 theme_found = True
             dest = dst_root / sub / f"{target_stem}{entry.suffix}"

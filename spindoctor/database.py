@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any, Iterator, Optional
 
 from ._compat import et_indent
-from ._utils import atomic_write_bytes as _atomic_write_bytes, resolve_atomic_tmp_dir, unique_path
+from ._utils import atomic_write_bytes as _atomic_write_bytes, export_safe_stem, resolve_atomic_tmp_dir, unique_path
 
 # lxml is imported lazily so PyInstaller can exclude it from the lightweight
 # standalone EXEs (spindoctor-fav, spindoctor-recent, spindoctor-stats) via
@@ -319,10 +319,12 @@ class HyperspinDatabase:
             for n, el in self._game_elements.items():
                 if n not in name_set:
                     ordered_els.append(el)
-            for el in ordered_els:
-                self._root.remove(el)
-            for el in ordered_els:
-                self._root.append(el)
+            ordered_set = set(ordered_els)
+            if len(ordered_set) != len(ordered_els):
+                # Preserve the old remove error for repeated ROM names.
+                for el in ordered_els:
+                    self._root.remove(el)
+            self._root[:] = [el for el in self._root if el not in ordered_set] + ordered_els
 
     def reset_games(self) -> None:
         """Drop every game from both the dict and the parsed XML tree.
@@ -335,8 +337,8 @@ class HyperspinDatabase:
         self._ensure_loaded()
         self._games.clear()
         if self._root is not None:
-            for el in [*self._game_elements.values(), *self._shadowed_elements]:
-                self._root.remove(el)
+            removed = set(self._game_elements.values()) | set(self._shadowed_elements)
+            self._root[:] = [el for el in self._root if el not in removed]
         self._game_elements.clear()
         # Every entry, including each duplicate, is now caller-supplied.
         self._shadowed_elements.clear()
@@ -428,22 +430,7 @@ class HyperspinDatabase:
         # HyperSpin's native Main Menu.xml has no XML declaration; emitting
         # one is tolerated by some skins but ships strictly without it.
         want_decl = not self._enabled_as_attribute
-        LET = _lxml_etree()
-        if LET is not None and isinstance(self._tree, LET._ElementTree):
-            xml_bytes = LET.tostring(
-                self._tree,
-                pretty_print=True,
-                xml_declaration=want_decl,
-                encoding="UTF-8" if want_decl else None,
-            )
-            _atomic_write_bytes(target, xml_bytes, tmp_dir=tmp_dir)
-        else:
-            et_indent(self._tree)
-            def _et_write(f):
-                if want_decl:
-                    f.write(b'<?xml version="1.0"?>\n')
-                self._tree.write(f, encoding="utf-8", xml_declaration=False)
-            _atomic_write_via_tree(target, _et_write, tmp_dir=tmp_dir)
+        _write_xml_tree(self._tree, target, want_decl=want_decl, tmp_dir=tmp_dir)
 
     # Build a brand-new tree from scratch.  Used the first time a DB is created.
     def _write_fresh(self, target: Path,
@@ -474,27 +461,33 @@ class HyperspinDatabase:
         for game in games_iter:
             _new_game_element(game, root=root, enabled_as_attribute=attr_mode)
 
-        want_decl = not attr_mode
-        if LET is not None:
-            tree = LET.ElementTree(root)
-            xml_bytes = LET.tostring(
-                tree,
-                pretty_print=True,
-                xml_declaration=want_decl,
-                encoding="UTF-8" if want_decl else None,
-            )
-            _atomic_write_bytes(target, xml_bytes, tmp_dir=tmp_dir)
-        else:
-            tree = ET.ElementTree(root)
-            et_indent(tree)
-            def _et_write_fresh(f):
-                if want_decl:
-                    f.write(b'<?xml version="1.0"?>\n')
-                tree.write(f, encoding="utf-8", xml_declaration=False)
-            _atomic_write_via_tree(target, _et_write_fresh, tmp_dir=tmp_dir)
+        tree = LET.ElementTree(root) if LET is not None else ET.ElementTree(root)
+        _write_xml_tree(tree, target, want_decl=not attr_mode, tmp_dir=tmp_dir)
 
 
 # ─── helpers ───────────────────────────────────────────────────────────────────
+
+
+def _write_xml_tree(tree, target: Path, *, want_decl: bool = True,
+                    tmp_dir: Optional[Path] = None) -> None:
+    """Serialize either XML backend without changing its declaration policy."""
+    LET = _lxml_etree()
+    if LET is not None and isinstance(tree, LET._ElementTree):
+        xml_bytes = LET.tostring(
+            tree,
+            pretty_print=True,
+            xml_declaration=want_decl,
+            encoding="UTF-8" if want_decl else None,
+        )
+        _atomic_write_bytes(target, xml_bytes, tmp_dir=tmp_dir)
+    else:
+        et_indent(tree)
+        def _et_write(f):
+            if want_decl:
+                f.write(b'<?xml version="1.0"?>\n')
+            tree.write(f, encoding="utf-8", xml_declaration=False)
+        _atomic_write_via_tree(target, _et_write, tmp_dir=tmp_dir)
+
 
 def find_database(system_name: str, databases_dir: Path) -> Optional[Path]:
     """Locate the XML database file for a system."""
@@ -685,28 +678,15 @@ def write_sort_databases(
                 _new_game_element(g, root=root)
 
             tree = ET.ElementTree(root)
-            et_indent(tree)
-            _atomic_write_via_tree(
-                out_path,
-                lambda f, _t=tree: (
-                    f.write(b'<?xml version="1.0"?>\n'),
-                    _t.write(f, encoding="utf-8", xml_declaration=False),
-                ),
-                tmp_dir=tmp_dir,
-            )
+            _write_xml_tree(tree, out_path, tmp_dir=tmp_dir)
             written[axis].append(out_path)
 
     return written
 
 
-_BUCKET_FILE_SAFE = ("\\", "/", ":", "*", "?", '"', "<", ">", "|")
-
-
 def _safe_bucket_filename(name: str) -> str:
     """Sanitize a bucket value so it's a legal Windows/macOS/Linux filename."""
-    for ch in _BUCKET_FILE_SAFE:
-        name = name.replace(ch, "_")
-    return name.strip().rstrip(".") or "_"
+    return export_safe_stem(name)
 
 
 def _new_game_element(game: "GameEntry", root=None, enabled_as_attribute: bool = False):
@@ -745,32 +725,7 @@ def _new_game_element(game: "GameEntry", root=None, enabled_as_attribute: bool =
         else:
             el = ET.Element("game")
 
-    el.set("name", game.name)
-    if enabled_as_attribute:
-        if _enabled_to_bool_str(game.enabled or "Yes") == "False":
-            el.set("enabled", "False")
-        for key, value in (game.extra_attrs or {}).items():
-            if key in _KNOWN_GAME_ATTRS:
-                continue
-            el.set(key, value)
-        return el
-
-    _set_text(el, "description", game.description or game.name)
-    _set_text(el, "cloneof", game.cloneof)
-    _set_text(el, "crc", game.crc)
-    _set_text(el, "manufacturer", game.manufacturer)
-    _set_text(el, "year", game.year)
-    _set_text(el, "genre", game.genre)
-    _set_text(el, "rating", game.rating)
-    # Only emit <players> when populated — HyperSpin treats an empty
-    # element as "1 player" in some skins, which is misleading.
-    if game.players:
-        _set_text(el, "players", game.players)
-    _set_text(el, "enabled", game.enabled or "Yes")
-    for key, value in (game.extra_attrs or {}).items():
-        if key in _KNOWN_GAME_ATTRS:
-            continue
-        el.set(key, value)
+    _update_game_element(el, game, enabled_as_attribute=enabled_as_attribute)
     return el
 
 

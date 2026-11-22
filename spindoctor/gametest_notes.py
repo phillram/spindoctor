@@ -133,22 +133,10 @@ def _emulator_systems(config: Config) -> dict[str, set[str]]:
     """Lower-cased emulator → the Main Menu wheels that launch with it, as the
     ``doctor`` User Functions check passes it."""
     from .health import _main_menu_wheels
-    from .lightgun import _system_emulators, system_settings_ini
+    from .lightgun import emulator_systems
 
-    rl = Path(config.rocketlauncher_dir)
-    out: dict[str, set[str]] = {}
-    for wheel in _main_menu_wheels(config.databases_dir / "Main Menu" / "Main Menu.xml"):
-        found = system_settings_ini(rl, wheel)
-        if found is None:
-            continue
-        try:
-            body = found[0].read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            continue
-        for emu in _system_emulators(rl, wheel, body):
-            if emu:
-                out.setdefault(emu, set()).add(wheel.lower())
-    return out
+    wheels = _main_menu_wheels(config.databases_dir / "Main Menu" / "Main Menu.xml")
+    return emulator_systems(Path(config.rocketlauncher_dir), wheels)
 
 
 class _HyperSpinFilter:

@@ -19,7 +19,6 @@ import time
 from typing import Callable
 
 VK_ESCAPE = 0x1B
-_WM_DESTROY = 0x0002
 _WM_PAINT = 0x000F
 _WM_CLOSE = 0x0010
 _WM_SETCURSOR = 0x0020

@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Iterable, Optional
 
 from . import archives
+from ._utils import hash_stream
 from .audit import scan_roms
 from .config import Config
 from .romheaders import file_header_length
@@ -54,15 +55,9 @@ class CrossSystemMatch:
 def _hash_file(path: Path, chunk: int = 1 << 20, start: int = 0) -> Optional[str]:
     """SHA1 the bytes of *path* from offset *start* (no archive unwrapping)."""
     try:
-        h = hashlib.sha1()
         with open(path, "rb") as f:
             f.seek(start)
-            while True:
-                buf = f.read(chunk)
-                if not buf:
-                    break
-                h.update(buf)
-        return h.hexdigest()
+            return hash_stream(f, chunk=chunk)[0]
     except OSError:
         return None
 

@@ -42,7 +42,6 @@ from ._text import read_editable_text, read_windows_text, write_windows_text
 
 INPUT_MAP_NAME = "LEDBlinkyInputMap.xml"
 CONTROLS_INI_FILE = "Controls.ini"
-COMMUNITY_CONTROLS_GLOB = "controls.ini.*.bak"
 
 #: Wheels whose games are other wheels' games; profiles are copied per game.
 COLLECTION_SYSTEMS = ("Favorites", "Most Played", "Recently Played")
@@ -243,8 +242,9 @@ class RetroArchIndex:
 
     def __init__(self, folder: Path):
         self.folder = folder
+        self._cfgs: dict[Path, dict[str, str]] = {}
         base = folder / "retroarch.cfg"
-        self.base = _read_ra_cfg(base) if base.is_file() else {}
+        self.base = self._cfg(base) if base.is_file() else {}
         self.game_cfgs: dict[str, Path] = {}
         cfg_dir = folder / "config"
         if cfg_dir.is_dir():
@@ -253,18 +253,23 @@ class RetroArchIndex:
                     for f in core.glob("*.cfg"):
                         self.game_cfgs.setdefault(f.stem.lower(), f)
 
+    def _cfg(self, path: Path) -> dict[str, str]:
+        if path not in self._cfgs:
+            self._cfgs[path] = _read_ra_cfg(path)
+        return self._cfgs[path]
+
     def keymap(self, system: str, game: Optional[str] = None) -> Optional[Keymap]:
         sys_cfg = _ci_file(self.folder / "config", f"{system}.cfg")
         if sys_cfg is None:
             return None
         merged = dict(self.base)
-        merged.update(_read_ra_cfg(sys_cfg))
+        merged.update(self._cfg(sys_cfg))
         source = f"RetroArch {self.folder.name}\\config\\{sys_cfg.name}"
         if game:
             override = self.game_cfgs.get(game.lower())
             if override is None:
                 return None
-            game_cfg = _read_ra_cfg(override)
+            game_cfg = self._cfg(override)
             if not any(k.startswith("input_player") for k in game_cfg):
                 return None
             merged.update(game_cfg)
@@ -668,9 +673,13 @@ class RocketLauncherIndex:
         self._ahk_files: dict[Path, dict[str, Path]] = {}
         self._remaps: dict[Path, KeyRemap] = {}
         self._games: dict[str, dict[str, tuple[str, str]]] = {}
+        self._games_lower: dict[str, dict[str, tuple[str, str]]] = {}
+        self._system_inis: dict[str, dict[str, dict[str, str]]] = {}
 
     def _system_ini(self, system: str) -> dict[str, dict[str, str]]:
-        return _read_ini_loose(self.settings / system / "Emulators.ini")
+        if system not in self._system_inis:
+            self._system_inis[system] = _read_ini_loose(self.settings / system / "Emulators.ini")
+        return self._system_inis[system]
 
     def default_emulator(self, system: str) -> str:
         ini = self._system_ini(system)
@@ -686,7 +695,14 @@ class RocketLauncherIndex:
             if emu or sysname:
                 out[game] = (emu, sysname)
         self._games[system] = out
+        lower = self._games_lower[system] = {}
+        for game, override in out.items():
+            lower.setdefault(game.lower(), override)
         return out
+
+    def game_override(self, system: str, game: str) -> tuple[str, str]:
+        self.game_overrides(system)
+        return self._games_lower[system].get(game.lower(), ("", ""))
 
     def launcher(self, emulator: str, system: str) -> Optional[Launcher]:
         if not emulator:
@@ -811,9 +827,7 @@ class KeymapResolver:
 
     def game_launcher(self, system: str, game: str) -> tuple[Optional[Launcher], str]:
         """Effective emulator and config system, including Games.ini overrides."""
-        overrides = self.rl.game_overrides(system)
-        override = next((v for k, v in overrides.items() if k.lower() == game.lower()), ("", ""))
-        emulator, other = override
+        emulator, other = self.rl.game_override(system, game)
         config_system = other or system
         return self.rl.launcher(emulator or self.rl.default_emulator(config_system), config_system), config_system
 
@@ -1360,7 +1374,8 @@ class ProfileBuilder:
     def donor_colors(self, rom: str) -> dict[str, str]:
         return self.colors_for(rom) or self._library_ini()[1].get(rom.lower()) or {}
 
-    def _donor(self, game: DbGame, by_desc: dict[str, str]) -> Optional[str]:
+    def _donor(self, game: DbGame, by_desc: dict[str, str],
+               regional: Optional[dict[str, str]] = None) -> Optional[str]:
         """Best Controls.ini entry for a ROM that has none of its own (live, else library)."""
         for cand in (game.cloneof, _SUFFIX_RE.sub("", game.name)):
             if cand and cand.lower() != game.name.lower() and self.donor_controls(cand):
@@ -1371,12 +1386,20 @@ class ProfileBuilder:
                 return name[:cut]
         if len(name) > 4:
             # Regional clone differing only in its last letter (souledga -> souledge).
-            known = set(self.controls) | set(self._controls_new) | set(self._library_ini()[0])
-            same = sorted(k for k in known if len(k) == len(name) and k[:-1] == name[:-1])
-            if same:
-                return same[0]
+            if regional is None:
+                regional = self._regional_donors()
+            if name[:-1] in regional:
+                return regional[name[:-1]]
         base = re.sub(r"\s*[\(\[].*$", "", game.description).strip().lower()
         return by_desc.get(base)
+
+    def _regional_donors(self) -> dict[str, str]:
+        regional: dict[str, str] = {}
+        for name in set(self.controls) | set(self._controls_new) | set(self._library_ini()[0]):
+            prefix = name[:-1]
+            if prefix not in regional or name < regional[prefix]:
+                regional[prefix] = name
+        return regional
 
     # -- steps ----------------------------------------------------------------
 
@@ -1435,6 +1458,7 @@ class ProfileBuilder:
         pending = [(s, g) for s in systems for g in load_db(self.config, s) or []
                    if not self.controls_for(g.name) and emu_key(g.name) not in self._mame_groups]
         added: dict[str, int] = {}
+        regional = self._regional_donors()
         # Repeat until nothing new resolves: a hack's parent may itself be a
         # hack that only gets its entry earlier in this pass.
         while pending:
@@ -1444,11 +1468,14 @@ class ProfileBuilder:
                     continue   # same ROM in two wheels, already added
                 # Its own entry, if `ledblinky prune` moved it to the library.
                 own = game.name if self._library_ini()[0].get(game.name.lower()) else None
-                donor = own or self._donor(game, by_desc)
+                donor = own or self._donor(game, by_desc, regional)
                 if not donor:
                     left.append((system, game))
                     continue
-                self._controls_new[game.name.lower()] = dict(self.donor_controls(donor) or {})
+                name = game.name.lower()
+                self._controls_new[name] = dict(self.donor_controls(donor) or {})
+                if name[:-1] not in regional or name < regional[name[:-1]]:
+                    regional[name[:-1]] = name
                 self._colors_new[game.name.lower()] = dict(self.donor_colors(donor))
                 self.result.controls_ini_added.append((game.name, donor))
                 added[system] = added.get(system, 0) + 1

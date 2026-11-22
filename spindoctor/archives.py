@@ -38,6 +38,7 @@ import zlib
 from pathlib import Path
 from typing import Any, Optional
 
+from ._utils import hash_stream
 from .romheaders import HeaderlessSHA1
 
 # Extensions we know about. Matched case-insensitively.
@@ -97,19 +98,7 @@ def _hash_stream(stream, body: Optional[HeaderlessSHA1] = None) -> tuple[str, st
     *body*, when given, is fed the same bytes (see ``extract_inner_hash``'s
     ``headerless``).
     """
-    sha1 = hashlib.sha1()
-    crc = 0
-    size = 0
-    while True:
-        buf = stream.read(_CHUNK)
-        if not buf:
-            break
-        sha1.update(buf)
-        crc = zlib.crc32(buf, crc)
-        size += len(buf)
-        if body is not None:
-            body.update(buf)
-    return sha1.hexdigest(), f"{crc & 0xFFFFFFFF:08x}", size
+    return hash_stream(stream, want_crc=True, chunk=_CHUNK, body=body)
 
 
 def _body_hasher(name: str, headerless: bool) -> Optional[HeaderlessSHA1]:

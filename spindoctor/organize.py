@@ -15,12 +15,12 @@ can be undone in one command.
 from __future__ import annotations
 
 import json
-import re
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 from ._utils import move_no_replace, numbered_path_key, unique_path
+from .discs import DISC_EXTENSIONS, disc_identity
 from ._undo import begin_step, checkpoint, complete_step, finish_undo, undo_entries
 
 
@@ -43,15 +43,9 @@ SYSTEMS_REQUIRING_FOLDERS: dict[str, str] = {
 }
 
 # File extensions that benefit from m3u playlists (disc images).
-MULTI_DISC_EXTENSIONS = {".bin", ".cue", ".chd", ".iso", ".img", ".gdi", ".cdi"}
+MULTI_DISC_EXTENSIONS = DISC_EXTENSIONS
 
 MANIFEST_PREFIX = "_spindoctor-restructure-"
-
-_DISC_RE = re.compile(
-    r"^(?P<base>.+?)\s*\(\s*Disc\s*(?P<n>\d+)[^)]*\)\s*$",
-    re.IGNORECASE,
-)
-
 
 @dataclass
 class FileMove:
@@ -150,15 +144,15 @@ def _plan_multi_disc_m3u(plan: RestructurePlan, sys_dir: Path) -> None:
             continue
         if entry.suffix.lower() not in MULTI_DISC_EXTENSIONS:
             continue
-        m = _DISC_RE.match(entry.stem)
-        if not m:
+        identity = disc_identity(entry.stem)
+        if identity is None:
             continue
-        base = m.group("base").strip()
+        base, _ = identity
         groups.setdefault(base, []).append(entry)
 
     # Only restructure groups that actually have >1 disc.
     for base, files in groups.items():
-        disc_numbers = {int(_DISC_RE.match(f.stem).group("n")) for f in files}
+        disc_numbers = {disc_identity(f.stem)[1] for f in files}
         if len(disc_numbers) < 2:
             continue
         target_dir = sys_dir / base
@@ -169,7 +163,7 @@ def _plan_multi_disc_m3u(plan: RestructurePlan, sys_dir: Path) -> None:
         # Sort by disc number so the m3u order is deterministic.
         files_sorted = sorted(
             files,
-            key=lambda p: int(_DISC_RE.match(p.stem).group("n")),
+            key=lambda p: disc_identity(p.stem)[1],
         )
 
         for f in files_sorted:
@@ -184,7 +178,7 @@ def _plan_multi_disc_m3u(plan: RestructurePlan, sys_dir: Path) -> None:
         priority = {".cue": 0, ".gdi": 1, ".chd": 2, ".iso": 3}
         discs = {}
         for f in files_sorted:
-            number = int(_DISC_RE.match(f.stem).group("n"))
+            number = disc_identity(f.stem)[1]
             current = discs.get(number)
             if current is None or priority.get(f.suffix.lower(), 4) < priority.get(current.suffix.lower(), 4):
                 discs[number] = f

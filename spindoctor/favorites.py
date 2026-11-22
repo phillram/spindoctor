@@ -30,7 +30,7 @@ from .config import CONFIG_DIR, Config, load_config
 from .database import GameEntry, HyperspinDatabase, load_database
 from ._utils import atomic_write_bytes
 from ._wheels import mark_synthetic, validate_target
-from .medialink import LinkMode, apply_plan, plan_mirror, remove_target, _read_hs_video_dir, prune_mirrored_media
+from .medialink import MirrorSourceIndex, LinkMode, apply_plan, plan_mirror, remove_target, _read_hs_video_dir, prune_mirrored_media
 from .rocketlauncher import (
     ensure_rl_game_exe,
     generate_synthetic_system_ini,
@@ -112,13 +112,18 @@ def add(store: FavoriteStore, system: str, rom_name: str,
         display_name: Optional[str] = None) -> bool:
     if store.find(system, rom_name):
         return False
-    store.entries.append(FavoriteEntry(
+    store.entries.append(_new_favorite(system, rom_name, display_name))
+    return True
+
+
+def _new_favorite(system: str, rom_name: str,
+                  display_name: Optional[str] = None) -> FavoriteEntry:
+    return FavoriteEntry(
         system=system,
         rom_name=rom_name,
         display_name=display_name or rom_name,
         added=datetime.now().isoformat(timespec="seconds"),
-    ))
-    return True
+    )
 
 
 def remove(store: FavoriteStore, system: str, rom_name: str) -> bool:
@@ -187,6 +192,7 @@ def sync_native(
     progress_cb: "Optional[Any]" = None,
     log_cb: "Optional[Any]" = None,
     verbose: bool = False,
+    src_cache: Optional[dict[str, Optional[HyperspinDatabase]]] = None,
 ) -> tuple[int, list[str], list[str]]:
     """Merge HyperSpin's per-system Favorites lists into the cross-system store.
 
@@ -217,6 +223,16 @@ def sync_native(
     diagnostic info about where files were found (or not).
     """
     import re as _re
+
+    seen = {(e.system, e.rom_name) for e in store.entries}
+
+    def _import_favorite(system: str, rom: str, display: str) -> bool:
+        key = (system, rom)
+        if key in seen:
+            return False
+        store.entries.append(_new_favorite(system, rom, display))
+        seen.add(key)
+        return True
 
     added = 0
     warnings: list[str] = []
@@ -272,7 +288,7 @@ def sync_native(
         # which is needed both for XML favorite flags and for display-name
         # lookups when expanding ini/txt ROM lists.
         try:
-            db = _safe_load(sys_name, config)
+            db = _safe_load(sys_name, config, src_cache)
         except (ValueError, OSError) as exc:
             warnings.append(f"sync: skipped {sys_name} — {type(exc).__name__}: {exc}")
             continue
@@ -289,7 +305,7 @@ def sync_native(
                 # which the loader keeps in ``extra_attrs`` (not a modelled
                 # field), so read it from there.
                 if game.extra_attrs.get("favorite", "") == "1":
-                    if add(store, sys_name, game.name, game.description):
+                    if _import_favorite(sys_name, game.name, game.description):
                         added += 1
                         sys_added += 1
                         xml_favorites_found += 1
@@ -311,7 +327,7 @@ def sync_native(
                     continue
                 source = db.get(rom)
                 display = source.description if source else rom
-                if add(store, sys_name, rom, display):
+                if _import_favorite(sys_name, rom, display):
                     added += 1
                     sys_added += 1
                 ini_roms.append(rom)
@@ -338,7 +354,7 @@ def sync_native(
                 for rom in txt_roms:
                     source = db.get(rom)
                     display = source.description if source else rom
-                    if add(store, sys_name, rom, display):
+                    if _import_favorite(sys_name, rom, display):
                         added += 1
                         sys_added += 1
             else:
@@ -488,6 +504,7 @@ def rebuild(
     skip_launchers: bool = False,
     dry_run: bool = False,
     verbose: bool = False,
+    src_cache: Optional[dict[str, Optional[HyperspinDatabase]]] = None,
 ) -> RebuildSummary:
     """Regenerate the synthetic system's database, media mirrors, and launchers.
 
@@ -523,7 +540,7 @@ def rebuild(
     return _write_synthetic_wheel(
         config, store.target_system, sorted_entries, summary,
         media_mode=media_mode, skip_media=skip_media,
-        skip_launchers=skip_launchers, verbose=verbose,
+        skip_launchers=skip_launchers, verbose=verbose, src_cache=src_cache,
     )
 
 
@@ -617,6 +634,7 @@ def _write_synthetic_wheel(
         # Per-system video directory overrides (HyperSpin [video defaults] redirect).
         _hs_settings = Path(config.hyperspin_dir) / "Settings" if config.hyperspin_dir else None
         _video_cache: dict[str, Optional[Path]] = {}
+        source_index = MirrorSourceIndex(config.media_dir)
 
         for idx, entry in enumerate(entries, 1):
             if _hs_settings and entry.system not in _video_cache:
@@ -628,6 +646,7 @@ def _write_synthetic_wheel(
                 entry.rom_name, target_name,
                 video_dir_override=video_override,
                 refresh=True,
+                source_index=source_index,
             )
             result = apply_plan(plan, mode=media_mode,
                                log_fn=print if verbose else None)
@@ -1115,8 +1134,9 @@ def main(argv: Optional[list[str]] = None) -> int:
             print("[DRY RUN] No wheel files will be written. "
                   "Re-run with --apply to commit.")
         _prog, _log = _stdout_sync_progress()
+        src_cache: dict[str, Optional[HyperspinDatabase]] = {}
         synced, sync_warns, sync_notes = sync_native(
-            store, config, progress_cb=_prog, log_cb=_log,
+            store, config, progress_cb=_prog, log_cb=_log, src_cache=src_cache,
             verbose=getattr(args, "verbose", False),
         )
         for w in sync_warns:
@@ -1134,7 +1154,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         skip_media = args.media_mode == "none"
         mode = LinkMode.AUTO if skip_media else LinkMode(args.media_mode)
         summary = rebuild(store, config, media_mode=mode, skip_media=skip_media,
-                          dry_run=not args.apply,
+                          dry_run=not args.apply, src_cache=src_cache,
                           verbose=getattr(args, "verbose", False))
         print(f"Favorites system: {summary.target_system}")
         print(f"  entries:    {summary.entries}")

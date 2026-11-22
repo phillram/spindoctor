@@ -543,15 +543,22 @@ class UnusedEntries:
     colors_total: int = 0
 
 
-def unused_entries(config: Config, scope: WheelScope) -> UnusedEntries:
+def load_live_inis(config: Config) -> tuple[RawIni, RawIni]:
+    """Read the live Controls.ini and Colors.ini once for one operation."""
+    base = Path(config.ledblinky_dir) if config.ledblinky_dir else None
+    return (RawIni.load(base / CONTROLS_INI_NAME if base else None),
+            RawIni.load(base / COLORS_INI_NAME if base else None))
+
+
+def unused_entries(config: Config, scope: WheelScope,
+                   live: Optional[tuple[RawIni, RawIni]] = None) -> UnusedEntries:
     """Count the live entries :func:`prune_entries` would remove; reads nothing else."""
     out = UnusedEntries()
     if not config.ledblinky_dir or not scope.any_wheel:
         return out
     keep = scope.keep()
-    lb_dir = Path(config.ledblinky_dir)
-    controls = RawIni.load(lb_dir / CONTROLS_INI_NAME).entries()
-    colors = RawIni.load(lb_dir / COLORS_INI_NAME).entries()
+    live_controls, live_colors = live if live is not None else load_live_inis(config)
+    controls, colors = live_controls.entries(), live_colors.entries()
     out.controls_total, out.colors_total = len(controls), len(colors)
     out.controls = sum(1 for low in controls if low not in keep)
     out.colors = sum(1 for low in colors if low not in keep)

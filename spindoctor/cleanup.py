@@ -165,11 +165,11 @@ def _preview_temp(config: Config) -> CategoryReport:
     )
 
 
-def _partial_downloads(config: Config) -> CategoryReport:
+def _partial_downloads(config: Config, *, scan_files=None) -> CategoryReport:
     base = config.media_dir if config.hyperspin_dir else None
     files: list[FileEntry] = []
     if base and base.exists():
-        files = [entry for entry in _scan_glob(base, "*.part*", recursive=True)
+        files = [entry for entry in (scan_files or _scan_glob)(base, "*.part*", recursive=True)
                  if entry.path.name.lower().endswith((".part", ".part.json"))]
     return CategoryReport(
         key="partial-downloads",
@@ -200,11 +200,11 @@ def _migration_manifests(config: Config) -> CategoryReport:
     )
 
 
-def _restructure_manifests(config: Config) -> CategoryReport:
+def _restructure_manifests(config: Config, *, scan_files=None) -> CategoryReport:
     base = Path(config.roms_dir) if config.roms_dir else None
     files: list[FileEntry] = []
     if base and base.exists():
-        files = _scan_glob(base, "_spindoctor-restructure-*.json", recursive=True)
+        files = (scan_files or _scan_glob)(base, "_spindoctor-restructure-*.json", recursive=True)
     return CategoryReport(
         key="restructure-manifests",
         label="Restructure undo manifests",
@@ -216,11 +216,11 @@ def _restructure_manifests(config: Config) -> CategoryReport:
     )
 
 
-def _misplaced_manifests(config: Config) -> CategoryReport:
+def _misplaced_manifests(config: Config, *, scan_files=None) -> CategoryReport:
     base = Path(config.roms_dir) if config.roms_dir else None
     files: list[FileEntry] = []
     if base and base.exists():
-        files = _scan_glob(base, "_spindoctor-misplaced-*.json", recursive=True)
+        files = (scan_files or _scan_glob)(base, "_spindoctor-misplaced-*.json", recursive=True)
     return CategoryReport(
         key="misplaced-manifests",
         label="Misplaced-ROM undo manifests",
@@ -232,11 +232,11 @@ def _misplaced_manifests(config: Config) -> CategoryReport:
     )
 
 
-def _db_backups(config: Config) -> CategoryReport:
+def _db_backups(config: Config, *, scan_files=None) -> CategoryReport:
     base = config.databases_dir if config.hyperspin_dir else None
     files: list[FileEntry] = []
     if base and base.exists():
-        files = _scan_glob(base, "*.bak", recursive=True)
+        files = (scan_files or _scan_glob)(base, "*.bak", recursive=True)
     return CategoryReport(
         key="db-backups",
         label="HyperSpin XML database backups",
@@ -248,11 +248,11 @@ def _db_backups(config: Config) -> CategoryReport:
     )
 
 
-def _ledblinky_backups(config: Config) -> CategoryReport:
+def _ledblinky_backups(config: Config, *, scan_files=None) -> CategoryReport:
     base = Path(config.ledblinky_dir) if config.ledblinky_dir else None
     files: list[FileEntry] = []
     if base and base.exists():
-        files = _scan_glob(base, "*.bak", recursive=True)
+        files = (scan_files or _scan_glob)(base, "*.bak", recursive=True)
     return CategoryReport(
         key="ledblinky-backups",
         label="LEDBlinky file backups",
@@ -279,7 +279,7 @@ def _audit_exports(config: Config) -> CategoryReport:
     )
 
 
-def _stale_atomic_writes(config: Config) -> CategoryReport:
+def _stale_atomic_writes(config: Config, *, scan_files=None) -> CategoryReport:
     """``*.tmp`` files left behind when a write was interrupted before the
     atomic rename completed (power cut, SIGKILL).
 
@@ -305,19 +305,19 @@ def _stale_atomic_writes(config: Config) -> CategoryReport:
     if configured_tmp:
         p = Path(configured_tmp)
         if p.exists():
-            files += _scan_glob(p, "*.tmp", recursive=False)
+            files += (scan_files or _scan_glob)(p, "*.tmp", recursive=False)
         location_parts.append(str(p))
 
     # 2. Default fallback: Databases tree (recursive)
     db_base = config.databases_dir if config.hyperspin_dir else None
     if db_base and Path(db_base).exists():
-        files += _scan_glob(Path(db_base), "*.tmp", recursive=True)
+        files += (scan_files or _scan_glob)(Path(db_base), "*.tmp", recursive=True)
     if db_base:
         location_parts.append(str(db_base))
 
     # 3. Config dir (JSON store write path, non-recursive)
     if CONFIG_DIR.exists():
-        files += _scan_glob(CONFIG_DIR, "*.tmp", recursive=False)
+        files += (scan_files or _scan_glob)(CONFIG_DIR, "*.tmp", recursive=False)
     location_parts.append(str(CONFIG_DIR))
 
     note = "These can only appear after an abnormal shutdown mid-save."
@@ -371,13 +371,63 @@ SAFE_CATEGORY_KEYS = tuple(k for k in CATEGORY_KEYS if k not in {
 # ─── public API ───────────────────────────────────────────────────────────────
 
 
+def _shared_recursive_scanner(config: Config, wanted: set):
+    """Walk each root once when several selected categories glob the same tree."""
+    scan_requests = (
+        ("partial-downloads", config.media_dir if config.hyperspin_dir else None, "*.part*"),
+        ("restructure-manifests", Path(config.roms_dir) if config.roms_dir else None,
+         "_spindoctor-restructure-*.json"),
+        ("misplaced-manifests", Path(config.roms_dir) if config.roms_dir else None,
+         "_spindoctor-misplaced-*.json"),
+        ("db-backups", config.databases_dir if config.hyperspin_dir else None, "*.bak"),
+        ("ledblinky-backups", Path(config.ledblinky_dir) if config.ledblinky_dir else None, "*.bak"),
+        ("stale-atomic-writes", config.databases_dir if config.hyperspin_dir else None, "*.tmp"),
+    )
+    patterns: dict[Path, set[str]] = {}
+    for key, directory, pattern in scan_requests:
+        if key in wanted and directory is not None:
+            patterns.setdefault(directory, set()).add(pattern)
+    cache: dict[Path, dict[str, list[FileEntry]]] = {}
+
+    def scan_files(directory: Path, pattern: str, recursive: bool = False):
+        requested = patterns.get(directory, set())
+        if not recursive or pattern not in requested or len(requested) < 2:
+            return _scan_glob(directory, pattern, recursive=recursive)
+        if directory not in cache:
+            grouped: dict[str, list[FileEntry]] = {p: [] for p in requested}
+            # Keep only selected categories' matches, not every ROM or XML.
+            for path in directory.rglob("*"):
+                matches = [p for p in requested if path.match(p)]
+                if not matches or not path.is_file():
+                    continue
+                try:
+                    info = path.stat()
+                except OSError:
+                    continue
+                entry = FileEntry(path, info.st_size, info.st_mtime)
+                for match in matches:
+                    grouped[match].append(entry)
+            cache[directory] = grouped
+        return list(cache[directory][pattern])
+
+    return scan_files
+
+
 def scan(config: Config, keys: Optional[Iterable[str]] = None) -> dict[str, CategoryReport]:
     """Discover files for *keys* (default: all categories) under *config*."""
-    wanted = set(keys) if keys is not None else None
+    wanted = set(keys) if keys is not None else set(_CATEGORY_FNS)
+    scan_files = _shared_recursive_scanner(config, wanted)
+    shared_categories = {
+        "partial-downloads", "restructure-manifests", "misplaced-manifests",
+        "db-backups", "ledblinky-backups", "stale-atomic-writes",
+    }
     out: dict[str, CategoryReport] = {}
     for key, fn in _CATEGORY_FNS.items():
-        if wanted is None or key in wanted:
-            out[key] = fn(config)
+        if key in wanted:
+            if key in shared_categories:
+                out[key] = fn(config, scan_files=scan_files)
+            else:
+                out[key] = fn(config)
     return out
 
 
