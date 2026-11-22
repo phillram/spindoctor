@@ -140,9 +140,39 @@ Task registration is Windows-only and separate from startup wheel refresh.
 | Gun audit says partial coverage | Only some games/emulators have recognized direct startup. Indirect scripts may work but are not proof for the inspector. |
 | Player 2 gun controls player 1 | Supermodel needs raw input and distinct numbered mouse bindings; device order can change. |
 | Super Scope starts single-shot | Snes9x turbo starts off; toggle after load and use matching automatic recoil. |
+| A hotkey in an AHK key profile does nothing | RocketLauncher's menu navigation keys replace a plain `key::` in an Internal profile. `doctor` lists them; write `*key::` or a remap (`key::other`). |
+| One panel button does two things in a game | The game read the key before RocketLauncher's keymapper could block it: see [games that read the keyboard first](controller-input.md#games-that-read-the-keyboard-first). |
+| Future Pinball tables ignore coin, start and flippers | The table's script never started. `doctor` warns when the library is missing: [register it](#register-future-pinballs-type-library). |
 
 [Light-gun setup and reversion](lightgun.md). Changing SpinDoctor tracking alone
 does not remove hooks.
+
+### Register Future Pinball's type library
+
+Future Pinball's table scripts need the type library built into `Future Pinball.exe`
+to be registered with Windows. A folder copied from another PC has no registration,
+and the program doesn't add one when it runs as a normal user. Symptoms: tables load
+and the camera keys (F1 to F8) work, but coin, start, flippers and the score displays
+do nothing. Run this in PowerShell with Future Pinball closed, using your own path;
+it registers the library for your Windows user only and needs no administrator rights.
+0 means it worked. Run it again if Future Pinball moves.
+
+```powershell
+$exe = 'D:\Arcade\Emulators\Future Pinball\Future Pinball.exe'
+Add-Type -TypeDefinition @"
+using System; using System.Runtime.InteropServices; using CT = System.Runtime.InteropServices.ComTypes;
+public static class FpTypeLib {
+    [DllImport("oleaut32.dll", CharSet = CharSet.Unicode)] static extern int LoadTypeLibEx(string file, int kind, out CT.ITypeLib lib);
+    [DllImport("oleaut32.dll", CharSet = CharSet.Unicode)] static extern int RegisterTypeLibForUser(CT.ITypeLib lib, string path, string help);
+    public static int Register(string exe) {
+        CT.ITypeLib lib;
+        int hr = LoadTypeLibEx(exe, 2, out lib);
+        return hr != 0 ? hr : RegisterTypeLibForUser(lib, exe, null);
+    }
+}
+"@
+[FpTypeLib]::Register($exe)
+```
 
 ## LEDBlinky
 

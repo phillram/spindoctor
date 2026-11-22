@@ -42,6 +42,23 @@ RocketLauncher's **Internal** AHK method can still read mapper profiles without
 launching the mapper EXE; disabling Windows startup alone does not disable it.
 Do not remove a keymapper still needed for another emulator or gun setup.
 
+## Games that read the keyboard first
+
+RocketLauncher's Internal AHK keymapper hooks the keyboard before the game starts.
+Some games install their own keyboard hook after that, and the newest hook is called
+first: the game sees the panel key before the remap can block it.
+One panel button then does two things, or the remapped key does nothing.
+
+- **Bind the panel keys in the game**, when it saves its own controls, and remap only
+  the keys the game doesn't use.
+- **Otherwise start the remap after the game.** Put it in a separate AutoHotkey script
+  that the RocketLauncher module runs once the game window is up, so its hook is the
+  newest and is called first. Limit it to the game's window with `#IfWinActive`, and
+  let it exit when the game does.
+- **Check with a hold, not a tap:** hold each button and see that only its own action
+  happens. A hotkey on one of RocketLauncher's menu navigation keys needs a `*` prefix
+  (`*w::`): `doctor`'s **Keymapper hotkeys** check lists the ones that don't.
+
 ## Emulator input
 
 Bind emulators to the intended virtual pad, not a transient physical DS4 device.

@@ -2673,6 +2673,123 @@ def check_user_functions(config: Config) -> Check:
     return parent
 
 
+def check_keymapper_hotkeys(config: Config) -> Check:
+    """Hotkeys in AHK keymapper profiles that RocketLauncher's menus switch off.
+
+    RocketLauncher assigns its navigation keys with AutoHotkey's ``Hotkey``
+    command, in the script an Internal keymapper profile is appended to.  That
+    replaces a plain ``w::`` or ``~w::`` in the profile, so it never fires,
+    while ``*w::`` and remaps (``w::c``) still do.  Each such hotkey on a
+    navigation key is a WARN, with the line and the setting it clashes with
+    (see :mod:`spindoctor.keymapper_hotkeys`).  Wheels that are hidden or not
+    on the Main Menu are INFO.  Diagnosis only.
+    """
+    from .keymapper_hotkeys import scan_profiles
+
+    name = "Keymapper hotkeys"
+    if not config.rocketlauncher_dir:
+        return Check(name=name, status=Status.INFO,
+                     detail="rocketlauncher_dir not configured; skipping")
+    found, checked = scan_profiles(config)
+    if not checked:
+        return Check(name=name, status=Status.INFO,
+                     detail="no AHK keymapper profiles that RocketLauncher's Internal method would load")
+    if not found:
+        return Check(name=name, status=Status.OK,
+                     detail="no plain hotkeys on RocketLauncher's navigation keys")
+
+    mm_path = Path(config.hyperspin_dir) / "Databases" / "Main Menu" / "Main Menu.xml"
+    wheels = {w.lower() for w in _main_menu_wheels(mm_path)}
+    hidden = {w.lower() for w in _hidden_main_menu_wheels(mm_path)}
+    by_system: dict[str, list] = {}
+    for system, path, hits in found:
+        by_system.setdefault(system, []).append((path, hits))
+    parent = Check(name=name, status=Status.OK)
+    for system, profiles in by_system.items():
+        listed = [f"{path.name} line {h.hotkey.line} {h.hotkey.text.split('::')[0]}:: is {h.setting} = {h.value}"
+                  for path, hits in profiles for h in hits]
+        key = profiles[0][1][0].hotkey.key
+        node = Check(name=system, status=Status.WARN,
+                     detail=f"{len(profiles)} profile{'s' if len(profiles) != 1 else ''}: {_some(listed)}",
+                     fix=(f"In {profiles[0][0].parent}, start each of these with * "
+                          f"({key}:: becomes *{key}::), or make it a remap"))
+        if wheels and system.lower() != "_default" and (system.lower() not in wheels or system.lower() in hidden):
+            node.name += " (wheel hidden or not on the Main Menu)"
+            _cap_at_info(node)
+        parent.children.append(node)
+    warned = sum(1 for c in parent.children if c.status == Status.WARN)
+    parent.detail = (f"{warned} wheel{'s' if warned != 1 else ''} with hotkeys RocketLauncher switches off"
+                     if warned else "only hidden wheels have hotkeys RocketLauncher switches off")
+    parent.status = _worst(c.status for c in parent.children)
+    return parent
+
+
+# Future Pinball's own type library ("Future Pinball 1.0 Type Library").
+# Table scripts can't start unless it's registered with Windows.
+FUTURE_PINBALL_TYPELIB = "{FB22A459-4AD0-4CB3-B959-15158F7139F5}"
+_FUTURE_PINBALL_EXES = ("future pinball.exe", "fploader.exe")
+
+
+def _future_pinball_typelib_path() -> Optional[str]:
+    """The program the type library is registered for, ``""`` if its path is blank, None if it isn't registered.
+
+    HKEY_CLASSES_ROOT is the current user's classes merged over the machine's,
+    so one look finds an all-users and a per-user registration.
+    """
+    import winreg
+
+    try:
+        with winreg.OpenKey(winreg.HKEY_CLASSES_ROOT,
+                            rf"TypeLib\{FUTURE_PINBALL_TYPELIB}\1.0\0\win32") as key:
+            return str(winreg.QueryValueEx(key, None)[0] or "")
+    except OSError:
+        return None
+
+
+def check_future_pinball_typelib(config: Config) -> Check:
+    """Future Pinball's scripting library, missing from a copied install.
+
+    Future Pinball needs its own type library registered with Windows for
+    table scripts to run.  A folder copied from another PC or an older drive
+    has no registration, and running the program as a normal user doesn't add
+    one.  The table then loads, draws and changes camera, but its script never
+    starts, so coin, start, flippers and the score displays do nothing.  A
+    missing registration is a WARN when RocketLauncher has Future Pinball; one
+    naming a program that's gone is a WARN too.  Windows only; diagnosis only.
+    """
+    import sys
+
+    name = "Future Pinball scripting"
+    exes: list[Path] = []
+    for _section, exe, candidates in _rl_emulator_entries(config):
+        if exe in _FUTURE_PINBALL_EXES:
+            for candidate in candidates:
+                # BAM's FPLoader.exe sits one folder below Future Pinball.exe.
+                here = candidate if exe == _FUTURE_PINBALL_EXES[0] else candidate.parent.parent / "Future Pinball.exe"
+                if here.is_file() and here not in exes:
+                    exes.append(here)
+    if not exes:
+        return Check(name=name, status=Status.INFO, detail="Future Pinball isn't set up in RocketLauncher")
+    if sys.platform != "win32":
+        return Check(name=name, status=Status.INFO, detail="can only be checked on Windows")
+
+    registered = _future_pinball_typelib_path()
+    if registered is None:
+        return Check(
+            name=name, status=Status.WARN,
+            detail=("its type library isn't registered, so table scripts never start: "
+                    "coin, start, flippers and displays do nothing"),
+            fix=("Register it for your Windows user (no administrator needed): see "
+                 "\"Register Future Pinball's type library\" in docs/troubleshooting.md"))
+    if registered and not Path(registered).is_file():
+        return Check(
+            name=name, status=Status.WARN,
+            detail=f"its type library is registered for {registered}, which isn't there",
+            fix="Register it again from where Future Pinball is now (docs/troubleshooting.md)")
+    return Check(name=name, status=Status.OK,
+                 detail="type library registered" + (f" for {registered}" if registered else ""))
+
+
 def check_coin_start(config: Config) -> Check:
     """Games on the Main Menu's wheels that can't take a coin or start from a key.
 
@@ -4025,6 +4142,8 @@ def run_health_checks(config: Config, fix: bool = False) -> HealthReport:
     _safe("User Functions", lambda: check_user_functions(config))
     _safe("Coin/Start", lambda: check_coin_start(config))
     _safe("MAME key maps", lambda: check_mame_key_maps(config))
+    _safe("Keymapper hotkeys", lambda: check_keymapper_hotkeys(config))
+    _safe("Future Pinball scripting", lambda: check_future_pinball_typelib(config))
     _safe("LEDBlinky", lambda: check_ledblinky(config))
     _safe("LED coverage", lambda: check_led_coverage(config))
     _safe("Intro video", lambda: check_intro_video(config))
