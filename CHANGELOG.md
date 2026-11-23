@@ -51,6 +51,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   controller press the panel's keys, so both work in the same game. Troubleshooting and the
   cabinet reference link to it.
 
+### Fixed
+
+- **Keys the launch tester presses reach DirectInput games as the right keys.** `press_keys` sent Home, End, Page Up/Down, Insert and Delete without `KEYEVENTF_EXTENDEDKEY`, so MAME and other DirectInput games saw the number pad's keys instead (Home arrived as `KEYCODE_7PAD`), and right Ctrl/Alt as the left ones: an exit key set to one of them didn't work. They are now sent as extended keys. Key names also include Up, Down, Left and Right, sent the same way. Checked on a cabinet with a MAME Lua key log: Home and Up arrive as `KEYCODE_HOME` and `KEYCODE_UP`. Covered by `tests/test_gametest_launch.py`.
+
 ## [3.3.0] - 2026-11-14
 
 ### Added
