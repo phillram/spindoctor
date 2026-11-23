@@ -35,7 +35,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable, Iterable, Optional
 
-from . import placeholders, titleart
+from . import clips, placeholders, titleart
 from ._undo import checkpoint
 from ._utils import atomic_write_bytes, is_within, unique_path, win_safe_stem
 from .config import CONFIG_DIR, Config
@@ -638,6 +638,81 @@ def _card_video(stage: Stage, item: StageItem, card: bytes, make) -> None:
             png.unlink()
         except OSError:
             pass
+
+
+# ─── a wheel's Main Menu video ───────────────────────────────────────────────
+
+MAIN_MENU = "Main Menu"
+MENU_CLIPS = 8
+
+
+@dataclass
+class MenuVideoJob:
+    """The clips a wheel's Main Menu video is made from, or why it isn't made."""
+    system: str
+    clips: list[Path] = field(default_factory=list)
+    titles: list[str] = field(default_factory=list)
+    why: str = ""
+
+
+def _video_file(state: WheelState, game: GameState, index: placeholders.PlaceholderIndex) -> Optional[Path]:
+    """*game*'s own video file (not a placeholder), or None."""
+    for ext in _HS_VIDEO_EXTS:
+        path = state.video_dir / (game.stem + ext)
+        try:
+            if path.is_file() and path.stat().st_size > 0 and not index.is_placeholder(path):
+                return path
+        except OSError:
+            continue
+    return None
+
+
+def plan_menu_video(menu: WheelState, state: WheelState, games: Iterable[str] = (),
+                    count: int = MENU_CLIPS) -> MenuVideoJob:
+    """Which of *state*'s own videos make its Main Menu video: the games named
+    (name or title, ``*`` and ``?``) in the order given, else *count* spread
+    evenly over the wheel.  Stills, placeholders and parents' videos don't
+    count.  Nothing when the Main Menu (*menu*) has a video for the wheel
+    already, or fewer than 2 clips are found."""
+    job = MenuVideoJob(state.system)
+    entry = next((g for g in menu.games if g.name.lower() == state.system.lower()), None)
+    if entry is None:
+        job.why = "it isn't on the Main Menu"
+    elif entry.video in ("yes", "still"):
+        job.why = "the Main Menu has a video for it already"
+    elif menu.video_problem or state.problem or state.video_problem:
+        job.why = menu.video_problem or state.problem or state.video_problem
+    if job.why:
+        return job
+    index = placeholders.PlaceholderIndex()
+    have = [(g, p) for g in state.games if g.video == "yes" for p in [_video_file(state, g, index)] if p]
+    wanted = [w.strip().lower() for w in games if w.strip()]
+    if wanted:
+        picked = []
+        for pattern in wanted:
+            picked += [(g, p) for g, p in have if (g, p) not in picked
+                       and any(fnmatch.fnmatchcase(t, pattern) for t in (g.name.lower(), g.title.lower()))]
+    elif len(have) <= count:
+        picked = have
+    else:
+        step = len(have) / count        # more than 1, so no clip comes twice
+        picked = [have[int(i * step)] for i in range(count)]
+    if len(picked) < 2:
+        job.why = f"{len(picked)} of its games ha{'s' if len(picked) == 1 else 've'} a video; it takes 2 or more"
+        return job
+    job.clips = [p for _g, p in picked]
+    job.titles = [g.title for g, _p in picked]
+    return job
+
+
+def make_menu_video(stage: Stage, job: MenuVideoJob, *, tools, seconds: float = clips.MONTAGE_PIECE) -> StageItem:
+    """Stage ``Media\\Main Menu\\Video\\<wheel>.mp4``, the clips of *job* one
+    after another (:meth:`clips.Tools.make_montage`)."""
+    item = stage.new_item(MAIN_MENU, job.system, job.system, "video", "montage", media_stem(job.system), ".mp4",
+                          f"{len(job.clips)} clips: " + ", ".join(job.titles))
+    tools.make_montage(job.clips, stage.target(item), seconds=seconds)
+    stage.add(item)
+    return item
 
 
 # ─── putting it in ────────────────────────────────────────────────────────────

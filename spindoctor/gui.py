@@ -976,6 +976,7 @@ _CUSTOM_COMMAND_PRESETS: tuple[str, ...] = (
     "generate-media list --all",
     "generate-media list --system <SYSTEM> --details",
     "generate-media placeholders --no-video-clip --apply",
+    "generate-media menu-video --system <SYSTEM> --apply",
     "generate-media placeholders --system <SYSTEM> --apply",
     "generate-media put-in",
     "generate-media put-in --apply",
@@ -12981,6 +12982,12 @@ class _SpinDoctorGUI:
                         command=self._gm_resume).pack(side="left", padx=6)
         self.ttk.Button(row, text="Stop after this game",
                         command=self._test_stop_after_game).pack(side="left")
+        self._gm_menu_btn = self.ttk.Button(row, command=self._gm_menu_video)
+        self._gm_menu_btn.pack(side="left", padx=(18, 0))
+        self._help_text(
+            box, text="Main Menu video: a few seconds of 8 of the wheel's own videos, one after another, "
+                      "for the wheel on the Main Menu. Put its recordings in first.",
+        ).pack(fill="x", padx=6, pady=(0, 4))
 
         box = self.ttk.LabelFrame(frame, text="4. Placeholders for games with no video and no picture")
         box.pack(fill="x", pady=(0, 8))
@@ -13024,7 +13031,7 @@ class _SpinDoctorGUI:
         self._gm_put_all_btn.pack(side="left", padx=(6, 0))
         self.ttk.Button(row, text="Undo last", command=self._gm_undo).pack(side="left", padx=6)
         self._gm_putin_var = self.tk.BooleanVar(value=False)
-        self.ttk.Checkbutton(box, text="Put each new batch in when it's made (pictures, recordings, placeholders)",
+        self.ttk.Checkbutton(box, text="Put each new batch in when it's made (pictures, recordings, placeholders, Main Menu videos)",
                              variable=self._gm_putin_var).pack(anchor="w", padx=6)
         self._help_text(
             box,
@@ -13043,6 +13050,7 @@ class _SpinDoctorGUI:
         apply = bool(self._global_apply_var.get())
         for button, show, do in ((self._gm_wheel_btn, "Show wheel pictures", "Make wheel pictures"),
                                  (self._gm_record_btn, "Show games to record", "Record games"),
+                                 (self._gm_menu_btn, "Show Main Menu video clips", "Make Main Menu video"),
                                  (self._gm_holder_btn, "Show placeholders", "Make placeholders"),
                                  (self._gm_put_btn, "Show what goes in", "Put in"),
                                  (self._gm_put_all_btn, "Show all waiting", "Put in all waiting")):
@@ -13071,7 +13079,8 @@ class _SpinDoctorGUI:
         args = ["generate-media"] + args
         live = apply and bool(self._global_apply_var.get())
         putin = getattr(self, "_gm_putin_var", None)
-        if live and args[1] in ("wheel-pictures", "record", "placeholders") and putin is not None and putin.get():
+        if (live and args[1] in ("wheel-pictures", "record", "placeholders", "menu-video")
+                and putin is not None and putin.get()):
             args.append("--put-in")
         if live:
             args.append("--apply")
@@ -13154,6 +13163,11 @@ class _SpinDoctorGUI:
             "It starts once nobody has touched the keyboard or mouse for 15 seconds.\n\n"
             "Any key, panel button or mouse click stops it. Start?",
         ))
+
+    def _gm_menu_video(self) -> None:
+        args = self._gm_selection()
+        if args is not None:
+            self._gm_run(["menu-video"] + args)
 
     def _gm_placeholders(self) -> None:
         args = self._gm_selection()
