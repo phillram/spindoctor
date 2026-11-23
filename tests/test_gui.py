@@ -4319,6 +4319,8 @@ def test_generate_media_puts_each_batch_in_when_asked(monkeypatch):
     assert _genmedia_args(app)[-3:] == ["--yes", "--put-in", "--apply"]
     app._gm_resume()
     assert _genmedia_args(app) == ["record", "--resume", "--yes", "--put-in", "--apply"]
+    app._gm_menu_video()
+    assert _genmedia_args(app) == ["menu-video", "--system", "NES", "--put-in", "--apply"]
     app._gm_put_in_all()
     assert _genmedia_args(app) == ["put-in", "--all", "--apply"]    # never for put-in itself
     app._global_apply_var.set(False)
@@ -4443,6 +4445,7 @@ def test_generate_media_page_buttons_follow_the_apply_switch(monkeypatch, tmp_pa
         assert app._gm_record_btn.cget("text") == "Record games"
         assert app._gm_put_btn.cget("text") == "Put in"
         assert app._gm_put_all_btn.cget("text") == "Put in all waiting"
+        assert app._gm_menu_btn.cget("text") == "Make Main Menu video"
         app._global_apply_var.set(False)
         assert app._gm_put_all_btn.cget("text") == "Show all waiting"
         assert app._gm_stage_var.get() == ""

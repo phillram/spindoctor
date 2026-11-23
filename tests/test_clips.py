@@ -362,6 +362,39 @@ def test_real_takes_are_judged(tmp_path):
     assert tools.analyse(tmp_path / "missing.mkv").verdict == "nothing was recorded"
 
 
+def test_a_montage_part_starts_where_the_clip_has_enough_left():
+    assert clips.piece_start(35) == clips.MONTAGE_FROM
+    assert clips.piece_start(10) == 2.5 and clips.piece_start(5) == 0.0 and clips.piece_start(0) == 0.0
+
+
+def test_montage_command_joins_the_pieces_with_sound_for_each():
+    pieces = [clips.Piece(Path("a.mp4"), 8.0, True), clips.Piece(Path("b.flv"), 0.0, False)]
+    cmd = clips.montage_command("ffmpeg", pieces, Path("out.mp4"), seconds=5)
+    assert cmd[cmd.index("a.mp4") - 5:cmd.index("a.mp4") + 1] == ["-ss", "8", "-t", "5", "-i", "a.mp4"]
+    graph = cmd[cmd.index("-filter_complex") + 1]
+    assert "[0:a]aresample" in graph and "[1:a]" not in graph and "anullsrc" in graph   # b has no sound
+    assert "pad=640:480" in graph and "fade=t=out:st=4.6" in graph and "concat=n=2:v=1:a=1[v][a]" in graph
+    assert cmd[-1] == "out.mp4" and "+faststart" in cmd
+
+
+@real
+def test_real_montage(tmp_path):
+    tools = clips.Tools(_FFMPEG, shutil.which("ffprobe"))
+    loud = tmp_path / "loud.mp4"
+    subprocess.run([_FFMPEG, "-y", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=s=320x480:r=30",
+                    "-f", "lavfi", "-i", "sine=f=440", "-t", "12", "-c:v", "libx264", "-preset", "ultrafast",
+                    "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", str(loud)], check=True)
+    quiet = _made(tmp_path, "testsrc2=s=640x250:r=30", "quiet.mp4", seconds=3)
+    assert tools.clip_info(loud)[1] and tools.clip_info(quiet) == (pytest.approx(3, abs=0.2), False)
+    out = tools.make_montage([loud, quiet], tmp_path / "menu.mp4", seconds=2)
+    probe = subprocess.run([shutil.which("ffprobe"), "-v", "error", "-show_entries",
+                            "stream=codec_name,width,height:format=duration", "-of", "csv=p=0", str(out)],
+                           capture_output=True, text=True).stdout
+    assert "h264,640,480" in probe and "aac" in probe
+    assert abs(float(probe.strip().splitlines()[-1]) - 4) < 0.3     # 2 s of each
+    assert tools.clip_info(tmp_path / "missing.mp4") == (0.0, False)
+
+
 @real
 def test_real_clips_have_the_right_format(tmp_path):
     tools = clips.Tools(_FFMPEG, shutil.which("ffprobe"))

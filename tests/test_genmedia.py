@@ -61,6 +61,12 @@ class FakeTools:
 
     make_card_flv = make_card_clip
 
+    def make_montage(self, clips: list, out: Path, *, seconds: float = 7.5) -> Path:
+        self.montages = getattr(self, "montages", []) + [([c.name for c in clips], seconds)]
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes(b"montage of " + b", ".join(c.stem.encode() for c in clips))
+        return out
+
 
 def _png(path: Path, size=(400, 175)) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -603,6 +609,52 @@ def test_pictures_and_placeholders_can_go_in_when_made(cabinet, monkeypatch):
     assert "1 file(s) put in" in out and (cabinet.media_dir / "NES" / "Video" / "Charlie.mp4").exists()
     # Without --apply nothing is made, so nothing goes in.
     assert "DRY RUN" in _run("wheel-pictures", "-s", "NES", "--redraw", "--put-in").output
+
+
+def _videos(cfg, *names, system="NES"):
+    for name in names:
+        _file(cfg.media_dir / system / "Video" / f"{name}.mp4", b"a recorded clip of " + name.encode())
+
+
+def test_menu_video_picks_the_wheels_own_clips(cabinet):
+    menu = _state(cabinet, genmedia.MAIN_MENU)
+    job = genmedia.plan_menu_video(menu, _state(cabinet))
+    assert job.why == "1 of its games has a video; it takes 2 or more" and not job.clips   # Bravo's is a still
+    _videos(cabinet, "Charlie", "Echo")         # Echo is switched off: not on the wheel
+    _file(cabinet.media_dir / "NES" / "Video" / "Delta.png", b"a still")
+    job = genmedia.plan_menu_video(menu, _state(cabinet))
+    assert [p.name for p in job.clips] == ["Alpha.mp4", "Charlie.mp4"] and job.titles == ["Alpha", "Charlie"]
+    job = genmedia.plan_menu_video(menu, _state(cabinet), games=["char*", "alpha", "nothing"])
+    assert [p.stem for p in job.clips] == ["Charlie", "Alpha"]                # the order asked for
+    assert genmedia.plan_menu_video(menu, _state(cabinet), count=1).why     # 1 clip is too few
+    assert genmedia.plan_menu_video(menu, _state(cabinet, "Off")).why == "it isn't on the Main Menu"
+    _file(cabinet.media_dir / "Main Menu" / "Video" / "NES.mp4")
+    menu = _state(cabinet, genmedia.MAIN_MENU)
+    assert genmedia.plan_menu_video(menu, _state(cabinet)).why == "the Main Menu has a video for it already"
+
+
+def test_menu_video_spreads_its_clips_over_the_wheel(cabinet):
+    names = [f"Game {i:02d}" for i in range(20)]
+    _wheel(cabinet, "NES", [(n, "") for n in names])
+    _videos(cabinet, *names)
+    job = genmedia.plan_menu_video(_state(cabinet, genmedia.MAIN_MENU), _state(cabinet), count=4)
+    assert [p.stem for p in job.clips] == ["Game 00", "Game 05", "Game 10", "Game 15"]
+
+
+def test_menu_video_command(cabinet, monkeypatch):
+    tools = FakeTools()
+    monkeypatch.setattr(clips, "find_tools", lambda config: tools)
+    _videos(cabinet, "Charlie")
+    dry = _run("menu-video", "-s", "NES").output
+    assert "NES: 2 clips (Alpha, Charlie)" in dry and "1 Main Menu video(s) to make" in dry and "DRY RUN" in dry
+    out = _run("menu-video", "-s", "NES", "--seconds", "5", "--put-in", "--apply").output
+    assert "1 file(s) made" in out and "1 file(s) put in" in out and tools.montages == [(["Alpha.mp4", "Charlie.mp4"], 5.0)]
+    video = cabinet.media_dir / "Main Menu" / "Video" / "NES.mp4"
+    assert video.read_bytes() == b"montage of Alpha, Charlie"
+    assert "has a video for it already" in _run("menu-video", "-s", "NES").output
+    every = _run("menu-video", "--all").output
+    assert "NES" not in every and "Hidden: not made: 0 of its games have a video" in every   # quietly skipped
+    assert "1 file(s) undone" in _run("undo", "--apply").output and not video.exists()
 
 
 def test_placeholder_commands(cabinet, monkeypatch):

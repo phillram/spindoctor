@@ -7185,6 +7185,7 @@ def generate_media_group():
     2. wheel-pictures   draw titles (or reuse a picture already on the PC)
        record           launch games and record a video or a screenshot
        placeholders     "No video found" for games with nothing
+       menu-video       a wheel's Main Menu video, from its own game videos
     3. put-in           copy a staged batch into HyperSpin's media
        undo             take the last batch out again
     """
@@ -7569,6 +7570,65 @@ def generate_media_placeholders(systems, all_systems, games, frontend, kind, bac
     except (clips.ClipError, titleart.TitleArtError, OSError) as exc:
         err_console.print(f"[red]{escape(str(exc))}[/red]")
         sys.exit(1)
+    stage.finish()
+    _gen_staged(stage, errors, config=config, put_in=put_in_after)
+
+
+@generate_media_group.command("menu-video")
+@click.option("--system", "-s", "systems", multiple=True, help=_GEN_WHEELS_HELP)
+@click.option("--all", "all_systems", is_flag=True, help="Every wheel on the Main Menu that has no video there.")
+@click.option("--game", "-g", "games", multiple=True,
+              help="The games whose clips to use, in this order (name or title, * and ? wildcards). "
+                   "Default: --count of them, spread over the wheel.")
+@click.option("--count", type=click.IntRange(2, 30), default=8, show_default=True, help="How many clips.")
+@click.option("--seconds", type=click.FloatRange(2, 30), default=7.5, show_default=True,
+              help="Seconds of each clip.")
+@click.option("--stage-dir", type=click.Path(file_okay=False), default=None, help=_GEN_STAGE_HELP)
+@click.option("--put-in", "put_in_after", is_flag=True,
+              help="Put the batch into HyperSpin's media when it is made, as put-in --apply: only empty "
+                   "places (or stand-ins), and generate-media undo takes it out.")
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Make them, in a staging folder. Without it, only list the clips.")
+def generate_media_menu_video(systems, all_systems, games, count, seconds, stage_dir, put_in_after, apply_changes):
+    """Make a wheel's Main Menu video from its own game videos.
+
+    HyperSpin plays Media\\Main Menu\\Video\\<wheel>.mp4 while that wheel is
+    picked on the Main Menu. This joins a few seconds of each of the wheel's
+    own videos (8 by default, spread over the wheel; not stills, placeholders
+    or parents' videos) with short fades, at 640x480 with their sound. Put the
+    wheel's recordings in first. A wheel that has a Main Menu video is left
+    alone.
+    """
+    from . import clips, genmedia
+
+    config = _gen_config()
+    states = _gen_states(config, systems, all_systems)
+    menu = genmedia.wheel_state(config, genmedia.MAIN_MENU)
+    jobs = [genmedia.plan_menu_video(menu, s, games=games, count=count) for s in states]
+    ready = [j for j in jobs if j.clips]
+    for job in jobs:
+        if job.clips:
+            console.print(f"  {escape(job.system)}: {len(job.clips)} clips ({escape(', '.join(job.titles))})")
+        elif not all_systems or "has a video" not in job.why:
+            console.print(f"  [yellow]{escape(job.system)}:[/yellow] not made: {escape(job.why)}")
+    console.print(f"{len(ready)} Main Menu video(s) to make, {seconds:g} s of each clip.")
+    if not ready:
+        return
+    if not apply_changes:
+        _print_dry_run(False, "No videos were made.")
+        return
+    try:
+        tools = clips.find_tools(config)
+        stage = genmedia.Stage.create(genmedia.stage_root(config, stage_dir or ""), "menu videos")
+    except (clips.ClipError, OSError) as exc:
+        err_console.print(f"[red]{escape(str(exc))}[/red]")
+        sys.exit(1)
+    errors: list = []
+    for job in ready:
+        try:
+            genmedia.make_menu_video(stage, job, tools=tools, seconds=seconds)
+        except (clips.ClipError, OSError) as exc:
+            errors.append(f"{job.system}: {exc}")
     stage.finish()
     _gen_staged(stage, errors, config=config, put_in=put_in_after)
 

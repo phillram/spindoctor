@@ -12,6 +12,7 @@ AAC sound.  HyperSpin plays MP3 sound inside an MP4 silent.
 """
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 import sys
@@ -434,6 +435,52 @@ def card_clip_command(ffmpeg: str, card: Path, out: Path,
             + ["-c:a", "aac", "-b:a", "64k", "-shortest", "-movflags", "+faststart", str(out)])
 
 
+# A wheel's Main Menu video: this long from each of its clips, from this far in
+# (past a game's opening), with fades this long between them.
+MONTAGE_PIECE = 7.5
+MONTAGE_FROM = 8.0
+MONTAGE_FADE = 0.4
+
+
+@dataclass
+class Piece:
+    """One clip of a montage, and where its part starts."""
+    path: Path
+    start: float = MONTAGE_FROM
+    sound: bool = True
+
+
+def piece_start(duration: float, seconds: float = MONTAGE_PIECE, start: float = MONTAGE_FROM) -> float:
+    """Where a part of *seconds* starts in a clip of *duration*: *start* in,
+    earlier when the clip is too short for that."""
+    return round(max(0.0, min(start, duration - seconds)), 2) if duration > 0 else 0.0
+
+
+def montage_command(ffmpeg: str, pieces: list[Piece], out: Path, *, seconds: float = MONTAGE_PIECE,
+                    size: tuple[int, int] = CLIP_SIZE) -> list[str]:
+    """*seconds* of each piece, kept in shape inside *size* (black bars), with
+    short fades, one after another, with their sound; a piece without sound
+    gets silence, so every part has a sound track to join."""
+    w, h = size
+    fade_out = max(0.0, seconds - MONTAGE_FADE)
+    cmd = [ffmpeg, "-y", "-hide_banner", "-nostdin", "-loglevel", "error"]
+    for p in pieces:
+        cmd += ["-ss", f"{p.start:g}", "-t", f"{seconds:g}", "-i", str(p.path)]
+    graph = []
+    for i, p in enumerate(pieces):
+        graph.append(f"[{i}:v]scale={w}:{h}:force_original_aspect_ratio=decrease:flags=lanczos,"
+                     f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={FPS},format=yuv420p,setpts=PTS-STARTPTS,"
+                     f"fade=t=in:st=0:d={MONTAGE_FADE:g},fade=t=out:st={fade_out:g}:d={MONTAGE_FADE:g}[v{i}]")
+        sound = f"[{i}:a]aresample=44100,aformat=channel_layouts=stereo," if p.sound else \
+            "anullsrc=r=44100:cl=stereo,"
+        graph.append(f"{sound}atrim=duration={seconds:g},asetpts=PTS-STARTPTS,apad=whole_dur={seconds:g},"
+                     f"afade=t=in:st=0:d={MONTAGE_FADE:g},afade=t=out:st={fade_out:g}:d={MONTAGE_FADE:g}[a{i}]")
+    graph.append("".join(f"[v{i}][a{i}]" for i in range(len(pieces))) + f"concat=n={len(pieces)}:v=1:a=1[v][a]")
+    return (cmd + ["-filter_complex", ";".join(graph), "-map", "[v]", "-map", "[a]"] + _VIDEO_OUT
+            + ["-preset", "medium", "-crf", "21", "-maxrate", "2500k", "-bufsize", "5000k"] + _SOUND_OUT
+            + ["-movflags", "+faststart", str(out)])
+
+
 def card_flv_command(ffmpeg: str, card: Path, out: Path, seconds: int = 5) -> list[str]:
     """A still card as the Flash video HyperSpin's own ``No Video.flv`` is."""
     return [ffmpeg, "-y", "-hide_banner", "-nostdin", "-loglevel", "error",
@@ -602,6 +649,30 @@ class Tools:
 
     def make_card_flv(self, card: Path, out: Path) -> Path:
         return self._make(card_flv_command(self.ffmpeg, card, out), out, 60)
+
+    def clip_info(self, path: Path) -> tuple[float, bool]:
+        """``(seconds, has sound)`` of a video; ``(0.0, False)`` when ffprobe
+        can't read it."""
+        try:
+            done = self._run([self.ffprobe, "-v", "error", "-show_entries", "format=duration:stream=codec_type",
+                              "-of", "json", str(path)], 30)
+            data = json.loads(done.stdout or "{}")
+        except (ClipError, ValueError):
+            return 0.0, False
+        try:
+            seconds = float((data.get("format") or {}).get("duration") or 0)
+        except (TypeError, ValueError):
+            seconds = 0.0
+        return seconds, any(s.get("codec_type") == "audio" for s in data.get("streams") or ())
+
+    def make_montage(self, clips: list[Path], out: Path, *, seconds: float = MONTAGE_PIECE) -> Path:
+        """A Main Menu video from *clips*: :func:`montage_command`, each part
+        from where :func:`piece_start` puts it."""
+        pieces = []
+        for clip in clips:
+            length, sound = self.clip_info(clip)
+            pieces.append(Piece(clip, piece_start(length, seconds), sound))
+        return self._make(montage_command(self.ffmpeg, pieces, out, seconds=seconds), out, 600)
 
 
 def find_tools(config: Config) -> Tools:

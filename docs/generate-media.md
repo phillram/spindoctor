@@ -144,6 +144,25 @@ Stills go into the video folder, where HyperSpin shows them in the video's
 place. Artwork slots hold boxes, cartridges or discs depending on the theme, so
 nothing is put there.
 
+## A wheel's Main Menu video
+
+While a wheel is picked on the Main Menu, HyperSpin plays
+`Media\Main Menu\Video\<wheel>.mp4`. `menu-video` makes one from the wheel's
+own game videos: 7.5 seconds of each of 8 of them, spread over the wheel, with
+short fades, at 640x480 with their sound. `--game` picks the clips (in the
+order given), `--count` and `--seconds` change how many and how long. Only
+videos already in the wheel's video folder count, not stills, placeholders or
+parents' videos, so put the recordings in first. A wheel that has a Main Menu
+video is left alone.
+
+```text
+spindoctor generate-media menu-video --system "Handheld Electronic Games" --apply
+spindoctor generate-media put-in --apply
+```
+
+Its Main Menu logo is a wheel picture like any other:
+`wheel-pictures --system "Main Menu" --game "<wheel>"`.
+
 ## Placeholders
 
 HyperSpin plays its own `Media\Frontend\Video\No Video.flv` for every game with
