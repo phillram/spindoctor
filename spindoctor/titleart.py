@@ -13,7 +13,7 @@ import re
 import sys
 from functools import lru_cache
 from pathlib import Path
-from typing import Optional, Sequence
+from typing import Optional, Sequence, Tuple
 
 #: Letter colors from top to bottom.
 STYLES = {
@@ -306,7 +306,7 @@ def _png(img) -> bytes:
 
 # ─── pictures ─────────────────────────────────────────────────────────────────
 
-RGB = tuple[int, int, int]
+RGB = Tuple[int, int, int]
 
 
 #: What goes round the letters, besides their dark edge.
