@@ -154,6 +154,9 @@ many computer games) need keys:
   opens: Start, or `--press 2:5 --press 3:1` for a coin and Start.
 - `--play "Up Down Left Right A B"` then presses one of those keys at random,
   about once a second, while it waits and records.
+- Join keys with `+` to hold them together, in either option: `--press 6:Left+R`
+  presses Start while Left is held, which Coleco's Head to Head games need to
+  begin.
 
 Use the keys the games are set to (the control panel's, on a cabinet). The
 recorder's own key presses don't stop the run; arrow, Home, End, Page Up/Down,
