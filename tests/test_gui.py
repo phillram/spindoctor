@@ -4299,7 +4299,7 @@ def _genmedia_logic_app(monkeypatch, apply=False):
     """Generate Media handlers, without Tk traces or background workers."""
     app = _process_gui(monkeypatch)
     values = {"system": "NES", "all": False, "games": "", "details": False, "style": "chrome",
-              "copy": True, "hidden": False, "count": "5", "seconds": "35", "wait": "20", "settle": "40", "minutes": "30",
+              "copy": True, "hidden": False, "redraw": False, "count": "5", "seconds": "35", "wait": "20", "settle": "40", "minutes": "30",
               "sound": True, "still": False, "crop": "auto", "kind": "clip", "background": "blue",
               "stage": "", "press": "", "play": "", "keys_file": "", "target": "games", "font": "(heavy default)",
               "effect": "shadow", "glow_color": "#00ffe2", "preview_text": "",
@@ -4321,6 +4321,15 @@ def _genmedia_args(app):
     (program, args), kwargs = app._run_cli.call_args
     assert program == "spindoctor" and args[0] == "generate-media" and kwargs == {"on_complete": app._gm_done}
     return args[1:]
+
+
+def test_generate_media_draws_its_own_titles_again_only_when_asked(monkeypatch):
+    app = _genmedia_logic_app(monkeypatch, apply=True)
+    app._gm_wheel_pictures()
+    assert "--redraw" not in _genmedia_args(app)
+    app._gm_redraw_var.set(True)
+    app._gm_wheel_pictures()
+    assert _genmedia_args(app) == ["wheel-pictures", "--system", "NES", "--style", "chrome", "--redraw", "--apply"]
 
 
 def test_generate_media_pictures_and_list(monkeypatch):
@@ -4413,8 +4422,9 @@ def test_generate_media_title_look_passes_only_what_differs_from_the_style(monke
     app._gm_effect_var.set("shadow")
     app._gm_font_var.set("(heavy default)")
     app._gm_wheel_pictures()
+    # Designing the logo draws it again over one drawn before.
     assert _genmedia_args(app) == ["wheel-pictures", "--system", "Main Menu", "--game", "NES",
-                                   "--style", "chrome", "--apply"]
+                                   "--style", "chrome", "--redraw", "--apply"]
     app._gm_color_vars[1].set("not a color")
     calls = app._run_cli.call_count
     app._gm_wheel_pictures()

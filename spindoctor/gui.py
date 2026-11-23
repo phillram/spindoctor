@@ -12937,6 +12937,16 @@ class _SpinDoctorGUI:
         box.pack(fill="x", pady=(0, 8))
         self._build_gm_title_designer(box)
         row = self.ttk.Frame(box)
+        row.pack(fill="x", padx=6, pady=(4, 0))
+        self._gm_redraw_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(row, text="Draw again the titles SpinDoctor drew before, in this design",
+                             variable=self._gm_redraw_var).pack(side="left", padx=6)
+        self._help_text(
+            box, text="Titles SpinDoctor drew are left as they are unless this is ticked; real pictures are "
+                      "never drawn over. The Main Menu logo is always drawn again: designing it is what that "
+                      "choice is for.",
+        ).pack(fill="x", padx=6)
+        row = self.ttk.Frame(box)
         row.pack(fill="x", padx=6, pady=(4, 6))
         self._gm_copy_var = self.tk.BooleanVar(value=True)
         self.ttk.Checkbutton(row, text="Reuse pictures already on this PC",
@@ -13377,6 +13387,10 @@ class _SpinDoctorGUI:
             self._flash_validation(str(exc))
             return
         args = ["wheel-pictures"] + args + look
+        # Designing the logo means drawing it, also over a logo drawn before
+        # (a real logo stays unless "Replace media" is ticked).
+        if self._gm_target_var.get() == "logo" or self._gm_redraw_var.get():
+            args.append("--redraw")
         if not self._gm_copy_var.get():
             args.append("--no-copy")
         if self._gm_hidden_var.get():

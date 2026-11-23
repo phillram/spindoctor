@@ -7362,7 +7362,7 @@ def generate_media_wheel(systems, all_systems, games, style, font, colors, effec
     config = _gen_config()
     states = _gen_states(config, systems, all_systems)
     local = None if no_copy else genmedia.LocalPictures(config)
-    jobs, hidden = [], 0
+    jobs, hidden, drawn_before = [], 0, 0
     for s in states:
         if s.problem:
             console.print(f"[yellow]{escape(s.system)}:[/yellow] {escape(s.problem)}")
@@ -7371,9 +7371,14 @@ def generate_media_wheel(systems, all_systems, games, style, font, colors, effec
                                                   local=local, overwrite=overwrite)
         jobs += more
         hidden += left
+        if not (redraw or overwrite):
+            drawn_before += sum(1 for g in genmedia.matching(s.games, games) if g.wheel == "drawn")
     jobs = jobs[:count] if count else jobs
     copied = sum(1 for j in jobs if j.source)
     console.print(f"{len(jobs)} wheel picture(s) to make: {len(jobs) - copied} drawn, {copied} already on this PC.")
+    if drawn_before:
+        console.print(f"{drawn_before} game(s) keep the title SpinDoctor drew before: --redraw draws them again "
+                      "(GUI: \"Draw again the titles SpinDoctor drew before\").")
     if hidden:
         console.print(f"[dim]{hidden} game(s) stay hidden: their wheel lists only games with a picture. "
                       "--show-hidden makes theirs too, which puts them on the wheel.[/dim]")

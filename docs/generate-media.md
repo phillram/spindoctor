@@ -112,7 +112,10 @@ appears as soon as it gets one. Such games are left out unless you pass
 `--show-hidden`, so extra disks and sides that are meant to stay hidden do.
 
 Drawn titles count as missing, so `fetch-media` or an import replaces them with
-a real logo. `--redraw` draws them again in another style. Two different games
+a real logo. A run leaves them as they are and says how many it left;
+`--redraw` draws them again in another design (GUI: "Draw again the titles
+SpinDoctor drew before"), and `put-in` then replaces the older drawings. The
+GUI always draws the Main Menu logo again when that is what you design. Two different games
 of one wheel that would draw the same title (two makers' "Electronic Football")
 get what tells their descriptions apart: "Electronic Football - Conic". A
 game's regional copies and revisions keep one title.
@@ -215,7 +218,8 @@ spindoctor generate-media put-in --apply
 ```
 
 Its Main Menu logo is a wheel picture like any other:
-`wheel-pictures --system "Main Menu" --game "<wheel>"`.
+`wheel-pictures --system "Main Menu" --game "<wheel>"`. Add `--redraw` to draw
+it again in another design after one was drawn and put in.
 
 ## Placeholders
 
