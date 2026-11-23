@@ -136,6 +136,8 @@ extra mapper launches. [DS4Windows example](controller-input.md).
 RetroArch can accept keyboard and controller bindings together. Explicit `nul`
 entries disable a binding rather than restoring autodetect; system configs and
 game overrides can replace global hotkeys.
+Other emulators read one source and drop the panel while a controller is on:
+[panel and controller together](controller-input.md#panel-and-controller-together).
 
 Dolphin's selected device and per-game profile matter. A GameCube mapping needs
 explicit keyboard device qualifiers if the selected gamepad is disconnected;
