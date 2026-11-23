@@ -10664,10 +10664,12 @@ class _SpinDoctorGUI:
             add_btns, text="Add PC system",
             command=lambda: self._run_add_system(True),
         ).pack(side="left", padx=6)
+        # Its own line: beside the buttons, in a row that doesn't fill, the
+        # wrapping label got about one character's width and never showed.
         self._help_text(
-            add_btns,
+            add_frame,
             text="PC System accepts the best game title automatically. To find new installs later, use Games > Add new PC games.",
-        ).pack(side="left", padx=10)
+        ).pack(fill="x", padx=6, pady=(0, 6))
 
         # ── Organize a system ────────────────────────────────────────────────
         # `organize` does two things: (a) writes sort wheels (per-axis
