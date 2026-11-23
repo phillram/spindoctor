@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from spindoctor import gametest
+from spindoctor import _win32, gametest
 from spindoctor._win32 import ProcInfo, WinInfo
 from spindoctor.rl_rom_paths import _RomLookup
 
@@ -203,9 +203,18 @@ def test_processes_named_in_the_log_are_owned(tmp_path):
 @pytest.mark.parametrize("name, vk", [
     ("Esc", 0x1B), ("~Esc", 0x1B), ("F12", 0x7B), ("Numpad5", 0x65), ("q", 0x51),
     ("1", 0x31), ("LAlt", 0xA4), ("Joy1", -1), ("", -1),
+    ("Up", 0x26), ("down", 0x28), ("Left", 0x25), ("RIGHT", 0x27),
 ])
 def test_virtual_key(name, vk):
     assert gametest.virtual_key(name) == vk
+
+
+def test_arrow_and_navigation_keys_are_sent_as_extended_keys():
+    # Without KEYEVENTF_EXTENDEDKEY, DirectInput games (MAME) read them as the number pad's keys.
+    for name in ("Up", "Down", "Left", "Right", "Home", "End", "PgUp", "PgDn", "Insert", "Delete", "RCtrl", "RAlt"):
+        assert _win32.key_flags(gametest.virtual_key(name)) == 1, name
+    for name in ("Esc", "Enter", "q", "1", "Numpad5", "F12", "LCtrl", "LAlt"):
+        assert _win32.key_flags(gametest.virtual_key(name)) == 0, name
 
 
 @pytest.mark.parametrize("raw, wait, vks, hold", [
