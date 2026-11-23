@@ -13,6 +13,7 @@ CLI examples use `spindoctor` (pip); Windows binaries use `spindoctor-cli`.
 | Refresh, back up, migrate or undo | [Workflows](workflows.md) |
 | Install wheel refreshers and Toolkit helpers | [Standalone tools](standalone-tools.md) |
 | Configure synthetic-wheel art and sound | [Synthetic-wheel media](synthetic-wheel-media.md) |
+| Put several programs on one wheel | [Combined wheels](combined-wheels.md) |
 | Tour consoles while idle | [Idle tour](idle-tour.md) |
 | Configure guns or controllers | [Light guns](lightgun.md), [DS4Windows example](controller-input.md) |
 | Start pinball programs | [Future Pinball and Visual Pinball X](pinball.md) |

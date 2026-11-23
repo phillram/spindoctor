@@ -33,6 +33,8 @@ command-specific; do not delete manifests to silence errors.
 | “Cannot find Rom” | Check actual stem, allowed extensions, per-game emulator and every effective ROM path. |
 | Casual Games cannot locate program | Check `gamePath`, executable naming/fallback folder and matching placeholder; unrelated `.txt` files can match accidentally. |
 | AHK cannot launch a program | Inspect effective User Functions for stale helper paths and working directories. |
+| A game on a mixed wheel starts with the wrong keys or settings | Read the system name and key profile in `RocketLauncher.log`: [combined wheels](combined-wheels.md#check-it). |
+| A Genre menu entry shows the whole wheel | A genre with the wheel's own name is the wheel's own list: [Genre lists](combined-wheels.md#genre-lists). |
 | Double menu movement after certain games | A second mapper probably survived launch. Inspect User Functions and RL keymapper settings, not just Windows startup. |
 | Refresh stopped after upgrade | Regenerate helpers/tasks with the current EXE path and same tool selections; run `doctor`. |
 | Toolkit “exe/FadeTitle/SteamID” error | Reinstall the helper using `install-tools`; module routing and placeholders must agree. |
@@ -75,6 +77,7 @@ Logs redact some secrets, not all identifying data.
 | Game hidden or shown as text | Check exact media stem/case/spaces, `wheels_only`, `parents_only`, enabled status and wheel art. |
 | No letter-jump graphic | Supply `Images/Letters/<character>.png` for visible title initials; run `doctor`. |
 | Starts on a different letter/game | Inspect `wheel-start`; set first/last/random with HyperSpin closed. |
+| Recently Played or Most Played lost games or art after a wheel was retired | They read the list and media of the system the statistics name: [retire the old wheels](combined-wheels.md#retire-the-old-wheels). |
 | Missing synthetic art after move | Verify source media, redirects and mirror mode, then rebuild. Hardlinks cannot cross filesystems; auto mode falls back to copies. |
 | Custom logo not replaced by installer | Intentional: existing art is preserved. Back it up and remove/replace it deliberately. |
 

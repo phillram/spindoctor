@@ -13,6 +13,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Documentation
 
+- **One wheel for several programs has its own page.** [docs/combined-wheels.md](docs/combined-wheels.md)
+  covers running every game under the wheel's own name with a per-game `Emulator=` (one
+  set of settings, media, key profiles and statistics, so the old wheels can go), the
+  `System=` redirect and what it leaves behind, retiring the old wheels without losing
+  Recently Played and Most Played, and a genre that shares the wheel's name.
+  Troubleshooting links to it.
 - Refresh and shorten current guides, replace all GUI screenshots with the
   15-page sidebar layout, and add generated-command/link/screenshot drift checks.
 - **Pinball programs have their own page.** [docs/pinball.md](docs/pinball.md) covers
