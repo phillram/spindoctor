@@ -36,6 +36,11 @@ place gets the best file of all the waiting batches: real media over a drawn
 title or placeholder, a video over a still, then the newest. So it doesn't
 matter which batch was made first, and one `undo` takes them all out again.
 
+To skip the look first, `--put-in` on `wheel-pictures`, `record` or
+`placeholders` puts the batch in as soon as it is made, the same way (GUI: tick
+**Put each new batch in when it's made**). A long recording then ends with the
+videos on the wheel. The batch stays in staging, and `undo` takes it out.
+
 Staging is `<output_dir>\generated-media`, or `~/.spindoctor/generated-media`
 without an `output_dir`; `--stage-dir` names another. Batches stay there after
 `put-in`: delete them by hand when you no longer want them.
