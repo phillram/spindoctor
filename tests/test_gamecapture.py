@@ -5,6 +5,7 @@ is started and no screen is recorded.
 """
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
@@ -242,6 +243,20 @@ def test_key_presses_are_parsed():
             gamecapture.parse_presses([bad])
 
 
+def test_keys_joined_with_plus_are_held_together():
+    assert gamecapture.chord("Left+R") == [0x25, ord("R")]
+    assert gamecapture.chord(" Enter ") == [0x0D]
+    for bad in ("", "+", "Left+", "+R", "Left++R", "Left+NoSuchKey"):
+        assert gamecapture.chord(bad) == [], bad
+    assert gamecapture.parse_presses(["2:Left+R"]) == [(2.0, "Left+R")]
+    assert gamecapture.parse_play(["Up Down+A"]) == ["Up", "Down+A"]
+    for bad in ("2:Left+", "2:+R"):
+        with pytest.raises(gamecapture.CaptureError, match="held together"):
+            gamecapture.parse_presses([bad])
+    with pytest.raises(gamecapture.CaptureError, match="held together"):
+        gamecapture.parse_play(["Up Left+NoSuchKey"])
+
+
 def test_movement():
     gray = bytes([100] * 4000)
     assert not gamecapture.picture_changed(gray, gray)
@@ -425,6 +440,74 @@ def test_keys_are_pressed_for_every_game_of_a_run(tmp_path, home):
     _record(cfg, fake, tools, _plan(cfg), presses=presses)
     assert len(fake.launches) >= 2
     assert sum(1 for p in fake.pressed if p == [ord("5")]) == len(fake.launches)
+
+
+def test_a_keys_file_gives_games_their_own_keys(tmp_path):
+    keys = tmp_path / "keys.txt"
+    keys.write_text("﻿# Kick The Goal Soccer starts with Display pressed twice\n\n"
+                    'bmsoccer --press 2:B --press 3:B --play "Up Down Left Right A"   # then it waits for a move\n'
+                    '"Computer Gin"  --play "A B C D"\n'
+                    "h2h* --press 2:Left+R\n"
+                    "pacman\n", encoding="utf-8")
+    lines = gamecapture.parse_keys_file(keys)
+    assert lines == [["bmsoccer", [(2.0, "B"), (3.0, "B")], ["Up", "Down", "Left", "Right", "A"]],
+                     ["Computer Gin", [], ["A", "B", "C", "D"]],
+                     ["h2h*", [(2.0, "Left+R")], []],
+                     ["pacman", [], []]]
+    s = gamecapture.CaptureSettings(presses=[(1.0, "Enter")], play=["Up"], own_keys=lines)
+    assert s.keys_for("bmsoccer", "Kick The Goal Soccer") == ([(2.0, "B"), (3.0, "B")],
+                                                              ["Up", "Down", "Left", "Right", "A"])
+    assert s.keys_for("mcompgin", "COMPUTER GIN") == ([], ["A", "B", "C", "D"])     # by title, any case
+    assert s.keys_for("h2hhockey", "Head to Head: Electronic Hockey") == ([(2.0, "Left+R")], [])
+    assert s.keys_for("pacman", "Pac-Man") == ([], [])                               # listed: no keys
+    assert s.keys_for("galaga", "Galaga") == ([(1.0, "Enter")], ["Up"])              # not listed: the run's
+    assert s.own_keys_for("galaga", "Galaga") is None
+    assert gamecapture.parse_keys_file(_write(tmp_path / "empty.txt", "# nothing yet\n")) == []
+
+
+def _write(path: Path, text: str) -> Path:
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+@pytest.mark.parametrize("line, why", [
+    ("--press 2:B", "line 2: start the line with the game's name or title"),
+    ("bmsoccer --wait 3", "line 2: after the game come --press SECONDS:KEY and --play KEYS, not '--wait'"),
+    ("bmsoccer --play", "line 2: --play needs its keys after it"),
+    ("bmsoccer --press 2:NoSuchKey", "line 2: '2:NoSuchKey' is not a key press"),
+    ("bmsoccer --play \"Up NoSuchKey\"", "line 2: 'NoSuchKey' is not a key"),
+    ("bmsoccer --play \"Up", "line 2: No closing quotation"),
+])
+def test_a_bad_keys_file_names_the_line(tmp_path, line, why):
+    path = _write(tmp_path / "keys.txt", f"ditto --play \"A B C D\"\n{line}\n")
+    with pytest.raises(gamecapture.CaptureError, match=re.escape(f"keys.txt, {why}")):
+        gamecapture.parse_keys_file(path)
+
+
+def test_an_unreadable_keys_file_says_so(tmp_path):
+    with pytest.raises(gamecapture.CaptureError, match="Can't read the keys file"):
+        gamecapture.parse_keys_file(tmp_path / "missing.txt")
+    (tmp_path / "binary.txt").write_bytes(b"\xff\xfe\x00bad")
+    with pytest.raises(gamecapture.CaptureError, match="Can't read the keys file"):
+        gamecapture.parse_keys_file(tmp_path / "binary.txt")
+
+
+def test_games_with_their_own_keys_get_them_and_the_rest_get_the_runs(tmp_path, home):
+    cfg, fake, tools = _setup(tmp_path, GameBehaviour(exit_key_works=False))
+    own = [["bravo", [(1.0, "Left+R")], []]]
+    _record(cfg, fake, tools, _plan(cfg), presses=gamecapture.parse_presses(["1:5"]), own_keys=own)
+    games = len(fake.launches)
+    assert games >= 3
+    assert sum(1 for p in fake.pressed if p == [ord("5")]) == games - 1
+    assert sum(1 for p in fake.pressed if p == [0x25, ord("R")]) == 1
+
+
+def test_a_chord_is_pressed_as_one_press_of_its_keys(tmp_path, home):
+    cfg, fake, tools = _setup(tmp_path, GameBehaviour(exit_key_works=False))
+    _record(cfg, fake, tools, _plan(cfg, count=1), presses=gamecapture.parse_presses(["1:Left+R"]),
+            play=gamecapture.parse_play(["Right+A"]))
+    assert fake.pressed[0] == [0x25, ord("R")]
+    assert [0x27, ord("A")] in fake.pressed[1:]
 
 
 def test_play_keys_are_pressed_at_random_after_the_set_ones(tmp_path, home):
@@ -614,3 +697,28 @@ def test_resuming_presses_nothing_it_wasnt_told_to():
     assert settings.presses == [(12.0, "Enter")] and settings.seconds == 35 and settings.play == ["Up", "A"]
     assert settings.settle == 3
     assert gamecapture.resumed_settings({"capture": "broken"}) == gamecapture.CaptureSettings()
+
+
+def test_resuming_keeps_the_games_own_keys():
+    import json
+    from dataclasses import asdict
+
+    own = [["bmsoccer", [(2.0, "B"), (3.0, "B")], ["Up", "A"]], ["pacman", [], []]]
+    saved = json.loads(json.dumps({"capture": asdict(gamecapture.CaptureSettings(own_keys=own))}))
+    saved["capture"]["own_keys"].append("broken")
+    settings = gamecapture.resumed_settings(saved)
+    assert settings.own_keys == own
+    assert settings.keys_for("bmsoccer") == ([(2.0, "B"), (3.0, "B")], ["Up", "A"])
+
+
+def test_the_keys_file_from_the_command_line(tmp_path, home):
+    cfg, _fake, _tools = _setup(tmp_path)
+    save_config(cfg)
+    keys = _write(tmp_path / "keys.txt", "charlie --press 2:Left+R\nnot-on-this-wheel --play A\n")
+    out = _cli("-s", "NES", "--play", "Up", "--keys-file", str(keys)).output
+    assert "1 of them get their own keys from keys.txt (2 line(s)); the rest get this run's." in out
+    assert "DRY RUN" in out
+    bad = _write(tmp_path / "bad.txt", "charlie --wait 3\n")
+    result = _cli("-s", "NES", "--keys-file", str(bad))
+    assert result.exit_code == 1 and "bad.txt, line 1" in result.output
+    assert "does not exist" in _cli("-s", "NES", "--keys-file", str(tmp_path / "none.txt")).output

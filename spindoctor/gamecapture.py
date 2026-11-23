@@ -23,7 +23,9 @@ the keyboard, a control panel or a mouse button.
 """
 from __future__ import annotations
 
+import fnmatch
 import random
+import shlex
 import shutil
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -64,6 +66,21 @@ class CaptureSettings:
     crop: str = "auto"
     presses: list = field(default_factory=list)     # (seconds after the window opened, key text), every game
     play: list = field(default_factory=list)        # key texts pressed at random while waiting and recording
+    own_keys: list = field(default_factory=list)    # [pattern, presses, play]: games' own keys (--keys-file)
+
+    def own_keys_for(self, game: str, title: str = "") -> Optional[tuple[list, list]]:
+        """*game*'s own presses and play keys: the first line of the keys file
+        whose pattern matches its name or title (``*`` and ``?``, any case)."""
+        for pattern, presses, play in self.own_keys:
+            p = pattern.strip().lower()
+            if any(text and fnmatch.fnmatchcase(text.lower(), p) for text in (game, title)):
+                return [tuple(x) for x in presses], list(play)
+        return None
+
+    def keys_for(self, game: str, title: str = "") -> tuple[list, list]:
+        """The presses and play keys for *game*: its own, else the run's."""
+        own = self.own_keys_for(game, title)
+        return own if own is not None else (list(self.presses), list(self.play))
 
     def per_game(self) -> int:
         """About how long one game takes.  A game whose picture never moves
@@ -80,6 +97,14 @@ class CaptureSettings:
         return total + (RUN_SECONDS if games else 0)
 
 
+def chord(text: str) -> list[int]:
+    """The virtual-key codes of *text*: one key (``Enter``), or keys joined by
+    ``+`` that are held down together (``Left+R``, for a handheld that starts
+    with Start pressed while Left is held).  ``[]`` when any part isn't a key."""
+    vks = [gametest.virtual_key(part) for part in text.strip().split("+")]
+    return vks if all(vk >= 0 for vk in vks) else []
+
+
 def parse_presses(texts) -> list[tuple[float, str]]:
     """``12:Enter`` -> ``(12.0, "Enter")``; :class:`CaptureError` for anything else."""
     out = []
@@ -89,23 +114,71 @@ def parse_presses(texts) -> list[tuple[float, str]]:
             seconds = float(at)
         except ValueError:
             seconds = -1.0
-        if seconds < 0 or gametest.virtual_key(key) < 0:
-            raise CaptureError(f"{text!r} is not a key press: use SECONDS:KEY, like 12:Enter or 15:F1.")
+        if seconds < 0 or not chord(key):
+            raise CaptureError(f"{text!r} is not a key press: use SECONDS:KEY, like 12:Enter or 15:F1, "
+                               "or 2:Left+R for keys held together.")
         out.append((seconds, key.strip()))
     return sorted(out)
 
 
 def parse_play(texts) -> list[str]:
     """``["Up,Down", "A"]`` or ``["Up Down A"]`` -> ``["Up", "Down", "A"]``: the
-    keys ``--play`` presses at random; :class:`CaptureError` for an unknown one."""
+    keys ``--play`` presses at random (``Left+A`` holds two together);
+    :class:`CaptureError` for an unknown one."""
     keys: list[str] = []
     for text in texts:
         for key in text.replace(",", " ").split():
-            if gametest.virtual_key(key) < 0:
-                raise CaptureError(f"{key!r} is not a key: use names like Up, Left, A, 1, Enter or Space.")
+            if not chord(key):
+                raise CaptureError(f"{key!r} is not a key: use names like Up, Left, A, 1, Enter or Space, "
+                                   "or Left+A for keys held together.")
             if key not in keys:
                 keys.append(key)
     return keys
+
+
+def parse_keys_file(path) -> list:
+    """Games' own keys (``--keys-file``): one game per line, its name or title
+    (``*`` and ``?`` work), then ``--press`` and ``--play`` as on the command
+    line.  ``#`` starts a comment, and a game with nothing after it gets no
+    keys::
+
+        h2hhockey  --press 6:Left+R --play "Left Right A Left+R Right+R"
+        "Computer Gin"  --press 2:D --play "A B C D"
+        pacman
+
+    Returns ``[pattern, presses, play]`` lists; :class:`CaptureError` names
+    the line of anything else."""
+    try:
+        text = Path(path).read_text(encoding="utf-8-sig")
+    except (OSError, UnicodeDecodeError) as exc:
+        raise CaptureError(f"Can't read the keys file {path}: {exc}") from exc
+    out = []
+    for number, line in enumerate(text.splitlines(), 1):
+        where = f"{Path(path).name}, line {number}"
+        try:
+            words = shlex.split(line, comments=True)
+        except ValueError as exc:
+            raise CaptureError(f"{where}: {exc}") from exc
+        if not words:
+            continue
+        pattern, rest = words[0], words[1:]
+        if pattern.startswith("--"):
+            raise CaptureError(f"{where}: start the line with the game's name or title, then its keys.")
+        presses: list[str] = []
+        play: list[str] = []
+        while rest:
+            option = rest.pop(0)
+            if option not in ("--press", "--play"):
+                raise CaptureError(f"{where}: after the game come --press SECONDS:KEY and --play KEYS, "
+                                   f"not {option!r}.")
+            if not rest:
+                raise CaptureError(f"{where}: {option} needs its keys after it.")
+            (presses if option == "--press" else play).append(rest.pop(0))
+        try:
+            out.append([pattern, parse_presses(presses), parse_play(play)])
+        except CaptureError as exc:
+            raise CaptureError(f"{where}: {exc}") from exc
+    return out
 
 
 # ─── picking games ────────────────────────────────────────────────────────────
@@ -218,6 +291,7 @@ class CaptureRunner(gametest.Runner):
         self._began = platform.now()
         self._take: Optional[_Take] = None
         self._pending: list = []
+        self._play: list = []
         self._rng = random.Random(0)
 
     # -- stopping
@@ -247,7 +321,7 @@ class CaptureRunner(gametest.Runner):
         if self._stop_now():
             return None
         self._take = None
-        self._pending = list(self.capture.presses)
+        self._pending, self._play = self.capture.keys_for(item.game, item.description)
         self._rng = random.Random(f"{item.system}\0{item.game}")  # the same game is played the same way
         try:
             result = super().launch(item)
@@ -263,10 +337,10 @@ class CaptureRunner(gametest.Runner):
         while self._pending and self.platform.now() - opened_at >= self._pending[0][0]:
             _at, key = self._pending.pop(0)
             if self._game_in_front(proc, state):
-                self.platform.press_keys([gametest.virtual_key(key)], 80)
-        if self.capture.play and not self._pending and self._game_in_front(proc, state):
-            key = self._rng.choice(self.capture.play)
-            self.platform.press_keys([gametest.virtual_key(key)], self._rng.randint(*PLAY_HOLD_MS))
+                self.platform.press_keys(chord(key), 80)
+        if self._play and not self._pending and self._game_in_front(proc, state):
+            key = self._rng.choice(self._play)
+            self.platform.press_keys(chord(key), self._rng.randint(*PLAY_HOLD_MS))
 
     def _game_in_front(self, proc, state) -> bool:
         fg = self.platform.foreground_pid()
@@ -544,6 +618,8 @@ def resumed_settings(info: dict) -> CaptureSettings:
     known = {k: v for k, v in saved.items() if k in CaptureSettings.__dataclass_fields__}
     known["presses"] = [tuple(p) for p in known.get("presses") or []]
     known["play"] = [str(k) for k in known.get("play") or []]
+    known["own_keys"] = [[str(line[0]), [tuple(p) for p in line[1]], [str(k) for k in line[2]]]
+                         for line in known.get("own_keys") or [] if isinstance(line, list) and len(line) == 3]
     return CaptureSettings(**known)
 
 

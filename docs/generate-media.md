@@ -112,7 +112,10 @@ appears as soon as it gets one. Such games are left out unless you pass
 `--show-hidden`, so extra disks and sides that are meant to stay hidden do.
 
 Drawn titles count as missing, so `fetch-media` or an import replaces them with
-a real logo. `--redraw` draws them again in another style. Two different games
+a real logo. A run leaves them as they are and says how many it left;
+`--redraw` draws them again in another design (GUI: "Draw again the titles
+SpinDoctor drew before"), and `put-in` then replaces the older drawings. The
+GUI always draws the Main Menu logo again when that is what you design. Two different games
 of one wheel that would draw the same title (two makers' "Electronic Football")
 get what tells their descriptions apart: "Electronic Football - Conic". A
 game's regional copies and revisions keep one title.
@@ -154,6 +157,28 @@ many computer games) need keys:
   opens: Start, or `--press 2:5 --press 3:1` for a coin and Start.
 - `--play "Up Down Left Right A B"` then presses one of those keys at random,
   about once a second, while it waits and records.
+- Join keys with `+` to hold them together, in either option: `--press 6:Left+R`
+  presses Start while Left is held, which Coleco's Head to Head games need to
+  begin.
+- `--keys-file handheld-keys.txt` gives games their own keys, so one run can
+  record a whole wheel of games that each start differently. One game per line:
+  its name or title (`*` and `?` work; quote a title with spaces), then
+  `--press` and `--play` as on the command line. A listed game gets only its
+  own keys, one with nothing after its name gets none, and the rest get the
+  run's. `#` starts a comment:
+
+  ```text
+  # MAME's handhelds, with a control panel's keys (A-F buttons, R Start, S Select)
+  h2hhockey        --press 6:Left+R --play "Left Right A Left+R Right+R"  # Start while Left is held
+  "Computer Gin"   --press 2:D --play "A B C D"                           # Deal, then play
+  wildfire         --play "C A B"                                         # shooter, flippers
+  rzindy500        --press 6:R --press 8:R --play "Left Right Up A"
+  ```
+
+  MAME's own notes on a handheld (in its driver's source) often say how it
+  starts. If a game still doesn't start, press later (6 s rather than 2 s) and
+  put its start keys in `--play` too, where they are held longer. `--resume`
+  keeps the file's keys; the GUI's field is "Games' own keys (file)".
 
 Use the keys the games are set to (the control panel's, on a cabinet). The
 recorder's own key presses don't stop the run; arrow, Home, End, Page Up/Down,
@@ -193,7 +218,8 @@ spindoctor generate-media put-in --apply
 ```
 
 Its Main Menu logo is a wheel picture like any other:
-`wheel-pictures --system "Main Menu" --game "<wheel>"`.
+`wheel-pictures --system "Main Menu" --game "<wheel>"`. Add `--redraw` to draw
+it again in another design after one was drawn and put in.
 
 ## Placeholders
 
