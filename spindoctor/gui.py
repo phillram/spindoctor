@@ -12937,6 +12937,16 @@ class _SpinDoctorGUI:
         box.pack(fill="x", pady=(0, 8))
         self._build_gm_title_designer(box)
         row = self.ttk.Frame(box)
+        row.pack(fill="x", padx=6, pady=(4, 0))
+        self._gm_redraw_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(row, text="Draw again the titles SpinDoctor drew before, in this design",
+                             variable=self._gm_redraw_var).pack(side="left", padx=6)
+        self._help_text(
+            box, text="Titles SpinDoctor drew are left as they are unless this is ticked; real pictures are "
+                      "never drawn over. The Main Menu logo is always drawn again: designing it is what that "
+                      "choice is for.",
+        ).pack(fill="x", padx=6)
+        row = self.ttk.Frame(box)
         row.pack(fill="x", padx=6, pady=(4, 6))
         self._gm_copy_var = self.tk.BooleanVar(value=True)
         self.ttk.Checkbutton(row, text="Reuse pictures already on this PC",
@@ -12990,7 +13000,19 @@ class _SpinDoctorGUI:
             box, text="Leave both empty for games that show their own demo. For games that do nothing until "
                       "played (handheld games, many computer games): Keys after it opens, as SECONDS:KEY, "
                       "like 3:Enter for Start or 2:5 3:1 for a coin and Start; Play with, keys pressed at "
-                      "random while it records, like Up Down Left Right A B.",
+                      "random while it records, like Up Down Left Right A B. Join keys with + to hold them "
+                      "together, like 2:Left+R.",
+        ).pack(fill="x", padx=6)
+        row = self.ttk.Frame(box)
+        row.pack(fill="x", padx=6, pady=2)
+        self.ttk.Label(row, text="Games' own keys (file)").pack(side="left")
+        self._gm_keys_file_var = self.tk.StringVar()
+        self.ttk.Entry(row, textvariable=self._gm_keys_file_var, width=40).pack(side="left", padx=4)
+        self.ttk.Button(row, text="Browse…", command=self._gm_browse_keys_file).pack(side="left", padx=4)
+        self._help_text(
+            box, text="A text file, one game per line: its name or title, then --press and --play as above, "
+                      "like: mcompgin --press 2:D --play \"A B C D\". Those games get their own "
+                      "keys; the rest get the fields above.",
         ).pack(fill="x", padx=6)
         row = self.ttk.Frame(box)
         row.pack(fill="x", padx=6, pady=(2, 6))
@@ -13365,6 +13387,10 @@ class _SpinDoctorGUI:
             self._flash_validation(str(exc))
             return
         args = ["wheel-pictures"] + args + look
+        # Designing the logo means drawing it, also over a logo drawn before
+        # (a real logo stays unless "Replace media" is ticked).
+        if self._gm_target_var.get() == "logo" or self._gm_redraw_var.get():
+            args.append("--redraw")
         if not self._gm_copy_var.get():
             args.append("--no-copy")
         if self._gm_hidden_var.get():
@@ -13397,7 +13423,21 @@ class _SpinDoctorGUI:
             args += ["--press", press]
         if self._gm_play_var.get().strip():
             args += ["--play", self._gm_play_var.get().strip()]
+        keys_file = self._gm_keys_file_var.get().strip().strip('"')
+        if keys_file:
+            if not Path(keys_file).is_file():
+                self._flash_validation(f"The keys file isn't there: {keys_file}")
+                return None
+            args += ["--keys-file", keys_file]
         return args + ["--crop", self._gm_crop_var.get() or "auto"]
+
+    def _gm_browse_keys_file(self) -> None:
+        path = self.filedialog.askopenfilename(
+            title="Pick the file of games' own keys",
+            filetypes=[("Text files", "*.txt"), ("All files", "*.*")],
+        )
+        if path:
+            self._gm_keys_file_var.set(str(Path(path)))
 
     def _gm_record(self) -> None:
         args = self._gm_record_args()

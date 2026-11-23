@@ -7362,7 +7362,7 @@ def generate_media_wheel(systems, all_systems, games, style, font, colors, effec
     config = _gen_config()
     states = _gen_states(config, systems, all_systems)
     local = None if no_copy else genmedia.LocalPictures(config)
-    jobs, hidden = [], 0
+    jobs, hidden, drawn_before = [], 0, 0
     for s in states:
         if s.problem:
             console.print(f"[yellow]{escape(s.system)}:[/yellow] {escape(s.problem)}")
@@ -7371,9 +7371,14 @@ def generate_media_wheel(systems, all_systems, games, style, font, colors, effec
                                                   local=local, overwrite=overwrite)
         jobs += more
         hidden += left
+        if not (redraw or overwrite):
+            drawn_before += sum(1 for g in genmedia.matching(s.games, games) if g.wheel == "drawn")
     jobs = jobs[:count] if count else jobs
     copied = sum(1 for j in jobs if j.source)
     console.print(f"{len(jobs)} wheel picture(s) to make: {len(jobs) - copied} drawn, {copied} already on this PC.")
+    if drawn_before:
+        console.print(f"{drawn_before} game(s) keep the title SpinDoctor drew before: --redraw draws them again "
+                      "(GUI: \"Draw again the titles SpinDoctor drew before\").")
     if hidden:
         console.print(f"[dim]{hidden} game(s) stay hidden: their wheel lists only games with a picture. "
                       "--show-hidden makes theirs too, which puts them on the wheel.[/dim]")
@@ -7415,10 +7420,15 @@ def generate_media_wheel(systems, all_systems, games, style, font, colors, effec
 @click.option("--crop", type=click.Choice(["auto", "4:3", "full"]), default="auto", show_default=True,
               help="auto drops black bars; 4:3 keeps the middle; full keeps everything.")
 @click.option("--press", "presses", multiple=True, metavar="SECONDS:KEY",
-              help="Press a key this long after each game's window opens, like 3:Enter for Start. Repeatable.")
+              help="Press a key this long after each game's window opens, like 3:Enter for Start, "
+                   "or 2:Left+R for keys held together. Repeatable.")
 @click.option("--play", "play", multiple=True, metavar="KEYS",
-              help="Keys to press at random while waiting and recording, like \"Up Down Left Right A B\", "
-                   "for games that sit still until someone plays (after any --press keys).")
+              help="Keys to press at random while waiting and recording, like \"Up Down Left Right A B\" "
+                   "(Left+A holds keys together), for games that sit still until someone plays "
+                   "(after any --press keys).")
+@click.option("--keys-file", type=click.Path(exists=True, dir_okay=False), default=None,
+              help="A text file of games' own keys: one game per line, its name or title, then --press "
+                   "and --play as here. Those games get theirs instead of the run's.")
 @click.option("--show-hidden", is_flag=True, help="Also games the wheel hides for having no picture.")
 @click.option("--cleanup", "cleanup_mode", type=click.Choice(["report", "remove", "off"]), default=None,
               help="Files the games create, as in `spindoctor test`. Default: test_cleanup (report).")
@@ -7434,8 +7444,8 @@ def generate_media_wheel(systems, all_systems, games, style, font, colors, effec
 @click.option("--apply", "apply_changes", is_flag=True,
               help="Launch the games and record them. Without it, only list them.")
 def generate_media_record(systems, games, count, seconds, wait, settle, minutes, screenshots, no_sound, crop,
-                          presses, play, show_hidden, cleanup_mode, resume, stage_dir, verbose, yes, overwrite,
-                          put_in_after, apply_changes):
+                          presses, play, keys_file, show_hidden, cleanup_mode, resume, stage_dir, verbose, yes,
+                          overwrite, put_in_after, apply_changes):
     """Launch games and record the videos (or stills) a wheel is missing.
 
     Takes over the screen. Each game is launched through RocketLauncher, runs
@@ -7453,6 +7463,7 @@ def generate_media_record(systems, games, count, seconds, wait, settle, minutes,
       spindoctor generate-media record -s "Sega Naomi" --count 10 --apply
       spindoctor generate-media record -s MAME -g pacman --press 25:5 --press 27:1 --apply
       spindoctor generate-media record -s "Handheld Games" --wait 5 --settle 3 --press 2:Enter --play "Up Down A B" --apply
+      spindoctor generate-media record -s "Handheld Games" --play "Up Down A" --keys-file handheld-keys.txt --apply
       spindoctor generate-media record --resume --apply
     """
     from . import _testrun, clips, gamecapture, gametest, genmedia
@@ -7481,7 +7492,8 @@ def generate_media_record(systems, games, count, seconds, wait, settle, minutes,
         else:
             capture = gamecapture.CaptureSettings(
                 wait=wait, settle=settle, seconds=seconds, minutes=minutes, video=not screenshots, sound=not no_sound,
-                crop=crop, presses=gamecapture.parse_presses(presses), play=gamecapture.parse_play(play))
+                crop=crop, presses=gamecapture.parse_presses(presses), play=gamecapture.parse_play(play),
+                own_keys=gamecapture.parse_keys_file(keys_file) if keys_file else [])
             if not systems:
                 raise genmedia.GenMediaError("Name the wheel to record with --system.")
             plan = gamecapture.plan_capture(config, _gen_states(config, systems, False), patterns=games,
@@ -7504,6 +7516,10 @@ def generate_media_record(systems, games, count, seconds, wait, settle, minutes,
         if plan.left_hidden:
             console.print(f"[dim]{plan.left_hidden} game(s) are hidden from their wheel and left out "
                           "(--show-hidden records them too).[/dim]")
+        if keys_file:
+            own = sum(1 for g in plan.plan.to_launch if capture.own_keys_for(g.game, g.description) is not None)
+            console.print(f"{own} of them get their own keys from {escape(Path(keys_file).name)} "
+                          f"({len(capture.own_keys)} line(s)); the rest get this run's.")
     if not left:
         return
     need = format_duration(capture.estimate(left))
