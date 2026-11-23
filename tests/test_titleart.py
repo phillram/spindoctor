@@ -46,6 +46,31 @@ def test_a_drawn_title_is_a_transparent_png_of_the_asked_size(style):
     assert box[2] - box[0] > 200 or box[3] - box[1] > 100
 
 
+@pytest.mark.parametrize("style", sorted(titleart.GLOWS))
+def test_lit_display_styles_glow_in_their_colour(style):
+    img = _open(titleart.draw_title("Orbit Runner", style, (400, 175)))
+    glow = titleart.GLOWS[style]
+    halo = [px for px in img.getdata() if 20 < px[3] < 200]         # round the letters, half see-through
+    assert len(halo) > 2000
+    # Mostly the glow's own colour, not the dark shadow other styles cast.
+    tinted = sum(1 for px in halo if sum(abs(a - b) for a, b in zip(px[:3], glow)) < 120)
+    assert tinted > len(halo) * 0.5
+    plain = _open(titleart.draw_title("Orbit Runner", "chrome", (400, 175)))
+    assert not any(sum(abs(a - b) for a, b in zip(px[:3], glow)) < 120 for px in plain.getdata() if 20 < px[3] < 200)
+
+
+def test_fonts_can_be_named(tmp_path, monkeypatch):
+    for name in ("Fancy.TTF", "other.otf", "notes.txt"):
+        (tmp_path / name).write_bytes(b"x")
+    monkeypatch.setattr(titleart, "_font_dirs", lambda: [tmp_path])
+    assert titleart.find_font("fancy") == tmp_path / "Fancy.TTF"
+    assert titleart.find_font("FANCY.ttf") == tmp_path / "Fancy.TTF"
+    assert titleart.find_font("other") == tmp_path / "other.otf"
+    assert titleart.find_font(str(tmp_path / "notes.txt")) == tmp_path / "notes.txt"   # a path is used as it is
+    with pytest.raises(titleart.TitleArtError, match="No font 'notes'"):
+        titleart.find_font("notes")
+
+
 def test_styles_differ_and_drawing_is_repeatable():
     one, two = (titleart.draw_title("Orbit Runner", s) for s in ("gold", "chrome"))
     assert one != two
@@ -72,7 +97,7 @@ def test_long_titles_are_split_into_balanced_lines():
 
 def test_bad_requests_say_why(tmp_path):
     with pytest.raises(titleart.TitleArtError, match="Unknown style"):
-        titleart.draw_title("Orbit Runner", "neon")
+        titleart.draw_title("Orbit Runner", "plaid")
     with pytest.raises(titleart.TitleArtError, match="no title"):
         titleart.draw_title("   ")
     bad = tmp_path / "bad.ttf"

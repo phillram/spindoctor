@@ -20,6 +20,16 @@ STYLES = {
     "chrome": ((255, 255, 255), (170, 205, 240), (60, 110, 190)),
     "gold": ((255, 244, 170), (255, 176, 20), (214, 70, 8)),
     "white": ((255, 255, 255), (255, 255, 255), (255, 255, 255)),
+    "lcd": ((226, 244, 196), (150, 196, 110), (58, 108, 72)),       # a handheld's greenish LCD
+    "led": ((255, 222, 210), (255, 72, 48), (186, 8, 8)),           # red LEDs
+    "vfd": ((214, 255, 250), (76, 236, 222), (0, 156, 170)),        # a vacuum fluorescent display's cyan
+    "neon": ((255, 224, 255), (255, 84, 226), (164, 0, 214)),
+}
+#: Styles that glow in this colour instead of casting a dark shadow: lit displays.
+GLOWS = {
+    "led": (255, 40, 20),
+    "vfd": (0, 255, 226),
+    "neon": (255, 0, 214),
 }
 DEFAULT_STYLE = "chrome"
 BACKGROUNDS = ("blue", "snow")
@@ -150,6 +160,26 @@ def _first_font(names) -> Optional[Path]:
     return None
 
 
+def find_font(name: str) -> Path:
+    """The font file *name* stands for: a path to a ``.ttf``/``.otf``/``.ttc``,
+    or the file name of one in the PC's font folders, with or without its
+    extension, in any case (``bahnschrift``, ``Impact.ttf``)."""
+    path = Path(name)
+    if path.is_file():
+        return path
+    stem = name.strip().lower()
+    for folder in _font_dirs():
+        try:
+            files = sorted(p for p in folder.iterdir() if p.suffix.lower() in (".ttf", ".otf", ".ttc"))
+        except OSError:
+            continue
+        for p in files:
+            if stem in (p.name.lower(), p.stem.lower()):
+                return p
+    raise TitleArtError(f"No font {name!r} here: give a font file, or the name of one in "
+                        f"{', '.join(str(d) for d in _font_dirs()) or 'the font folders'}.")
+
+
 def font_for(text: str, font: Optional[Path] = None, latin=_LATIN_FONTS) -> Optional[Path]:
     """A font file with the letters of *text*: *font* when given, else a bold
     one from the PC.  None means Pillow's built-in font."""
@@ -244,6 +274,8 @@ def draw_title(title: str, style: str = DEFAULT_STYLE, size: tuple[int, int] = D
     path = font_for(text, font)
     w, h = size[0] * _SCALE, size[1] * _SCALE
     margin = max(8, size[0] // 40) * _SCALE
+    if style in GLOWS:
+        margin += round(h * 0.08)     # room for the glow, so the picture's edge doesn't cut it off
     lines, letter = layout(text, path, w - 2 * margin, h - 2 * margin, h * 0.62)
     face = _load(path, letter)
     edge = max(_SCALE, round(letter * 0.07))
@@ -267,8 +299,15 @@ def draw_title(title: str, style: str = DEFAULT_STYLE, size: tuple[int, int] = D
             paint.line([(0, row), (w, row)],
                        fill=tuple(round(p + (q - p) * part) for p, q in zip(a, b)) + (255,))
     out = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-    shadow = outline.filter(ImageFilter.GaussianBlur(letter * 0.04)).point(lambda v: v * 3 // 4)
-    out.paste((0, 0, 0, 255), (round(letter * 0.03), round(letter * 0.04)), shadow)
+    if style in GLOWS:
+        # A lit display: a coloured halo round the letters, strongest close in.
+        for radius, strength in ((0.12, 2), (0.05, 3)):
+            halo = outline.filter(ImageFilter.GaussianBlur(letter * radius)).point(
+                lambda v, s=strength: 0 if v * s < 16 else min(255, v * s))     # no faint tail to the edge
+            out.paste(GLOWS[style] + (255,), (0, 0), halo)
+    else:
+        shadow = outline.filter(ImageFilter.GaussianBlur(letter * 0.04)).point(lambda v: v * 3 // 4)
+        out.paste((0, 0, 0, 255), (round(letter * 0.03), round(letter * 0.04)), shadow)
     out.paste(_EDGE, (0, 0), outline)
     out.paste(colours, (0, 0), fill)
     return _png(out.resize(size, Image.LANCZOS))

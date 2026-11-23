@@ -571,6 +571,17 @@ def test_list_command(cabinet, tmp_path):
     assert _run("list").exit_code == 1 and _run("list", "-s", "Nowhere").exit_code == 1
 
 
+def test_wheel_pictures_take_the_new_styles_and_font_names(cabinet):
+    from spindoctor import cli as cli_module
+    from spindoctor import titleart
+
+    assert cli_module.TITLE_STYLES == tuple(titleart.STYLES)
+    bad = _run("wheel-pictures", "-s", "NES", "--font", "no such font", "--apply")
+    assert bad.exit_code == 2 and "No font 'no such font'" in bad.output
+    out = _run("wheel-pictures", "-s", "NES", "--no-copy", "--style", "vfd", "--apply").output
+    assert "3 file(s) made" in out
+
+
 def test_list_says_what_waits_in_staging(cabinet):
     assert "waiting in staging" not in _run("list", "-s", "NES").output
     _run("wheel-pictures", "-s", "NES", "--no-copy", "--apply")

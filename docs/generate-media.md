@@ -78,7 +78,12 @@ parent's, one in the same folder under nearly the same name that belongs to no
 game, or the same game's on another wheel (same database name, year and maker).
 `--no-copy` skips that. Otherwise the title is drawn as a transparent PNG, the
 usual size of that wheel's other pictures (400x175 where there are too few to
-tell), in `--style chrome`, `gold` or `white`.
+tell), in `--style chrome`, `gold` or `white`, or like a lit display: `lcd`
+(a handheld's greenish LCD), and `led`, `vfd` and `neon`, which glow in their
+colour instead of casting a shadow. `--font` takes a font file, or the name of
+one installed on the PC (`--font bahnschrift`, `--font impact`); without it a
+heavy font is picked. A wheel's Main Menu logo is drawn the same way:
+`--system "Main Menu" --game "<wheel>" --style vfd`.
 
 With `wheels_only=true`, a game without a picture isn't on its wheel, and
 appears as soon as it gets one. Such games are left out unless you pass
