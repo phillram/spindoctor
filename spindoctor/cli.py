@@ -7136,8 +7136,9 @@ def _gen_states(config: Config, systems, all_systems: bool) -> list:
     return [genmedia.wheel_state(config, w) for w in wheels]
 
 
-def _gen_staged(stage, errors: list) -> None:
-    """What was staged, and what to do with it."""
+def _gen_staged(stage, errors: list, *, config: Optional[Config] = None, put_in: bool = False) -> None:
+    """What was staged, and what to do with it; with *put_in*, put it in
+    (as ``put-in --apply``: only empty places, and ``undo`` takes it out)."""
     for line in errors[:20]:
         err_console.print(f"[red]{escape(line)}[/red]")
     if len(errors) > 20:
@@ -7146,9 +7147,28 @@ def _gen_staged(stage, errors: list) -> None:
         shutil.rmtree(stage.folder, ignore_errors=True)
         console.print("Nothing was made.")
         return
-    console.print(f"\n[green]{len(stage.items)} file(s) made[/green], waiting in {escape(str(stage.folder))}")
+    where = "staged in" if put_in and config is not None else "waiting in"
+    console.print(f"\n[green]{len(stage.items)} file(s) made[/green], {where} {escape(str(stage.folder))}")
     console.print(f"Look at them: {escape(str(stage.folder / 'review.html'))}")
-    console.print(f"Then: [cyan]spindoctor generate-media put-in \"{escape(stage.name)}\" --apply[/cyan]")
+    if not (put_in and config is not None):
+        console.print(f"Then: [cyan]spindoctor generate-media put-in \"{escape(stage.name)}\" --apply[/cyan]")
+        return
+    from . import genmedia
+
+    try:
+        plan = genmedia.plan_put_in(config, stage)
+        result = genmedia.put_in(config, stage, plan) if any(p.action != "skip" for p in plan) else None
+    except (genmedia.GenMediaError, OSError) as exc:
+        err_console.print(f"[red]Not put in: {escape(str(exc))}[/red]")
+        console.print(f"Put it in later: [cyan]spindoctor generate-media put-in \"{escape(stage.name)}\" --apply[/cyan]")
+        sys.exit(1)
+    left = sum(1 for p in plan if p.action == "skip")
+    console.print(f"[green]{len(result.imported) if result else 0} file(s) put in[/green]"
+                  + (f", {left} left out (their places are filled)" if left else "") + ".")
+    for path, why in result.skipped if result else ():
+        console.print(f"  [yellow]left out:[/yellow] {escape(path.name)}: {escape(why)}")
+    if result and result.manifest_path:
+        console.print("[cyan]spindoctor generate-media undo --apply[/cyan] takes them out again.")
 
 
 @cli.group("generate-media")
@@ -7276,10 +7296,13 @@ def _parse_size(_ctx, _param, value):
 @click.option("--count", type=click.IntRange(1), default=None, help="At most this many pictures.")
 @click.option("--stage-dir", type=click.Path(file_okay=False), default=None, help=_GEN_STAGE_HELP)
 @click.option("--verbose", "-v", is_flag=True, help="List every game.")
+@click.option("--put-in", "put_in_after", is_flag=True,
+              help="Put the batch into HyperSpin's media when it is made, as put-in --apply: only empty "
+                   "places (or stand-ins), and generate-media undo takes it out.")
 @click.option("--apply", "apply_changes", is_flag=True,
               help="Make the pictures, in a staging folder. Without it, only list them.")
 def generate_media_wheel(systems, all_systems, games, style, font, size, show_hidden, redraw, no_copy,
-                         count, stage_dir, verbose, apply_changes):
+                         count, stage_dir, verbose, put_in_after, apply_changes):
     """Make wheel pictures for games that have none.
 
     A picture already on the PC is reused when it is clearly the game's: its
@@ -7322,7 +7345,7 @@ def generate_media_wheel(systems, all_systems, games, style, font, size, show_hi
             stage, jobs, style=style, size=size, font=Path(font) if font else None, config=config,
             progress=lambda n, _total, title: prog.update(task, completed=n, description=escape(title[:40])))
     stage.finish()
-    _gen_staged(stage, errors)
+    _gen_staged(stage, errors, config=config, put_in=put_in_after)
     if errors and not stage.items and not titleart.pillow_available():
         sys.exit(1)
 
@@ -7355,10 +7378,14 @@ def generate_media_wheel(systems, all_systems, games, style, font, size, show_hi
 @click.option("--stage-dir", type=click.Path(file_okay=False), default=None, help=_GEN_STAGE_HELP)
 @click.option("--verbose", "-v", is_flag=True, help="List every picked game.")
 @click.option("--yes", "-y", is_flag=True, help="Don't ask before starting.")
+@click.option("--put-in", "put_in_after", is_flag=True,
+              help="Put the batch into HyperSpin's media when it is made, as put-in --apply: only empty "
+                   "places (or stand-ins), and generate-media undo takes it out.")
 @click.option("--apply", "apply_changes", is_flag=True,
               help="Launch the games and record them. Without it, only list them.")
 def generate_media_record(systems, games, count, seconds, wait, settle, minutes, screenshots, no_sound, crop,
-                          presses, play, show_hidden, cleanup_mode, resume, stage_dir, verbose, yes, apply_changes):
+                          presses, play, show_hidden, cleanup_mode, resume, stage_dir, verbose, yes, put_in_after,
+                          apply_changes):
     """Launch games and record the videos (or stills) a wheel is missing.
 
     Takes over the screen. Each game is launched through RocketLauncher, runs
@@ -7478,7 +7505,7 @@ def generate_media_record(systems, games, count, seconds, wait, settle, minutes,
     if not done.run.finished:
         console.print(f"Stopped early: {escape(done.halted or 'not every game was recorded')}. "
                       "[cyan]spindoctor generate-media record --resume --apply[/cyan] carries on.")
-    _gen_staged(stage, [])
+    _gen_staged(stage, [], config=config, put_in=put_in_after)
 
 
 @generate_media_group.command("placeholders")
@@ -7494,10 +7521,13 @@ def generate_media_record(systems, games, count, seconds, wait, settle, minutes,
 @click.option("--redo", is_flag=True, help="Make placeholders again that are there already.")
 @click.option("--stage-dir", type=click.Path(file_okay=False), default=None, help=_GEN_STAGE_HELP)
 @click.option("--verbose", "-v", is_flag=True, help="List every game.")
+@click.option("--put-in", "put_in_after", is_flag=True,
+              help="Put the batch into HyperSpin's media when it is made, as put-in --apply: only empty "
+                   "places (or stand-ins), and generate-media undo takes it out.")
 @click.option("--apply", "apply_changes", is_flag=True,
               help="Make them, in a staging folder. Without it, only list them.")
 def generate_media_placeholders(systems, all_systems, games, frontend, kind, background, text, show_hidden,
-                                redo, stage_dir, verbose, apply_changes):
+                                redo, stage_dir, verbose, put_in_after, apply_changes):
     """Make "No video found" placeholders for games with no video and no still.
 
     They carry the game's title and are marked: reports still count those
@@ -7540,7 +7570,7 @@ def generate_media_placeholders(systems, all_systems, games, frontend, kind, bac
         err_console.print(f"[red]{escape(str(exc))}[/red]")
         sys.exit(1)
     stage.finish()
-    _gen_staged(stage, errors)
+    _gen_staged(stage, errors, config=config, put_in=put_in_after)
 
 
 @generate_media_group.command("remove")

@@ -4307,6 +4307,25 @@ def test_generate_media_pictures_and_list(monkeypatch):
     assert not app._test_run_active
 
 
+def test_generate_media_puts_each_batch_in_when_asked(monkeypatch):
+    app = _genmedia_logic_app(monkeypatch, apply=True)
+    app._gm_putin_var = _Value(True)
+    app._gm_wheel_pictures()
+    assert _genmedia_args(app)[-2:] == ["--put-in", "--apply"]
+    app._gm_placeholders()
+    assert _genmedia_args(app)[-2:] == ["--put-in", "--apply"]
+    app.messagebox.askyesno.return_value = True
+    app._gm_record()
+    assert _genmedia_args(app)[-3:] == ["--yes", "--put-in", "--apply"]
+    app._gm_resume()
+    assert _genmedia_args(app) == ["record", "--resume", "--yes", "--put-in", "--apply"]
+    app._gm_put_in_all()
+    assert _genmedia_args(app) == ["put-in", "--all", "--apply"]    # never for put-in itself
+    app._global_apply_var.set(False)
+    app._gm_wheel_pictures()
+    assert "--put-in" not in _genmedia_args(app)                     # a dry run puts nothing in
+
+
 def test_generate_media_needs_a_system(monkeypatch):
     app = _genmedia_logic_app(monkeypatch)
     app._gm_system_var.set("")

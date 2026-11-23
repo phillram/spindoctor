@@ -13023,6 +13023,9 @@ class _SpinDoctorGUI:
         self._gm_put_all_btn = self.ttk.Button(row, command=self._gm_put_in_all)
         self._gm_put_all_btn.pack(side="left", padx=(6, 0))
         self.ttk.Button(row, text="Undo last", command=self._gm_undo).pack(side="left", padx=6)
+        self._gm_putin_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(box, text="Put each new batch in when it's made (pictures, recordings, placeholders)",
+                             variable=self._gm_putin_var).pack(anchor="w", padx=6)
         self._help_text(
             box,
             text="All waiting: every batch not put in yet, at once. Each game gets the best file of them all "
@@ -13067,6 +13070,9 @@ class _SpinDoctorGUI:
         """Run ``spindoctor generate-media``, with ``--apply`` when it is on."""
         args = ["generate-media"] + args
         live = apply and bool(self._global_apply_var.get())
+        putin = getattr(self, "_gm_putin_var", None)
+        if live and args[1] in ("wheel-pictures", "record", "placeholders") and putin is not None and putin.get():
+            args.append("--put-in")
         if live:
             args.append("--apply")
         if recording:

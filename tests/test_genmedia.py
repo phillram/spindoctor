@@ -592,6 +592,19 @@ def test_media_scan_undo_also_takes_a_batch_out(cabinet):
     assert not (folder / "Bravo.png").exists()
 
 
+def test_pictures_and_placeholders_can_go_in_when_made(cabinet, monkeypatch):
+    folder = cabinet.media_dir / "NES" / "Images" / "Wheel"
+    out = _run("wheel-pictures", "-s", "NES", "--no-copy", "--put-in", "--apply").output
+    assert "3 file(s) made" in out and "3 file(s) put in" in out and (folder / "Bravo.png").exists()
+    assert "Then:" not in out and "undo --apply" in out
+    assert "Nothing is waiting" in _run("put-in", "--all").output
+    monkeypatch.setattr(clips, "find_tools", lambda config: FakeTools())
+    out = _run("placeholders", "-s", "NES", "--put-in", "--apply").output
+    assert "1 file(s) put in" in out and (cabinet.media_dir / "NES" / "Video" / "Charlie.mp4").exists()
+    # Without --apply nothing is made, so nothing goes in.
+    assert "DRY RUN" in _run("wheel-pictures", "-s", "NES", "--redraw", "--put-in").output
+
+
 def test_placeholder_commands(cabinet, monkeypatch):
     monkeypatch.setattr(clips, "find_tools", lambda config: FakeTools())
     assert "1 game(s) have neither" in _run("placeholders", "-s", "NES").output

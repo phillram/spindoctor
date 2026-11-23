@@ -573,6 +573,16 @@ def test_the_whole_command(desktop):
     assert "2 file(s) made" in result.output and len(fake.launches) == 2
 
 
+def test_the_command_can_put_the_batch_in_when_done(desktop):
+    cfg, _fake = desktop
+    result = _cli("-s", "NES", "--count", "2", "--wait", "5", "--seconds", "20", "--put-in", "--apply", "--yes")
+    assert result.exit_code == 0, result.output
+    assert "2 file(s) made" in result.output and "2 file(s) put in" in result.output
+    assert len([p for p in (cfg.media_dir / "NES" / "Video").iterdir() if p.suffix == ".mp4"]) == 2
+    assert genmedia.find_stage(genmedia.stage_root(cfg), genmedia.list_stages(genmedia.stage_root(cfg))[0].name).put_in_at
+    assert "2 file(s) undone" in CliRunner().invoke(cli, ["generate-media", "undo", "--apply"]).output
+
+
 def test_the_command_refuses_when_hyperspin_is_open_or_ffmpeg_missing(desktop, monkeypatch):
     _cfg, fake = desktop
     fake.add_proc("HyperSpin.exe", 100)
