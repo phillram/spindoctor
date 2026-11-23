@@ -26,6 +26,7 @@ import queue
 import re
 import shlex
 import shutil
+import functools
 import json
 import subprocess
 import sys
@@ -86,9 +87,14 @@ def resolve_cli_command(name: str) -> list[str]:
     1. **Frozen GUI** — this same executable in embedded-worker mode.
        No sibling executables, PATH entries or Python install are needed.
     2. **PATH lookup** — for users who installed the binaries via a package
-       manager or symlinked them somewhere on ``PATH``.
-    3. **Dev install** — fall back to ``sys.executable -m <module>`` so
-       ``pip install -e .`` checkouts work without first running the build.
+       manager or symlinked them somewhere on ``PATH``, as long as the one
+       found is this GUI's own version (:func:`_path_binary_matches`).
+       Another install's ``spindoctor`` left on ``PATH`` (an older v3 exe
+       folder, say) would run other code, without the commands this GUI's
+       buttons call.
+    3. **Dev install** — fall back to ``sys.executable -m <module>``: the
+       code this GUI runs, so ``pip install -e .`` checkouts work without
+       first running the build.
     """
     if name not in _DEV_MODULE_MAP:
         raise ValueError(f"Unknown SpinDoctor binary: {name!r}")
@@ -97,9 +103,23 @@ def resolve_cli_command(name: str) -> list[str]:
         return frozen_tool_command(name)
 
     on_path = shutil.which(name)
-    if on_path:
+    if on_path and _path_binary_matches(on_path):
         return [on_path]
     return [sys.executable, "-m", _DEV_MODULE_MAP[name]]
+
+
+@functools.lru_cache(maxsize=16)
+def _path_binary_matches(path: str) -> bool:
+    """Whether the program at *path* reports this GUI's version.  Asked once
+    per program and GUI session; one that can't say (an old build without
+    ``--version``) doesn't match."""
+    try:
+        proc = subprocess.run([path, "--version"], stdin=subprocess.DEVNULL, capture_output=True, text=True,
+                              timeout=15, creationflags=_CREATE_NO_WINDOW)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    match = _CLI_VERSION_RE.search(f"{proc.stdout or ''}\n{proc.stderr or ''}")
+    return bool(match) and match.group(1) == __version__
 
 
 _CLI_VERSION_RE = re.compile(r"(\d+\.\d+\.\d+)")
