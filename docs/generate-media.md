@@ -63,6 +63,11 @@ Videos are looked for in `Media\<System>\Video`, or only in the folder that
 (`use_parent_vids=true`) isn't missing one. Games HyperSpin doesn't list, and
 games on the ignore list, are left out. `--details` names the games.
 
+What `list` counts is what HyperSpin shows now. When some of it is made and
+waiting in staging, `list` says how much and how to put it in, `--details`
+adds "waiting in staging" to those games, and `--json` / `--csv` carry a
+`waiting` field.
+
 `audit` counts media slots and knows no stills, redirects or parent videos, so
 its numbers differ.
 

@@ -809,6 +809,18 @@ def _better(item: StageItem, stage: Stage) -> tuple:
             str(stage.data.get("made") or ""), stage.name)
 
 
+def waiting_files(root: Path) -> dict[tuple[str, str, str], str]:
+    """For every place a staged file not put in yet would fill (``(system,
+    game, "wheel" or "video")``, lower case), the newest such batch's name."""
+    out: dict[tuple[str, str, str], str] = {}
+    for stage in list_stages(root):     # newest first
+        if stage.put_in_at:
+            continue
+        for item in stage.items:
+            out.setdefault(_slot(item), stage.name)
+    return out
+
+
 def plan_put_in_all(config: Config, stages: Iterable[Stage], *, systems: Iterable[str] = (),
                     games: Iterable[str] = ()) -> list[tuple[Stage, list[PutIn]]]:
     """Each batch's plan, with every place given the best of all the batches'

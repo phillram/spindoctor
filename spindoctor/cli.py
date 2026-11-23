@@ -7204,6 +7204,9 @@ def generate_media_list(systems, all_systems, games, details, as_json, csv_path)
     Video:         none, only a still picture, only a placeholder, or the
                    parent game's (which HyperSpin plays, so it isn't missing).
     Hidden:        not on the wheel, because it lists only games with a picture.
+
+    Places with a file made and waiting in staging (not put in yet) are
+    counted too, with the command that puts them in.
     """
     from . import genmedia
 
@@ -7211,16 +7214,26 @@ def generate_media_list(systems, all_systems, games, details, as_json, csv_path)
     states = _gen_states(config, systems, all_systems)
     rows = [g for s in states for g in genmedia.matching(s.games, games)]
     lacking = [g for g in rows if g.wheel != "yes" or g.video not in ("yes", "parent")]
+    staged = genmedia.waiting_files(genmedia.stage_root(config))
+
+    def waiting(g, slot: str) -> str:
+        """The batch with a file waiting for *g*'s *slot*, if that place lacks one."""
+        if (g.wheel == "yes") if slot == "wheel" else (g.video in ("yes", "parent")):
+            return ""
+        return staged.get((g.system.lower(), g.name.lower(), slot), "")
+
     if csv_path:
-        _write_dict_csv(Path(csv_path), ["system", "name", "title", "wheel", "video", "hidden"],
+        _write_dict_csv(Path(csv_path), ["system", "name", "title", "wheel", "video", "hidden", "waiting"],
                         [{"system": g.system, "name": g.name, "title": g.title, "wheel": g.wheel,
-                          "video": g.video, "hidden": g.hidden} for g in lacking])
+                          "video": g.video, "hidden": g.hidden,
+                          "waiting": " ".join(s for s in ("wheel", "video") if waiting(g, s))} for g in lacking])
     if as_json:
         click.echo(json.dumps([{
             "system": s.system, "problem": s.problem, "video_problem": s.video_problem,
             "wheels_only": s.wheels_only,
             "games": [{"name": g.name, "title": g.title, "wheel": g.wheel, "video": g.video,
-                       "hidden": g.hidden} for g in genmedia.matching(s.games, games)],
+                       "hidden": g.hidden, "waiting": {"wheel": waiting(g, "wheel"), "video": waiting(g, "video")}}
+                      for g in genmedia.matching(s.games, games)],
         } for s in states], indent=2))
         return
     heads = ("Games", "No pic", "Hidden", "Drawn", "No video", "Still", "Placeh.")
@@ -7248,6 +7261,13 @@ def generate_media_list(systems, all_systems, games, details, as_json, csv_path)
                   "Still: a picture instead of a video.[/dim]")
     if complete:
         console.print(f"[dim]{complete} wheel(s) are missing nothing.[/dim]")
+    pictures = sum(1 for g in lacking if waiting(g, "wheel"))
+    videos = sum(1 for g in lacking if waiting(g, "video"))
+    if pictures or videos:
+        batches = {waiting(g, s) for g in lacking for s in ("wheel", "video")} - {""}
+        console.print(f"[cyan]Made and waiting in staging, not put in yet:[/cyan] {pictures:,} wheel picture(s) and "
+                      f"{videos:,} video(s) or still(s), in {len(batches)} batch(es). "
+                      "[cyan]spindoctor generate-media put-in --all --apply[/cyan] puts them in.")
     for s in states:
         for why in filter(None, (s.problem, s.video_problem)):
             console.print(f"[yellow]{escape(s.system)}:[/yellow] {escape(why)}")
@@ -7261,6 +7281,9 @@ def generate_media_list(systems, all_systems, games, details, as_json, csv_path)
                 parts.append(f"video: {said[g.video]}")
             if g.hidden:
                 parts.append("hidden")
+            ready = [what for slot, what in (("wheel", "wheel picture"), ("video", "video")) if waiting(g, slot)]
+            if ready:
+                parts.append("waiting in staging: " + ", ".join(ready))
             console.print(f"{escape(g.system)} > {escape(g.title)} [dim]({escape(g.name)})[/dim]  {'; '.join(parts)}")
     if len(states) == 1 and not states[0].problem and config.rocketlauncher_dir:
         from .audit import audit_system
