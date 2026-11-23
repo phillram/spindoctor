@@ -17,6 +17,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **Less repeated work in wheel builds, doctor and LEDBlinky.** Favorites/Recent/Most Played rebuilds list each source media folder once per build instead of once per game, standalone `spindoctor-fav` reuses the databases it loaded while syncing, and importing native favorites no longer rescans the store per entry. LEDBlinky profile planning and PCLauncher generation read each RocketLauncher/RetroArch INI once per run, LED coverage loads `Controls.ini`/`Colors.ini` once, `cleanup` walks a folder once when several categories search it, and lightgun discovery and `self-doctor` walk each tree once.
 - **The GUI window opens in about half the time.** Notebook pages build their widgets on first selection instead of all 15 up front; only the page the session opens on is built during layout. The first visit to each page pays its one-time build (10–45 ms for the largest pages).
 - **Internal consolidation, no behaviour change.** `cli.py` shares database-save routing, dry-run banners, option groups, CSV writers and plan tables (about 340 lines shorter; every command keeps its options, help and defaults). Shared helpers replace copies of the SHA1/CRC streaming loop, the RocketLauncher statistics INI reader, XML serialization, disc-number parsing, AHK comment filtering (new `spindoctor/_ahk.py`) and Windows process lookups. Unused helpers removed.
+
+### Docs
+
+- **A panel that stops working while a controller is on is documented.**
+  [docs/controller-input.md](docs/controller-input.md#panel-and-controller-together) lists
+  emulators that read one input source (ActiveGS, AppleWin, N-Rage) with the setting that
+  keeps a keyboard-encoder panel working, and shows a RocketLauncher key file that lets a
+  controller press the panel's keys, so both work in the same game. Troubleshooting and the
+  cabinet reference link to it.
+
 ## [3.3.0] - 2026-11-14
 
 ### Added
