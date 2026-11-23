@@ -691,47 +691,113 @@ def _place(state: WheelState, game: Optional[GameState], item: StageItem, source
         return skip(state.problem)
     if game is None:
         return skip("the game isn't on the wheel any more")
+    standin = item.kind in STANDIN_KINDS
     if item.media == "wheel":
         if game.wheel == "yes":
             return skip("it has a wheel picture now")
+        if game.wheel == "drawn" and standin and _newer_there(source, target):
+            return skip("a newer drawn picture is there")
         return PutIn(item, source, target, "replace" if game.wheel == "drawn" else "new")
     if state.video_problem:
         return skip(state.video_problem)
-    standin = item.kind in STANDIN_KINDS
     if game.video == "yes":
         return skip("it has a video now")
     if game.video == "still" and item.media == "still":
         return skip("it has a still picture now")
     if standin and game.video in ("still", "parent"):
         return skip("it has a still picture now" if game.video == "still" else "it plays its parent's video")
+    if game.video == "placeholder" and standin and _newer_there(source, target):
+        return skip("a newer placeholder is there")
     return PutIn(item, source, target, "replace" if game.video == "placeholder" else "new")
+
+
+def _newer_there(source: Path, target: Path) -> bool:
+    """Whether the stand-in at *target* was made after the staged *source*:
+    an older batch put in later must not replace it.  Staged files keep the
+    time they were made, and put-in's copies keep it too."""
+    try:
+        return target.stat().st_mtime > source.stat().st_mtime
+    except OSError:
+        return False
+
+
+def _slot(item: StageItem) -> tuple[str, str, str]:
+    """The place in HyperSpin a staged file fills: the wheel picture, or the
+    video (a still plays in the video's place)."""
+    return item.system.lower(), item.game.lower(), "wheel" if item.media == "wheel" else "video"
+
+
+def _better(item: StageItem, stage: Stage) -> tuple:
+    """How good a file is for its place: real media over a stand-in, a video
+    over a still, then the newest batch."""
+    return (item.kind not in STANDIN_KINDS, item.media == "video",
+            str(stage.data.get("made") or ""), stage.name)
+
+
+def plan_put_in_all(config: Config, stages: Iterable[Stage], *, systems: Iterable[str] = (),
+                    games: Iterable[str] = ()) -> list[tuple[Stage, list[PutIn]]]:
+    """Each batch's plan, with every place given the best of all the batches'
+    files for it (see :func:`_better`); the others are left out, naming the
+    batch whose file goes in.  So the order batches were made or put in no
+    longer matters.  HyperSpin's own No Video clip goes in by itself."""
+    systems, games = list(systems), list(games)
+    plans = [(stage, plan_put_in(config, stage, systems=systems, games=games)) for stage in stages]
+    best: dict[tuple[str, str, str], tuple[tuple, PutIn, Stage]] = {}
+    for stage, plan in plans:
+        for p in plan:
+            if p.item.system == FRONTEND and p.action != "skip":
+                p.action, p.why = "skip", "HyperSpin's own No Video clip is put in by itself"
+            if p.action == "skip":
+                continue
+            rank = _better(p.item, stage)
+            if _slot(p.item) not in best or rank > best[_slot(p.item)][0]:
+                best[_slot(p.item)] = (rank, p, stage)
+    for _stage, plan in plans:
+        for p in plan:
+            if p.action != "skip" and best[_slot(p.item)][1] is not p:
+                p.action, p.why = "skip", f"the one from {best[_slot(p.item)][2].name} goes in"
+    return plans
 
 
 def put_in(config: Config, stage: Stage, plan: list[PutIn], manifest_dir: Optional[Path] = None):
     """Copy the planned files into HyperSpin's media.  Returns ``media-scan``'s
     :class:`~spindoctor.media_scan.ImportResult`; ``media-scan --undo`` (or
     :func:`undo_put_in`) takes the files out again and puts replaced ones back."""
+    return put_in_many(config, [(stage, plan)], manifest_dir=manifest_dir,
+                       source_dir=stage.folder, label=f"generate-media: {stage.name}")
+
+
+def put_in_many(config: Config, plans: list[tuple[Stage, list[PutIn]]], *, manifest_dir: Optional[Path] = None,
+                source_dir: Optional[Path] = None, label: str = "generate-media", mark_all: bool = False):
+    """:func:`put_in` for several batches at once (from :func:`plan_put_in_all`),
+    as one step that one undo takes back.  Batches a file came from are marked
+    put in; with *mark_all*, every batch is, as long as anything went in (its
+    places were filled by better files)."""
     from .media_scan import LocalMediaFile, MediaScanReport, ScanMatch, import_media
 
-    report = MediaScanReport(source_dir=stage.folder)
+    report = MediaScanReport(source_dir=source_dir or (plans[0][0].folder if plans else Path()))
     frontend = False
-    by_target: dict[Path, PutIn] = {}
-    for p in plan:
-        if p.action == "skip":
-            continue
-        frontend = frontend or p.item.system == FRONTEND
-        by_target[p.target] = p
-        report.matched.append(ScanMatch(
-            local=LocalMediaFile(p.source, "wheel" if p.item.media == "wheel" else "video"),
-            system=p.item.system, game_name=p.item.game, score=1.0, target_path=p.target, bucket="matched"))
+    by_target: dict[Path, tuple[Stage, PutIn]] = {}
+    for stage, plan in plans:
+        for p in plan:
+            if p.action == "skip":
+                continue
+            frontend = frontend or p.item.system == FRONTEND
+            by_target[p.target] = (stage, p)
+            report.matched.append(ScanMatch(
+                local=LocalMediaFile(p.source, "wheel" if p.item.media == "wheel" else "video"),
+                system=p.item.system, game_name=p.item.game, score=1.0, target_path=p.target, bucket="matched"))
     # Only HyperSpin's own clip may replace a file that isn't a stand-in.
     if frontend and len(report.matched) > 1:
         raise GenMediaError("HyperSpin's own No Video clip is put in by itself.")
     result = import_media(report, config, action="copy", overwrite=frontend, manifest_dir=manifest_dir,
-                          label=f"generate-media: {stage.name}")
+                          label=label)
     marks: dict[Path, list[placeholders.Placeholder]] = {}
+    came_from: dict[Path, Stage] = {}
     for _src, target in result.imported:
-        item = by_target[target].item
+        stage, p = by_target[target]
+        came_from[stage.folder] = stage
+        item = p.item
         if item.system == FRONTEND:
             continue
         if item.kind in STANDIN_KINDS:
@@ -743,8 +809,12 @@ def put_in(config: Config, stage: Stage, plan: list[PutIn], manifest_dir: Option
     for folder, entries in marks.items():
         placeholders.record(folder, entries)
     if result.imported:
-        stage.data["put_in"] = datetime.now().isoformat(timespec="seconds")
-        stage.save()
+        done = [s for s, _p in plans] if mark_all else list(came_from.values())
+        when = datetime.now().isoformat(timespec="seconds")
+        for stage in done:
+            stage.data["put_in"] = when
+            stage.data["put_in_manifest"] = result.manifest_path.name if result.manifest_path else ""
+            stage.save()
     return result
 
 
@@ -775,12 +845,24 @@ def undo_put_in(manifest_dir: Optional[Path] = None) -> Optional[tuple[Path, dic
     except (OSError, ValueError):
         folder = Path()
     summary = undo_import(manifest)
-    if not summary["errors"] and (folder / STAGE_FILE).is_file():
+    if summary["errors"]:
+        return manifest, summary
+    # One batch (its folder is the source), or every batch a put-in of them all took files from.
+    if (folder / STAGE_FILE).is_file():
         try:
-            stage = Stage.load(folder)
-            stage.data["put_in"] = ""
+            stages = [Stage.load(folder)]
+        except GenMediaError:
+            stages = []
+    elif folder != Path():
+        stages = [s for s in list_stages(folder) if s.data.get("put_in_manifest") == manifest.name]
+    else:
+        stages = []
+    for stage in stages:
+        stage.data["put_in"] = ""
+        stage.data.pop("put_in_manifest", None)
+        try:
             stage.save()
-        except (GenMediaError, OSError):
+        except OSError:
             pass
     return manifest, summary
 

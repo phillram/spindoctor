@@ -25,9 +25,16 @@ spindoctor generate-media undo --apply
 
 Everything made waits in a staging folder of its own, with a `review.html` to
 look at. `put-in` then copies it into HyperSpin's media, only where a place is
-still empty or holds a placeholder. Delete a file from the staging folder to
-leave it out. `undo` takes the last batch out again and brings back what it
-replaced; so does `media-scan --undo`.
+still empty or holds a placeholder; a drawn title or placeholder replaces only
+an older one. Delete a file from the staging folder to leave it out. `undo`
+takes the last batch out again and brings back what it replaced; so does
+`media-scan --undo`.
+
+After several runs (a re-run of the games that came out badly, a redraw), put
+them all in at once with `put-in --all` (GUI: **Put in all waiting**). Each
+place gets the best file of all the waiting batches: real media over a drawn
+title or placeholder, a video over a still, then the newest. So it doesn't
+matter which batch was made first, and one `undo` takes them all out again.
 
 Staging is `<output_dir>\generated-media`, or `~/.spindoctor/generated-media`
 without an `output_dir`; `--stage-dir` names another. Batches stay there after
