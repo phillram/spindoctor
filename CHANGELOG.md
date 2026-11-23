@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [3.4.0] - 2026-11-23
+
+Offline media generation release. Make missing wheel art, game videos, screenshots and Main Menu videos locally, with a live title designer in the GUI, staged installs and undo. Also adds cabinet diagnostics, speeds up GUI startup and repeated library work, and refreshes the guides. No breaking CLI or configuration changes.
+
 ### Added
 
 - **`doctor` flags AHK keymapper hotkeys that RocketLauncher's menus switch off.** RocketLauncher turns its menu navigation keys (`[Navigation]` in `Settings\RocketLauncher.ini`: Up, Down, Left, Right, Select and the P2 set, each a `|` list that often includes panel letters such as `W`) into hotkeys with AutoHotkey's `Hotkey` command, on for a menu and off afterwards. An Internal keymapper profile is appended to the same script, so that replaces a plain hotkey of the same name: `w::` or `~w::` in a profile never fires, while `*w::` and remaps (`w::c`) still do. On a real cabinet a camera button did nothing until `w::` became `*w::`. A new **Keymapper hotkeys** check reads the game profiles under `Profiles\AHK` for systems whose `Keymapper_AHK_Method` is Internal and WARNs per wheel listing each such hotkey, its line and the setting it clashes with. Hotkeys in `#If` contexts and key combinations aren't counted; a wheel that's hidden or off the Main Menu is INFO. Diagnosis only. New `spindoctor/keymapper_hotkeys.py`. Covered by `tests/test_doctor_keymapper_hotkeys.py`.
@@ -13,25 +17,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Documentation
 
-- **One wheel for several programs has its own page.** [docs/combined-wheels.md](docs/combined-wheels.md)
-  covers running every game under the wheel's own name with a per-game `Emulator=` (one
-  set of settings, media, key profiles and statistics, so the old wheels can go), the
-  `System=` redirect and what it leaves behind, retiring the old wheels without losing
-  Recently Played and Most Played, and a genre that shares the wheel's name.
-  Troubleshooting links to it.
-- Refresh and shorten current guides, replace all GUI screenshots with the
-  15-page sidebar layout, and add generated-command/link/screenshot drift checks.
-- **Pinball programs have their own page.** [docs/pinball.md](docs/pinball.md) covers
-  Future Pinball through BAM (default keys that clash with a keyboard-encoder panel,
-  and the type library that follows whichever copy ran last) and Visual Pinball X
-  10.8.0 under RocketLauncher (the stock module's `/exit`, the `-Ini` switch, its
-  scan-code keys, and the game list RocketLauncher wants). Troubleshooting links to it.
-
-- **Xbox games in Cxbx-Reloaded have their own page.** [docs/xbox.md](docs/xbox.md) covers
-  the CPU-core setting per game from RocketLauncher's module, testing a build in a copy
-  and keeping two, a second emulator entry that shares a module, PS4 pads through SDL,
-  when RocketLauncher reuses an unpacked game, and why a launch test can pass on a logo.
-  Troubleshooting, the controller guide and the cabinet reference link to it.
+- **One wheel for several programs has its own page.** [docs/combined-wheels.md](docs/combined-wheels.md) covers running every game under the wheel's own name with a per-game `Emulator=` (one set of settings, media, key profiles and statistics, so the old wheels can go), the `System=` redirect and what it leaves behind, retiring the old wheels without losing Recently Played and Most Played, and a genre that shares the wheel's name. Troubleshooting links to it.
+- Refresh and shorten current guides, replace all GUI screenshots with the 15-page sidebar layout, and add generated-command/link/screenshot drift checks.
+- **Pinball programs have their own page.** [docs/pinball.md](docs/pinball.md) covers Future Pinball through BAM (default keys that clash with a keyboard-encoder panel, and the type library that follows whichever copy ran last) and Visual Pinball X 10.8.0 under RocketLauncher (the stock module's `/exit`, the `-Ini` switch, its scan-code keys, and the game list RocketLauncher wants). Troubleshooting links to it.
+- **Xbox games in Cxbx-Reloaded have their own page.** [docs/xbox.md](docs/xbox.md) covers the CPU-core setting per game from RocketLauncher's module, testing a build in a copy and keeping two, a second emulator entry that shares a module, PS4 pads through SDL, when RocketLauncher reuses an unpacked game, and why a launch test can pass on a logo. Troubleshooting, the controller guide and the cabinet reference link to it.
+- **A panel that stops working while a controller is on is documented.** [docs/controller-input.md](docs/controller-input.md#panel-and-controller-together) lists emulators that read one input source (ActiveGS, AppleWin, N-Rage) with the setting that keeps a keyboard-encoder panel working, and shows a RocketLauncher key file that lets a controller press the panel's keys, so both work in the same game. Troubleshooting and the cabinet reference link to it.
 
 ### Changed
 
@@ -50,15 +40,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **`scripts/capture_gui_screenshots.py` works again.** Since pages are built on first visit it stopped with `AttributeError: '_SpinDoctorGUI' object has no attribute '_mm_tree'`; it now builds every page first. All GUI screenshots are retaken with the new page in the sidebar.
 - **The GUI window opens in about half the time.** Notebook pages build their widgets on first selection instead of all 15 up front; only the page the session opens on is built during layout. The first visit to each page pays its one-time build (10–45 ms for the largest pages).
 - **Internal consolidation, no behaviour change.** `cli.py` shares database-save routing, dry-run banners, option groups, CSV writers and plan tables (about 340 lines shorter; every command keeps its options, help and defaults). Shared helpers replace copies of the SHA1/CRC streaming loop, the RocketLauncher statistics INI reader, XML serialization, disc-number parsing, AHK comment filtering (new `spindoctor/_ahk.py`) and Windows process lookups. Unused helpers removed.
-
-### Docs
-
-- **A panel that stops working while a controller is on is documented.**
-  [docs/controller-input.md](docs/controller-input.md#panel-and-controller-together) lists
-  emulators that read one input source (ActiveGS, AppleWin, N-Rage) with the setting that
-  keeps a keyboard-encoder panel working, and shows a RocketLauncher key file that lets a
-  controller press the panel's keys, so both work in the same game. Troubleshooting and the
-  cabinet reference link to it.
 
 ### Fixed
 
@@ -2524,7 +2505,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v3.3.0...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v3.4.0...HEAD
+[3.4.0]: https://github.com/phillram/spindoctor/compare/v3.3.0...v3.4.0
 [3.3.0]: https://github.com/phillram/spindoctor/compare/v3.2.0...v3.3.0
 [3.2.0]: https://github.com/phillram/spindoctor/compare/v3.1.0...v3.2.0
 [3.1.0]: https://github.com/phillram/spindoctor/compare/v3.0.0...v3.1.0
