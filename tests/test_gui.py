@@ -5,6 +5,7 @@ scrolling and Text-widget behaviour. CI supplies xvfb on Linux.
 """
 from __future__ import annotations
 
+import shutil
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -15,6 +16,20 @@ import pytest
 import spindoctor.autostart as autostart_mod
 from spindoctor import __app_name__, __version__
 from spindoctor import gui
+
+
+@pytest.fixture(autouse=True)
+def _no_spindoctor_on_path(monkeypatch):
+    """Keep a real ``spindoctor`` on PATH out of these tests.
+
+    ``resolve_cli_command`` asks a PATH binary for its ``--version`` through
+    ``subprocess.run``, once per session.  With a release's folder on PATH (a
+    cabinet keeps one there for its ffmpeg), whichever test resolved a command
+    first ran that program, and the tests that stand in for ``Popen`` failed
+    when it was one of them.  Tests about PATH binaries set ``which`` themselves."""
+    real_which = shutil.which
+    monkeypatch.setattr(gui.shutil, "which",
+                        lambda name, *a, **k: None if name in gui._DEV_MODULE_MAP else real_which(name, *a, **k))
 
 
 _PAGE_ORDER = (
