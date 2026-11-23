@@ -13,7 +13,7 @@ import re
 import sys
 from functools import lru_cache
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Sequence
 
 #: Letter colours from top to bottom.
 STYLES = {
@@ -92,6 +92,34 @@ def display_title(description: str, name: str = "") -> str:
     if match:
         base = f"{match['article']} {match['main']}{match['rest'] or ''}"
     return " - ".join([base] + kept)
+
+
+# Tag parts that don't make two games different games: regions, languages,
+# revisions, versions, dump and release marks.
+_SAME_GAME_PART_RE = re.compile(
+    r"^(?:usa|us|u|europe|eu|e|japan|jp|j|world|w|asia|korea|china|taiwan|brazil|australia|canada|france|"
+    r"germany|spain|italy|uk|netherlands|sweden|scandinavia|en|fr|de|es|it|ja|pt|nl|sv|no|da|fi|zh|ko|"
+    r"rev\.?\s*\w+|v\s?\d[\w.]*|version\s+\S+|set\s+\d+|alt\w*|beta\s*\d*|proto\w*|demo|sample|unl|"
+    r"unlicensed|pirate|hack|translated\b.*|t[+-]\w+|!|a\d*|b\d*|o\d*|h\d*|p\d*|f\d*|\d{4}(?:-\d\d){0,2})$",
+    re.I)
+
+
+def tell_apart(descriptions: Sequence[str], title: str) -> list[str]:
+    """Titles for games of one wheel that all display as *title*: each with the
+    bracketed parts of its description the others don't share, like
+    "Electronic Football - Conic" and "Electronic Football - Epoch", so their
+    pictures differ.  Regions, revisions and dump marks don't count, so a
+    game's regional copies keep one picture."""
+    parts = []
+    for text in descriptions:
+        found = [p.strip() for tag in _TAG_RE.findall(text or "") for p in tag.split(",")]
+        parts.append([p for p in found if p and not _SAME_GAME_PART_RE.match(p)])
+    common = set.intersection(*(set(p.lower() for p in ps) for ps in parts)) if parts else set()
+    out = []
+    for ps in parts:
+        extra = [p for p in ps if p.lower() not in common]
+        out.append(f"{title} - {', '.join(extra)}" if extra else title)
+    return out
 
 
 # ─── fonts ────────────────────────────────────────────────────────────────────

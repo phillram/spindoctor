@@ -105,6 +105,8 @@ _TIME_RE = re.compile(r"time=(\d+):(\d+):(\d+(?:\.\d+)?)")
 _DURATION_RE = re.compile(r"Duration: (\d+):(\d+):(\d+(?:\.\d+)?)")
 _SIZE_RE = re.compile(r"Stream #\d+:\d+.*?Video:.*?, (\d{2,5})x(\d{2,5})")
 _BLACK_RE = re.compile(r"black_start:\s*([\d.]+)\s+black_end:\s*([\d.]+)")
+_CHANGE_RE = re.compile(r"\[Parsed_showinfo_\d+ @ [^\]]*\]\s*n:\s*\d+\s+pts:\s*\S+\s+pts_time:([\d.]+)")
+FROZEN_AFTER = 2.0          # a picture unchanged this long is standing still
 _FREEZE_START_RE = re.compile(r"freeze_start:\s*([\d.]+)")
 _FREEZE_END_RE = re.compile(r"freeze_end:\s*([\d.]+)")
 _CROP_RE = re.compile(r"crop=(\d+):(\d+):(\d+):(\d+)")
@@ -140,6 +142,10 @@ def parse_analysis(text: str) -> Analysis:
     if m:
         out.width, out.height = int(m.group(1)), int(m.group(2))
     out.black = sum(float(b) - float(a) for a, b in _BLACK_RE.findall(text))
+    changes = [float(v) for v in _CHANGE_RE.findall(text)]
+    if changes:
+        out.frozen = frozen_seconds(changes, out.seconds)
+        return _rest(out, text)
     events = [(m.start(), "start", float(m.group(1))) for m in _FREEZE_START_RE.finditer(text)]
     events += [(m.start(), "end", float(m.group(1))) for m in _FREEZE_END_RE.finditer(text)]
     began: Optional[float] = None
@@ -151,11 +157,26 @@ def parse_analysis(text: str) -> Analysis:
             began = None
     if began is not None:  # still frozen at the end
         out.frozen += max(0.0, out.seconds - began)
+    return _rest(out, text)
+
+
+def frozen_seconds(changes: list[float], seconds: float, still: float = FROZEN_AFTER) -> float:
+    """How long a take of *seconds* stood still: the gaps of at least *still*
+    seconds between the moments it changed (*changes*, from the start)."""
+    out = 0.0
+    last = 0.0
+    for at in sorted(changes) + [seconds]:
+        if at - last >= still:
+            out += at - last
+        last = max(last, at)
+    return min(out, seconds)
+
+
+def _rest(out: Analysis, text: str) -> Analysis:
     crops = _CROP_RE.findall(text)
     if crops:
         w, h, x, y = (int(v) for v in crops[-1])
-        # A dark scene can make the picture look tiny: then it's the whole frame.
-        if out.width and w >= out.width * 0.4 and h >= out.height * 0.4:
+        if plausible_crop(w, h, out.width, out.height):
             out.crop = (w, h, x, y)
     m = _MEAN_RE.search(text)
     if m:
@@ -164,6 +185,88 @@ def parse_analysis(text: str) -> Analysis:
     if m:
         out.peak_db = _db(m.group(1))
     return out
+
+
+def plausible_crop(w: int, h: int, width: int, height: int) -> bool:
+    """Whether a *w* x *h* picture inside a *width* x *height* take is the game
+    rather than a dark scene that made it look small.  A tall game (a vertical
+    arcade game, a handheld's portrait screen) is narrow, and its own edges
+    often stay dark (an unlit score), so at least 60% of the height and 5% of
+    the width is a real picture; likewise a wide, short one.  Anything else
+    under 40% of a side is taken for a dark scene, and the whole frame is kept."""
+    if not width or not height or w <= 0 or h <= 0:
+        return False
+    if w >= width * 0.4 and h >= height * 0.4:
+        return True
+    return (h >= height * 0.6 and w >= width * 0.05) or (w >= width * 0.6 and h >= height * 0.05)
+
+
+# The brightest picture of a take, a few frames a second (``lagfun`` with no
+# decay keeps each pixel's brightest value): what lit up at any moment.
+MAX_FRAME_WIDTH = 480
+LIT = 32                    # brighter than this (of 255) is part of the picture
+LIT_PIXELS = 2              # a row or column needs this many to count: one stray pixel doesn't
+
+
+def read_pgm(data: bytes) -> Optional[tuple[int, int, bytes]]:
+    """``(width, height, pixels)`` of a binary 8-bit PGM (``P5``), else None."""
+    m = re.match(rb"P5\s+(?:#[^\n]*\n\s*)*(\d+)\s+(\d+)\s+(\d+)\s", data)
+    if not m or int(m.group(3)) > 255:
+        return None
+    w, h = int(m.group(1)), int(m.group(2))
+    pixels = data[m.end():m.end() + w * h]
+    return (w, h, pixels) if w and h and len(pixels) == w * h else None
+
+
+def content_box(width: int, height: int, pixels: bytes, lit: int = LIT,
+                count: int = LIT_PIXELS) -> Optional[tuple[int, int, int, int]]:
+    """``(left, top, right, bottom)`` (right and bottom exclusive) of the rows
+    and columns of a grey picture with at least *count* pixels brighter than
+    *lit*; None when there are none.  Unlike ffmpeg's ``cropdetect``, which
+    judges a row by its average, a score line or a row of LEDs on black counts."""
+    rows = [0] * height
+    cols = [0] * width
+    for y in range(height):
+        line = pixels[y * width:(y + 1) * width]
+        n = 0
+        for x, v in enumerate(line):
+            if v > lit:
+                cols[x] += 1
+                n += 1
+        rows[y] = n
+    ys = [y for y, n in enumerate(rows) if n >= count]
+    xs = [x for x, n in enumerate(cols) if n >= count]
+    if not ys or not xs:
+        return None
+    return xs[0], ys[0], xs[-1] + 1, ys[-1] + 1
+
+
+def crop_from_max_frame(data: bytes, width: int, height: int) -> Optional[tuple[int, int, int, int]]:
+    """The crop (``width, height, x, y`` of the take) that drops the black bars
+    around a take whose brightest picture is the PGM *data*; None when it keeps
+    everything, when the picture is all black, or when what's lit is too small
+    to be the game (see :func:`plausible_crop`)."""
+    pgm = read_pgm(data)
+    if pgm is None or not width or not height:
+        return None
+    pw, ph, pixels = pgm
+    box = content_box(pw, ph, pixels)
+    if box is None:
+        return None
+    sx, sy = width / pw, height / ph
+    # Outward to whole, even take pixels: a small picture's edge pixel stands for a few of the take's.
+    left = max(0, int(box[0] * sx) // 2 * 2)
+    top = max(0, int(box[1] * sy) // 2 * 2)
+    right = min(width, -(-int(-(-box[2] * sx // 1)) // 2) * 2)
+    bottom = min(height, -(-int(-(-box[3] * sy // 1)) // 2) * 2)
+    w, h = _even(right - left), _even(bottom - top)
+    if left + w > width:
+        left = max(0, width - w)
+    if top + h > height:
+        top = max(0, height - h)
+    if (w >= width - 8 and h >= height - 8) or not plausible_crop(w, h, width, height):
+        return None
+    return w, h, left, top
 
 
 def gain_db(mean: Optional[float], peak: Optional[float]) -> float:
@@ -218,22 +321,48 @@ def take_command(ffmpeg: str, method: str, out: Path, seconds: float,
                "-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency", "-crf", "16", str(out)])
 
 
+# A picture is black when at least this share of it is dark: under about 92
+# lit pixels of 1280x720.  ffmpeg's own 0.98 calls a handheld's LCD, LEDs or
+# VFD on a black screen black: in a full-screen take they light 0.3-2.5% of
+# it, and a pinball's few LEDs 0.03-0.4%.
+BLACK_PICTURE = 0.9999
+
+
+def _blackdetect(seconds: float) -> str:
+    return f"blackdetect=d={seconds:g}:pix_th=0.10:pic_th={BLACK_PICTURE:g}"
+
+
 def probe_command(ffmpeg: str, method: str, seconds: float = 1.5,
                   region: Optional[tuple[int, int, int, int]] = None) -> list[str]:
     """Watch the screen for a moment, keeping nothing: is it black or frozen?"""
     filters = _grab_filters(method, region)
-    filters += ["scale=320:-2", "format=yuv420p", "blackdetect=d=0.2:pix_th=0.10",
+    filters += ["scale=320:-2", "format=yuv420p", _blackdetect(0.2),
                 "freezedetect=n=-50dB:d=0.4"]
     return ([ffmpeg, "-hide_banner", "-nostdin", "-nostats", "-loglevel", "info"]
             + grab_input(method)
             + ["-t", f"{seconds:g}", "-vf", ",".join(filters), "-an", "-f", "null", "-"])
 
 
-def analyse_command(ffmpeg: str, take: Path) -> list[str]:
-    return [ffmpeg, "-hide_banner", "-nostdin", "-i", str(take),
-            "-vf", "blackdetect=d=0.5:pix_th=0.10,freezedetect=n=-50dB:d=2,"
-                   "cropdetect=limit=24:round=2:reset=0",
-            "-an", "-f", "null", "-"]
+# When the picture changes: ``mpdecimate`` passes only frames with an 8x8
+# block that differs from the last one passed, ``showinfo`` logs their times.
+# Unlike ``freezedetect``, which averages the change over the whole frame, a
+# small ball or a few LEDs changing on black counts as movement.
+CHANGES = "fps=10,mpdecimate=hi=256:lo=128:frac=0.33,showinfo"
+
+
+def analyse_command(ffmpeg: str, take: Path, max_frame: Optional[Path] = None) -> list[str]:
+    """Black, changing and crop findings in the log; with *max_frame*, also
+    the take's brightest picture as a grey PGM there (needs ffmpeg's
+    ``lagfun``), which :func:`crop_from_max_frame` reads the black bars from."""
+    detect = _blackdetect(0.5) + ",cropdetect=limit=24:round=2:reset=0"
+    cmd = [ffmpeg, "-hide_banner", "-nostdin", "-i", str(take)]
+    graph = f"[0:v]split={3 if max_frame else 2}[d][c]{'[m]' if max_frame else ''};[d]{detect}[dout];[c]{CHANGES}[cout]"
+    cmd += ["-filter_complex", graph if max_frame is None else
+            graph + f";[m]fps=4,scale={MAX_FRAME_WIDTH}:-2:flags=area,format=gray,lagfun=decay=1[mout]"]
+    cmd += ["-map", "[dout]", "-an", "-f", "null", "-", "-map", "[cout]", "-an", "-f", "null", "-"]
+    if max_frame is not None:
+        cmd += ["-map", "[mout]", "-an", "-update", "1", "-f", "image2", "-y", str(max_frame)]
+    return cmd
 
 
 def volume_command(ffmpeg: str, sound: "SoundFile", skip: float, seconds: float) -> list[str]:
@@ -432,11 +561,26 @@ class Tools:
     def analyse(self, take: Path) -> Analysis:
         if not take.is_file() or take.stat().st_size == 0:
             return Analysis(problem="nothing was recorded")
+        self.methods()      # reads the filter list once
+        max_frame = take.with_name(take.stem + ".max.pgm") if " lagfun " in (self._filters or "") else None
         try:
-            done = self._run(analyse_command(self.ffmpeg, take), 180)
+            done = self._run(analyse_command(self.ffmpeg, take, max_frame), 180)
         except ClipError as exc:
             return Analysis(problem=str(exc))
-        return parse_analysis(done.stderr)
+        a = parse_analysis(done.stderr)
+        if max_frame is not None and done.returncode == 0:
+            try:
+                data = max_frame.read_bytes()
+            except OSError:
+                data = b""
+            if data and a.width and a.height:
+                # The brightest picture knows the bars better than cropdetect's averages.
+                a.crop = crop_from_max_frame(data, a.width, a.height)
+            try:
+                max_frame.unlink()
+            except OSError:
+                pass
+        return a
 
     def volume(self, sound: SoundFile, skip: float, seconds: float) -> tuple[Optional[float], Optional[float]]:
         """``(mean, peak)`` in dB, ``(None, None)`` when it can't be read."""

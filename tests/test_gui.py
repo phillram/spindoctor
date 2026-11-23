@@ -4267,9 +4267,9 @@ def _genmedia_logic_app(monkeypatch, apply=False):
     """Generate Media handlers, without Tk traces or background workers."""
     app = _process_gui(monkeypatch)
     values = {"system": "NES", "all": False, "games": "", "details": False, "style": "chrome",
-              "copy": True, "hidden": False, "count": "5", "seconds": "35", "wait": "20", "minutes": "30",
+              "copy": True, "hidden": False, "count": "5", "seconds": "35", "wait": "20", "settle": "40", "minutes": "30",
               "sound": True, "still": False, "crop": "auto", "kind": "clip", "background": "blue",
-              "stage": ""}
+              "stage": "", "press": "", "play": ""}
     for name, value in values.items():
         setattr(app, "_gm_" + name + "_var", _Value(value))
     app._gm_stage_names = []
@@ -4322,7 +4322,7 @@ def test_generate_media_recording_asks_first_and_stops_like_a_test_run(monkeypat
     app = _genmedia_logic_app(monkeypatch)
     app._gm_record()
     assert _genmedia_args(app) == ["record", "--system", "NES", "--count", "5", "--seconds", "35",
-                                   "--wait", "20", "--minutes", "30", "--crop", "auto"]
+                                   "--wait", "20", "--settle", "40", "--minutes", "30", "--crop", "auto"]
     app.messagebox.askyesno.assert_not_called()
     assert not app._test_run_active
     app._global_apply_var.set(True)
@@ -4345,7 +4345,17 @@ def test_generate_media_recording_asks_first_and_stops_like_a_test_run(monkeypat
     assert _genmedia_args(app) == ["record", "--resume", "--yes", "--apply"]
 
 
-@pytest.mark.parametrize("name, bad", [("count", "0"), ("seconds", "4"), ("wait", "x"), ("minutes", "-1")])
+def test_generate_media_recording_passes_keys_for_games_that_wait_to_be_played(monkeypatch):
+    app = _genmedia_logic_app(monkeypatch)
+    app._gm_press_var.set(" 2:5, 3:1 ")
+    app._gm_play_var.set("  Up Down A  ")
+    app._gm_record()
+    args = _genmedia_args(app)
+    assert args[-8:] == ["--press", "2:5", "--press", "3:1", "--play", "Up Down A", "--crop", "auto"]
+
+
+@pytest.mark.parametrize("name, bad", [("count", "0"), ("seconds", "4"), ("wait", "x"), ("settle", "601"),
+                                       ("minutes", "-1")])
 def test_generate_media_recording_numbers_are_checked(monkeypatch, name, bad):
     app = _genmedia_logic_app(monkeypatch)
     getattr(app, f"_gm_{name}_var").set(bad)

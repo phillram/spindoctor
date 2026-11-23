@@ -54,6 +54,103 @@ def test_a_tiny_crop_from_a_dark_scene_is_ignored():
     assert clips.parse_analysis(_log(body="crop=200:100:540:310")).crop is None
 
 
+def test_a_tall_or_wide_game_is_not_a_dark_scene():
+    # A handheld's portrait screen: full height, a fifth of the width.
+    assert clips.parse_analysis(_log(body="crop=250:720:514:0")).crop == (250, 720, 514, 0)
+    assert clips.parse_analysis(_log(body="crop=1280:200:0:260")).crop == (1280, 200, 0, 260)
+    assert clips.parse_analysis(_log(body="crop=50:720:614:0")).crop is None   # a thin strip
+    assert clips.plausible_crop(960, 720, 1280, 720) and not clips.plausible_crop(0, 720, 1280, 720)
+    # Handhelds whose own edges stay dark: Pac-Man 25% x 80%, UFO Master-Blaster 9% x 100%, a card row 100% x 14%.
+    assert clips.plausible_crop(320, 576, 1280, 720) and clips.plausible_crop(116, 720, 1280, 720)
+    assert clips.plausible_crop(1280, 100, 1280, 720)
+    assert not clips.plausible_crop(300, 400, 1280, 720)     # a third wide, 56% high: a dark scene
+
+
+def _pgm(width, height, lit):
+    """A black grey picture with *lit* pixels ``(x, y)`` at 200."""
+    px = bytearray(width * height)
+    for x, y in lit:
+        px[y * width + x] = 200
+    return b"P5\n# made by a test\n%d %d\n255\n" % (width, height) + bytes(px)
+
+
+def test_pgm_pictures_are_read():
+    assert clips.read_pgm(_pgm(4, 3, [(1, 1)]))[:2] == (4, 3)
+    assert clips.read_pgm(b"P6\n4 3\n255\n" + bytes(36)) is None   # colour
+    assert clips.read_pgm(b"P5\n4 3\n255\n" + bytes(5)) is None    # cut short
+    assert clips.read_pgm(b"P5\n4 3\n65535\n" + bytes(24)) is None  # 16-bit
+
+
+def test_sparse_details_on_black_count_as_the_picture():
+    # A score of a few lit pixels in the top row and LEDs in the bottom row:
+    # cropdetect's row averages call those rows black and cut them off.
+    lit = [(40, 0), (41, 0), (40, 59), (60, 59)] + [(x, y) for x in range(30, 70) for y in range(20, 40)]
+    w, h, px = clips.read_pgm(_pgm(100, 60, lit))
+    assert clips.content_box(w, h, px) == (30, 0, 70, 60)
+    assert clips.content_box(w, h, bytes(len(px))) is None
+    # One stray pixel in a column doesn't widen the picture.
+    w, h, px = clips.read_pgm(_pgm(100, 60, lit + [(95, 30)]))
+    assert clips.content_box(w, h, px) == (30, 0, 70, 60)
+
+
+def test_a_crop_is_read_from_the_brightest_picture():
+    # The picture is 40 of 100 columns, all 60 rows: in a 1280x720 take that's 512 wide.
+    lit = [(x, y) for x in range(30, 70) for y in list(range(0, 60, 3)) + [59]]
+    assert clips.crop_from_max_frame(_pgm(100, 60, lit), 1280, 720) == (512, 720, 384, 0)
+    # Edges between the small picture's pixels round outward, to even numbers.
+    assert clips.crop_from_max_frame(_pgm(100, 60, lit), 1000, 600) == (400, 600, 300, 0)
+    tall = [(x, y) for x in range(45, 55) for y in range(60)]   # a portrait game, a tenth of the width
+    w, h, x, y = clips.crop_from_max_frame(_pgm(100, 60, tall), 1280, 720)
+    assert (h, y) == (720, 0) and 128 <= w <= 160
+    full = [(x, y) for x in range(100) for y in range(60)]
+    assert clips.crop_from_max_frame(_pgm(100, 60, full), 1280, 720) is None    # no bars
+    assert clips.crop_from_max_frame(_pgm(100, 60, [(50, 30), (51, 30)]), 1280, 720) is None   # a dot
+    assert clips.crop_from_max_frame(b"not a picture", 1280, 720) is None
+
+
+def test_the_brightest_picture_is_asked_for_only_with_a_file():
+    plain = clips.analyse_command("ffmpeg", Path("take.mkv"))
+    graph = plain[plain.index("-filter_complex") + 1]
+    assert "mpdecimate" in graph and "showinfo" in graph and "lagfun" not in graph
+    assert "freezedetect" not in graph and plain.count("-map") == 2
+    both = clips.analyse_command("ffmpeg", Path("take.mkv"), Path("take.max.pgm"))
+    graph = both[both.index("-filter_complex") + 1]
+    assert "cropdetect" in graph and "lagfun=decay=1" in graph and "format=gray" in graph
+    assert both[-1] == "take.max.pgm" and both.count("-map") == 3
+
+
+def test_black_is_judged_strictly_enough_for_handhelds():
+    # ffmpeg's 0.98 makes a few lit LEDs on a black screen a black picture.
+    graph = clips.analyse_command("ffmpeg", Path("take.mkv"))
+    probe = ",".join(clips.probe_command("ffmpeg", "gdigrab"))
+    for text in (graph[graph.index("-filter_complex") + 1], probe):
+        assert f"pic_th={clips.BLACK_PICTURE:g}" in text and clips.BLACK_PICTURE >= 0.999
+
+
+def _shown(*times):
+    return "\n".join(f"[Parsed_showinfo_6 @ 000001c0] n:{i:4d} pts:{int(t * 10):7d} pts_time:{t:g}   duration:1"
+                      for i, t in enumerate(times))
+
+
+def test_a_small_change_now_and_then_is_movement():
+    # Something changed at least every 2 s: a ball, a few LEDs. Not frozen.
+    a = clips.parse_analysis(_log(body=_shown(0, 1.5, 3, 4.2, 5.9, 7.5, 9)))
+    assert a.frozen == 0 and a.verdict == ""
+    # Changed only at the start: frozen from there to the end.
+    a = clips.parse_analysis(_log(body=_shown(0, 0.3)))
+    assert a.frozen == 9.7 and a.verdict == "the picture didn't move"
+    # The change log wins over freezedetect's averages when both are there.
+    a = clips.parse_analysis(_log(body=_shown(0, 1, 2, 3, 4, 5, 6, 7, 8, 9) + "\nlavfi.freezedetect.freeze_start: 0"))
+    assert a.frozen == 0
+
+
+def test_frozen_seconds_counts_only_long_gaps():
+    assert clips.frozen_seconds([0, 1, 2], 10) == 8.0              # 2 s to the end
+    assert clips.frozen_seconds([0, 5, 6], 10) == 5.0 + 4.0
+    assert clips.frozen_seconds([0, 1.9, 3.8, 5.7, 7.6, 9.5], 10) == 0.0
+    assert clips.frozen_seconds([], 10) == 10.0
+
+
 def test_volume_and_gain():
     a = clips.parse_analysis("mean_volume: -34.1 dB\nmax_volume: -31.0 dB")
     assert (a.mean_db, a.peak_db) == (-34.1, -31.0) and a.has_sound
@@ -247,6 +344,21 @@ def test_real_takes_are_judged(tmp_path):
     assert tools.analyse(_made(tmp_path, "color=black:s=1280x720:r=30", "b.mkv")).is_black
     frozen = tools.analyse(_made(tmp_path, "smptebars=s=1280x720:r=30", "f.mkv"))
     assert frozen.is_frozen and not frozen.is_black
+    # A handheld's small screen on black: 1.6% of the take is lit, and it moves.
+    small = tools.analyse(_made(tmp_path, "testsrc2=s=120x120:r=30,pad=1280:720:580:300:black", "h.mkv"))
+    assert small.verdict == "" and not small.is_black
+    # A pinball's ball, one 12x12 LED crossing black: 0.016% of the take.
+    ball = tools.analyse(_made(tmp_path, "color=black:s=1280x720:r=30[b];color=white:s=12x12:r=30[d];"
+                                         "[b][d]overlay=x='mod(t*200,1200)':y=300[out0]", "p.mkv"))
+    assert ball.verdict == "" and not ball.is_black
+    # A score line on black above the game: cropdetect would cut it off, the brightest picture doesn't.
+    scored = tools.analyse(_made(tmp_path, "testsrc2=s=640x600:r=30,pad=640:720:0:120:black,"
+                                           "drawbox=x=300:y=10:w=40:h=6:color=white:t=fill,"
+                                           "pad=1280:720:320:0:black", "s.mkv"))
+    if " lagfun " in (tools._filters or ""):
+        w, h, x, y = scored.crop
+        assert y <= 10 and y + h >= 700 and 300 <= x <= 320 and 640 <= w <= 680
+    assert not list(tmp_path.glob("*.pgm"))
     assert tools.analyse(tmp_path / "missing.mkv").verdict == "nothing was recorded"
 
 

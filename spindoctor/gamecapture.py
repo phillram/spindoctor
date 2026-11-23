@@ -8,8 +8,11 @@ closed, the run can be stopped, resumed, and recovered after a crash.
 Once a game has run its wait without trouble, the recorder waits until the
 picture moves (a loading screen usually doesn't), records the screen with
 ffmpeg and the sound with :mod:`spindoctor._loopback`, and lets the tester
-close the game.  It presses nothing: most games show their own demo.  Keys can
-be given for a single game, whose timing the caller knows.
+close the game.  By itself it presses nothing: most arcade and console games
+show their own demo.  Games that sit still until someone plays (handheld
+electronic games, many computer games) can be given keys: ones pressed a set
+time after each game's window opens (Start, a coin), and ones pressed at random
+while it waits and records, so the clip shows the game being played.
 
 A take is only used when it is a moving picture of the game: a black or frozen
 one, or one with another window in front, never becomes its video.  A frozen
@@ -20,6 +23,7 @@ the keyboard, a control panel or a mouse button.
 """
 from __future__ import annotations
 
+import random
 import shutil
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -31,7 +35,13 @@ from .genmedia import GameState, Stage, WheelState, matching
 from .rl_rom_paths import _raw_game_names, _RomLookup
 
 KIND = "capture"                # gametest run kind, in run.json
-OVERHEAD_SECONDS = 20           # per game, on top of the wait and the recording
+# Per game, on top of the wait and the recording: launch, analysis and close
+# (about 12 s), then play statistics put back, the cleanup's check and the
+# 3 s pause before the next game (about 6 s).  Measured on 84 games: 57 s each
+# at --wait 3 --settle 3 with 35 s clips.
+OVERHEAD_SECONDS = 18
+RUN_SECONDS = 90                # per run: the quiet wait, the cleanup's listing of the folders, the report
+PLAY_HOLD_MS = (120, 450)       # how long a --play key is held, at random within this
 IDLE_SECONDS = 15               # nobody may have touched the PC for this long
 IDLE_LIMIT = 300
 STILL_SECONDS = 4               # how much is recorded when only a still is wanted
@@ -52,15 +62,22 @@ class CaptureSettings:
     video: bool = True          # False: a still only
     sound: bool = True
     crop: str = "auto"
-    presses: list = field(default_factory=list)     # (seconds after the window opened, key text)
+    presses: list = field(default_factory=list)     # (seconds after the window opened, key text), every game
+    play: list = field(default_factory=list)        # key texts pressed at random while waiting and recording
 
     def per_game(self) -> int:
-        return self.wait + (self.seconds if self.video else STILL_SECONDS) + OVERHEAD_SECONDS
+        """About how long one game takes.  A game whose picture never moves
+        waits the whole settle time; one that moves at once, hardly any: half."""
+        settle = self.settle // 2 if self.video else 0
+        return self.wait + settle + (self.seconds if self.video else STILL_SECONDS) + OVERHEAD_SECONDS
 
     def estimate(self, games: int) -> int:
-        """About how long *games* take, in seconds, time limit included."""
+        """About how long *games* take, in seconds, time limit and the run's
+        own start and end included."""
         total = games * self.per_game()
-        return min(total, self.minutes * 60 + self.per_game()) if self.minutes else total
+        if self.minutes:
+            total = min(total, self.minutes * 60 + self.per_game())
+        return total + (RUN_SECONDS if games else 0)
 
 
 def parse_presses(texts) -> list[tuple[float, str]]:
@@ -76,6 +93,19 @@ def parse_presses(texts) -> list[tuple[float, str]]:
             raise CaptureError(f"{text!r} is not a key press: use SECONDS:KEY, like 12:Enter or 15:F1.")
         out.append((seconds, key.strip()))
     return sorted(out)
+
+
+def parse_play(texts) -> list[str]:
+    """``["Up,Down", "A"]`` or ``["Up Down A"]`` -> ``["Up", "Down", "A"]``: the
+    keys ``--play`` presses at random; :class:`CaptureError` for an unknown one."""
+    keys: list[str] = []
+    for text in texts:
+        for key in text.replace(",", " ").split():
+            if gametest.virtual_key(key) < 0:
+                raise CaptureError(f"{key!r} is not a key: use names like Up, Left, A, 1, Enter or Space.")
+            if key not in keys:
+                keys.append(key)
+    return keys
 
 
 # ─── picking games ────────────────────────────────────────────────────────────
@@ -185,6 +215,7 @@ class CaptureRunner(gametest.Runner):
         self._began = platform.now()
         self._take: Optional[_Take] = None
         self._pending: list = []
+        self._rng = random.Random(0)
 
     # -- stopping
 
@@ -214,6 +245,7 @@ class CaptureRunner(gametest.Runner):
             return None
         self._take = None
         self._pending = list(self.capture.presses)
+        self._rng = random.Random(f"{item.system}\0{item.game}")  # the same game is played the same way
         try:
             result = super().launch(item)
             return None if result is None else self._finish(item, result)
@@ -221,13 +253,17 @@ class CaptureRunner(gametest.Runner):
             shutil.rmtree(self.run_dir / "takes", ignore_errors=True)
 
     def on_poll(self, proc, state, opened_at) -> None:
-        """Press the keys that are due, only while the game is in front."""
+        """Press the keys that are due, then (with ``play``) one at random, only
+        while the game is in front.  Called about once a second."""
         if opened_at is None:
             return
         while self._pending and self.platform.now() - opened_at >= self._pending[0][0]:
             _at, key = self._pending.pop(0)
             if self._game_in_front(proc, state):
                 self.platform.press_keys([gametest.virtual_key(key)], 80)
+        if self.capture.play and not self._pending and self._game_in_front(proc, state):
+            key = self._rng.choice(self.capture.play)
+            self.platform.press_keys([gametest.virtual_key(key)], self._rng.randint(*PLAY_HOLD_MS))
 
     def _game_in_front(self, proc, state) -> bool:
         fg = self.platform.foreground_pid()
@@ -504,6 +540,7 @@ def resumed_settings(info: dict) -> CaptureSettings:
     saved = info.get("capture") if isinstance(info.get("capture"), dict) else {}
     known = {k: v for k, v in saved.items() if k in CaptureSettings.__dataclass_fields__}
     known["presses"] = [tuple(p) for p in known.get("presses") or []]
+    known["play"] = [str(k) for k in known.get("play") or []]
     return CaptureSettings(**known)
 
 

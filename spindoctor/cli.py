@@ -7335,6 +7335,8 @@ def generate_media_wheel(systems, all_systems, games, style, font, size, show_hi
               help="Length of the recording.")
 @click.option("--wait", type=click.IntRange(1, 600), default=20, show_default=True,
               help="Seconds a game runs before recording may start.")
+@click.option("--settle", type=click.IntRange(0, 600), default=40, show_default=True,
+              help="Seconds more to wait for a moving picture before recording anyway (0 = record at once).")
 @click.option("--minutes", type=click.IntRange(0), default=30, show_default=True,
               help="Start no new game after this many minutes (0 = no limit). --resume carries on.")
 @click.option("--screenshots", is_flag=True, help="Take a still picture only, for games with no video and no still.")
@@ -7342,8 +7344,10 @@ def generate_media_wheel(systems, all_systems, games, style, font, size, show_hi
 @click.option("--crop", type=click.Choice(["auto", "4:3", "full"]), default="auto", show_default=True,
               help="auto drops black bars; 4:3 keeps the middle; full keeps everything.")
 @click.option("--press", "presses", multiple=True, metavar="SECONDS:KEY",
-              help="Press a key this long after the game's window opens, like 12:Enter. Repeatable; "
-                   "for one game only.")
+              help="Press a key this long after each game's window opens, like 3:Enter for Start. Repeatable.")
+@click.option("--play", "play", multiple=True, metavar="KEYS",
+              help="Keys to press at random while waiting and recording, like \"Up Down Left Right A B\", "
+                   "for games that sit still until someone plays (after any --press keys).")
 @click.option("--show-hidden", is_flag=True, help="Also games the wheel hides for having no picture.")
 @click.option("--cleanup", "cleanup_mode", type=click.Choice(["report", "remove", "off"]), default=None,
               help="Files the games create, as in `spindoctor test`. Default: test_cleanup (report).")
@@ -7353,8 +7357,8 @@ def generate_media_wheel(systems, all_systems, games, style, font, size, show_hi
 @click.option("--yes", "-y", is_flag=True, help="Don't ask before starting.")
 @click.option("--apply", "apply_changes", is_flag=True,
               help="Launch the games and record them. Without it, only list them.")
-def generate_media_record(systems, games, count, seconds, wait, minutes, screenshots, no_sound, crop, presses,
-                          show_hidden, cleanup_mode, resume, stage_dir, verbose, yes, apply_changes):
+def generate_media_record(systems, games, count, seconds, wait, settle, minutes, screenshots, no_sound, crop,
+                          presses, play, show_hidden, cleanup_mode, resume, stage_dir, verbose, yes, apply_changes):
     """Launch games and record the videos (or stills) a wheel is missing.
 
     Takes over the screen. Each game is launched through RocketLauncher, runs
@@ -7371,6 +7375,7 @@ def generate_media_record(systems, games, count, seconds, wait, minutes, screens
       spindoctor generate-media record -s "Sega Naomi" --count 10
       spindoctor generate-media record -s "Sega Naomi" --count 10 --apply
       spindoctor generate-media record -s MAME -g pacman --press 25:5 --press 27:1 --apply
+      spindoctor generate-media record -s "Handheld Games" --wait 5 --settle 3 --press 2:Enter --play "Up Down A B" --apply
       spindoctor generate-media record --resume --apply
     """
     from . import _testrun, clips, gamecapture, gametest, genmedia
@@ -7398,15 +7403,13 @@ def generate_media_record(systems, games, count, seconds, wait, minutes, screens
             console.print(f"Carrying on {escape(run_dir.name)}: {left} game(s) left.")
         else:
             capture = gamecapture.CaptureSettings(
-                wait=wait, seconds=seconds, minutes=minutes, video=not screenshots, sound=not no_sound,
-                crop=crop, presses=gamecapture.parse_presses(presses))
+                wait=wait, settle=settle, seconds=seconds, minutes=minutes, video=not screenshots, sound=not no_sound,
+                crop=crop, presses=gamecapture.parse_presses(presses), play=gamecapture.parse_play(play))
             if not systems:
                 raise genmedia.GenMediaError("Name the wheel to record with --system.")
             plan = gamecapture.plan_capture(config, _gen_states(config, systems, False), patterns=games,
                                             count=count, video=not screenshots, show_hidden=show_hidden)
             left = plan.games
-            if presses and left != 1:
-                raise genmedia.GenMediaError("--press is for one game: name it with --game.")
     except (gamecapture.CaptureError, genmedia.GenMediaError) as exc:
         err_console.print(f"[red]{escape(str(exc))}[/red]")
         sys.exit(1)

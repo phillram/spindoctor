@@ -215,10 +215,22 @@ def test_a_clone_that_plays_its_parents_video_is_recorded_only_by_name(tmp_path,
 
 
 def test_estimates_know_the_time_limit():
+    # 20 s wait + half the 40 s settle + 35 s recording + 18 s launch, close and the pause after; 90 s for the run
     c = gamecapture.CaptureSettings(wait=20, seconds=35, minutes=30)
-    assert c.per_game() == 75 and c.estimate(10) == 750
-    assert c.estimate(1000) == 30 * 60 + 75
-    assert gamecapture.CaptureSettings(minutes=0).estimate(1000) == 75000
+    assert c.per_game() == 93 and c.estimate(10) == 930 + 90
+    assert c.estimate(1000) == 30 * 60 + 93 + 90
+    assert gamecapture.CaptureSettings(minutes=0).estimate(1000) == 93000 + 90
+    assert gamecapture.CaptureSettings(video=False, wait=5).per_game() == 5 + 4 + 18
+    # As measured on a cabinet's 84 handhelds: 57 s each
+    assert gamecapture.CaptureSettings(wait=3, settle=3).per_game() == 57
+    assert c.estimate(0) == 0
+
+
+def test_play_keys_are_parsed():
+    assert gamecapture.parse_play(["Up Down,Left", "Right A", "A"]) == ["Up", "Down", "Left", "Right", "A"]
+    assert gamecapture.parse_play([]) == []
+    with pytest.raises(gamecapture.CaptureError):
+        gamecapture.parse_play(["Up NoSuchKey"])
 
 
 def test_key_presses_are_parsed():
@@ -405,6 +417,24 @@ def test_keys_are_pressed_for_the_game_and_only_while_it_is_in_front(tmp_path, h
     assert fake.pressed[:2] == [[ord("5")], [ord("1")]]
 
 
+def test_keys_are_pressed_for_every_game_of_a_run(tmp_path, home):
+    cfg, fake, tools = _setup(tmp_path, GameBehaviour(exit_key_works=False))
+    presses = gamecapture.parse_presses(["1:5"])
+    _record(cfg, fake, tools, _plan(cfg), presses=presses)
+    assert len(fake.launches) >= 2
+    assert sum(1 for p in fake.pressed if p == [ord("5")]) == len(fake.launches)
+
+
+def test_play_keys_are_pressed_at_random_after_the_set_ones(tmp_path, home):
+    cfg, fake, tools = _setup(tmp_path, GameBehaviour(exit_key_works=False))
+    play = gamecapture.parse_play(["Up Down A"])
+    _record(cfg, fake, tools, _plan(cfg, count=1), presses=gamecapture.parse_presses(["1:Enter"]), play=play)
+    keys = [p[0] for p in fake.pressed if len(p) == 1]
+    first = keys.index(0x0D)
+    played = [k for k in keys[first + 1:] if k in (0x26, 0x28, ord("A"))]
+    assert first == 0 and len(played) >= 5 and len(set(played)) >= 2
+
+
 # ─── stopping and resuming ───────────────────────────────────────────────────
 
 def test_someone_at_the_keyboard_stops_the_run_and_the_game(tmp_path, home):
@@ -505,7 +535,7 @@ def test_the_dry_run_lists_and_launches_nothing(tmp_path, home):
     assert not genmedia.stage_root(cfg).exists()
     for args, why in ((("--resume",), "no unfinished recording"),
                       ((), "Name the wheel"),
-                      (("-s", "NES", "--press", "5:Enter"), "--press is for one game"),
+                      (("-s", "NES", "--play", "Up NoSuchKey"), "is not a key"),
                       (("-s", "NES", "--press", "Enter"), "not a key press"),
                       (("-s", "Nowhere"), "No wheel named")):
         assert why in _cli(*args).output, args
@@ -567,6 +597,8 @@ def test_resume_from_the_command_line(desktop):
 
 
 def test_resuming_presses_nothing_it_wasnt_told_to():
-    settings = gamecapture.resumed_settings({"capture": {"presses": [[12.0, "Enter"]], "unknown": 1}})
-    assert settings.presses == [(12.0, "Enter")] and settings.seconds == 35
+    settings = gamecapture.resumed_settings({"capture": {"presses": [[12.0, "Enter"]], "unknown": 1,
+                                                         "play": ["Up", "A"], "settle": 3}})
+    assert settings.presses == [(12.0, "Enter")] and settings.seconds == 35 and settings.play == ["Up", "A"]
+    assert settings.settle == 3
     assert gamecapture.resumed_settings({"capture": "broken"}) == gamecapture.CaptureSettings()
