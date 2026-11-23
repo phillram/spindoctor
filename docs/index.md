@@ -15,6 +15,7 @@ CLI examples use `spindoctor` (pip); Windows binaries use `spindoctor-cli`.
 | Configure synthetic-wheel art and sound | [Synthetic-wheel media](synthetic-wheel-media.md) |
 | Put several programs on one wheel | [Combined wheels](combined-wheels.md) |
 | Tour consoles while idle | [Idle tour](idle-tour.md) |
+| Run Xbox games | [Cxbx-Reloaded](xbox.md) |
 | Configure guns or controllers | [Light guns](lightgun.md), [DS4Windows example](controller-input.md) |
 | Start pinball programs | [Future Pinball and Visual Pinball X](pinball.md) |
 | Diagnose failures | [Troubleshooting](troubleshooting.md), [files and storage](spindoctor-files.md) |

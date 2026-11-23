@@ -27,6 +27,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   10.8.0 under RocketLauncher (the stock module's `/exit`, the `-Ini` switch, its
   scan-code keys, and the game list RocketLauncher wants). Troubleshooting links to it.
 
+- **Xbox games in Cxbx-Reloaded have their own page.** [docs/xbox.md](docs/xbox.md) covers
+  the CPU-core setting per game from RocketLauncher's module, testing a build in a copy
+  and keeping two, a second emulator entry that shares a module, PS4 pads through SDL,
+  when RocketLauncher reuses an unpacked game, and why a launch test can pass on a logo.
+  Troubleshooting, the controller guide and the cabinet reference link to it.
+
 ### Changed
 
 - **GUI actions start faster and the window no longer freezes on slow lookups.** The GUI runs each action as a fresh CLI process, so CLI startup was paid on every click: the CLI now loads `requests`, the audit code and `rich.progress` only when a command needs them, cutting `import spindoctor.cli` from about 300 ms to about 100 ms. Backup **Scan**, the sidecar-backup picker and the auto-run status labels now load on a background thread instead of blocking the window (Scan and the picker for up to 30 seconds), with their buttons disabled meanwhile. Typing in the system filter filters in memory rather than rescanning folders and `Main Menu.xml` per keystroke (folders added outside the app show after **↻**, a Setup save or another rescan). One sidebar selection reads each system database once, through a cache that checks the file's modified time and size. Moving a Main Menu or wheel row updates only the rows between its old and new places, and the theme-browser filter waits until typing pauses.
