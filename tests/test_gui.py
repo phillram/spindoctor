@@ -4421,6 +4421,13 @@ def test_generate_media_title_designer_previews_and_lists_fonts(monkeypatch, tmp
     app, _cfg = _test_page_app(monkeypatch, tmp_path, output_dir=str(tmp_path / "out"))
     try:
         app._select_page("Generate Media")
+        # The background choice says what it is with help text off; its note, when on, has a line of its own
+        # (beside other widgets in a row, a wrapping help label got no width and never showed).
+        labels = {str(w.cget("text")): w for w in _widgets(app._gm_preview_label.master)
+                  if w.winfo_class() == "TLabel"}
+        assert "Background (preview only)" in labels
+        note = next(text for text in labels if text.startswith("The background is only for the preview"))
+        assert labels[note].master.master is app._gm_preview_label.master
         app._gm_style_var.set("neon")
         app._gm_style_picked()
         assert app._gm_effect_var.get() == "glow"
@@ -4447,12 +4454,16 @@ def test_generate_media_title_designer_previews_and_lists_fonts(monkeypatch, tmp
         app.root.destroy()
 
 
+def _widgets(widget):
+    """Every widget under *widget*."""
+    for child in widget.winfo_children():
+        yield child
+        yield from _widgets(child)
+
+
 def _buttons(widget):
     """Every button under *widget*."""
-    for child in widget.winfo_children():
-        if child.winfo_class() in ("TButton", "Button"):
-            yield child
-        yield from _buttons(child)
+    return (child for child in _widgets(widget) if child.winfo_class() in ("TButton", "Button"))
 
 
 @pytest.mark.parametrize("apply", [False, True])

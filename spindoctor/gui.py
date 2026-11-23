@@ -12808,7 +12808,8 @@ class _SpinDoctorGUI:
         if getattr(self, "_test_run_active", False) and self._test_request_stop():
             self._set_status("Stopping after this game")
         else:
-            self._flash_validation("No test run is launching games.")
+            # Generate Media's recordings use this button too, so name both.
+            self._flash_validation("Nothing is launching games: no test run or recording is going.")
 
     def _stop_test_worker(self, proc) -> None:
         """Give a stopping test run time to close its game, then end it."""
@@ -13161,14 +13162,16 @@ class _SpinDoctorGUI:
         entry = self.ttk.Entry(row, textvariable=self._gm_preview_text_var, width=28)
         entry.pack(side="left", padx=6)
         entry.bind("<KeyRelease>", lambda _e: self._gm_preview_soon())
-        self.ttk.Label(row, text="on").pack(side="left")
+        # Named for what it is: with help text off (View menu) this label is all that explains it.
+        self.ttk.Label(row, text="Background (preview only)").pack(side="left", padx=(6, 0))
         self._gm_background_choice_var = self.tk.StringVar(value=self._GM_BACKGROUNDS[0])
         background_box = self.ttk.Combobox(row, textvariable=self._gm_background_choice_var, state="readonly",
                                            width=14, values=self._GM_BACKGROUNDS)
         background_box.pack(side="left", padx=6)
         background_box.bind("<<ComboboxSelected>>", lambda _e: self._gm_preview_soon())
-        self._help_text(row, text="The background is only for the preview: the picture itself is see-through, "
-                                  "and shows on the theme behind it.").pack(side="left")
+        # Its own line: a wrapping help label packed beside other widgets in a row gets no width to show in.
+        self._help_text(box, text="The background is only for the preview: the picture itself is see-through, "
+                                  "and shows on the theme behind it.").pack(fill="x", padx=6)
         self._gm_preview_label = self.ttk.Label(box)
         self._gm_preview_label.pack(anchor="w", padx=6, pady=(2, 4))
         self._gm_preview_job = None
