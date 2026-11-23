@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import socket
 from pathlib import Path
 
@@ -357,6 +358,91 @@ def test_redrawing_replaces_drawn_titles_and_undo_brings_them_back(cabinet):
     assert picture.read_bytes() != first and placeholders.is_placeholder(picture)
     assert genmedia.undo_put_in()[1]["errors"] == []
     assert picture.read_bytes() == first
+
+
+def _redraw(cfg, style="gold"):
+    """A later batch drawing the same games again, in another style."""
+    jobs, _h = genmedia.plan_wheel_pictures(_state(cfg), redraw=True)
+    stage = _stage(cfg, style)
+    genmedia.make_wheel_pictures(stage, jobs, style=style, config=cfg)
+    stage.finish()
+    return stage
+
+
+def _age(stage, seconds=3600):
+    """Make *stage*'s files as old as if drawn *seconds* earlier."""
+    for item in stage.items:
+        path = stage.target(item)
+        t = path.stat().st_mtime - seconds
+        os.utime(path, (t, t))
+
+
+def test_an_older_drawn_title_put_in_later_leaves_the_newer_one(cabinet):
+    old = _draw(cabinet)
+    new = _redraw(cabinet)
+    _age(old)
+    genmedia.put_in(cabinet, new, genmedia.plan_put_in(cabinet, new))
+    picture = cabinet.media_dir / "NES" / "Images" / "Wheel" / "Charlie.png"
+    newer = picture.read_bytes()
+    plan = genmedia.plan_put_in(cabinet, old)
+    assert {(p.action, p.why) for p in plan} == {("skip", "a newer drawn picture is there")}
+    # The other way round, the newer one replaces the older one, as before.
+    genmedia.undo_put_in()
+    genmedia.put_in(cabinet, old, genmedia.plan_put_in(cabinet, old))
+    assert {p.action for p in genmedia.plan_put_in(cabinet, new)} == {"replace"}
+    genmedia.put_in(cabinet, new, genmedia.plan_put_in(cabinet, new))
+    assert picture.read_bytes() == newer
+
+
+def _batch(cfg, what, made, files):
+    """A batch made at *made* (ISO time) holding *files*: ``(game, media, kind, ext, data)``."""
+    stage = _stage(cfg, what)
+    stage.data["made"] = made
+    for game, media, kind, ext, data in files:
+        stage.add(stage.new_item("NES", game, game, media, kind, game, ext), data=data)
+    stage.finish()
+    return stage
+
+
+def test_put_in_all_gives_each_place_the_best_file_and_one_undo(cabinet):
+    a = _batch(cabinet, "a", "2026-11-22T10:00:00", [
+        ("Charlie", "video", "recorded", ".mp4", b"first clip"), ("Charlie", "wheel", "drawn", ".png", b"drawn")])
+    b = _batch(cabinet, "b", "2026-11-22T11:00:00", [
+        ("Charlie", "video", "recorded", ".mp4", b"better clip"), ("Charlie", "wheel", "copied", ".png", b"a real logo")])
+    c = _batch(cabinet, "c", "2026-11-22T12:00:00", [
+        ("Charlie", "video", "clip", ".mp4", b"No video found"), ("Bravo", "still", "recorded", ".png", b"a still")])
+    d = _batch(cabinet, "d", "2026-11-22T13:00:00", [("Charlie", "still", "recorded", ".png", b"a still")])
+    plans = genmedia.plan_put_in_all(cabinet, [d, c, b, a])
+    got = {(s.name[-1], p.item.game, p.item.media): (p.action, p.why) for s, plan in plans for p in plan}
+    assert got[("b", "Charlie", "video")] == ("new", "")              # real, a video, newer than a's
+    assert got[("a", "Charlie", "video")] == ("skip", f"the one from {b.name} goes in")
+    assert got[("c", "Charlie", "video")][0] == "skip"                 # a placeholder
+    assert got[("d", "Charlie", "still")][0] == "skip"                 # a still, though newest
+    assert got[("b", "Charlie", "wheel")] == ("new", "")               # real over drawn
+    assert got[("a", "Charlie", "wheel")][0] == "skip"
+    assert got[("c", "Bravo", "still")] == ("skip", "it has a still picture now")
+    root = genmedia.stage_root(cabinet)
+    result = genmedia.put_in_many(cabinet, plans, source_dir=root, label="generate-media: 4 batches", mark_all=True)
+    video = cabinet.media_dir / "NES" / "Video" / "Charlie.mp4"
+    assert len(result.imported) == 2 and video.read_bytes() == b"better clip"
+    assert all(genmedia.Stage.load(s.folder).put_in_at for s in (a, b, c, d))
+    manifest, summary = genmedia.undo_put_in()
+    assert summary["errors"] == [] and not video.exists()
+    assert not any(genmedia.Stage.load(s.folder).put_in_at for s in (a, b, c, d))
+
+
+def test_put_in_all_command(cabinet):
+    _batch(cabinet, "a", "2026-11-22T10:00:00", [("Charlie", "video", "recorded", ".mp4", b"first clip")])
+    _batch(cabinet, "b", "2026-11-22T11:00:00", [("Charlie", "video", "recorded", ".mp4", b"better clip")])
+    dry = _run("put-in", "--all").output
+    assert "1 to put in, 0 with a better file elsewhere" in dry and "0 to put in, 1 with a better file" in dry
+    assert "1 file(s) to put in from 2 batch(es)" in dry and "DRY RUN" in dry
+    assert _run("put-in", "some batch", "--all").exit_code == 2
+    assert "1 file(s) put in" in _run("put-in", "--all", "--apply").output
+    assert (cabinet.media_dir / "NES" / "Video" / "Charlie.mp4").read_bytes() == b"better clip"
+    assert "Nothing is waiting" in _run("put-in", "--all").output
+    assert "1 file(s) undone" in _run("undo", "--apply").output
+    assert "waiting" in _run("stages").output
 
 
 def test_a_copied_picture_is_real_media(cabinet):

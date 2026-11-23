@@ -7616,18 +7616,28 @@ def generate_media_stages(stage_dir):
 @click.option("--system", "-s", "systems", multiple=True, help="Only this wheel's files. Repeatable.")
 @click.option("--game", "-g", "games", multiple=True, help=_GEN_GAMES_HELP)
 @click.option("--stage-dir", type=click.Path(file_okay=False), default=None, help=_GEN_STAGE_HELP)
+@click.option("--all", "all_batches", is_flag=True,
+              help="Every waiting batch at once. Each place gets the best file of them all: real media "
+                   "over a stand-in, a video over a still, then the newest.")
 @click.option("--verbose", "-v", is_flag=True, help="List every file.")
 @click.option("--apply", "apply_changes", is_flag=True, help="Copy the files. Without it, only list them.")
-def generate_media_put_in(batch, systems, games, stage_dir, verbose, apply_changes):
+def generate_media_put_in(batch, systems, games, stage_dir, all_batches, verbose, apply_changes):
     """Copy a staged batch into HyperSpin's media (default: the newest waiting).
 
-    Fills only places that are still empty or hold a placeholder. Files
-    deleted from the staging folder are left out. `generate-media undo`
-    takes the batch out again.
+    Fills only places that are still empty or hold a placeholder; a drawn
+    title or placeholder replaces only an older one. Files deleted from the
+    staging folder are left out. `generate-media undo` takes the batch out
+    again; after --all, it takes all of them out.
     """
     from . import genmedia
 
     config = _gen_config()
+    if all_batches:
+        if batch:
+            err_console.print("[red]Give a batch or --all, not both.[/red]")
+            sys.exit(2)
+        _gen_put_in_all(config, systems, games, stage_dir, verbose, apply_changes)
+        return
     try:
         stage = genmedia.find_stage(genmedia.stage_root(config, stage_dir or ""), batch)
         plan = genmedia.plan_put_in(config, stage, systems=systems, games=games)
@@ -7658,6 +7668,49 @@ def generate_media_put_in(batch, systems, games, stage_dir, verbose, apply_chang
         console.print(f"  [yellow]left out:[/yellow] {escape(path.name)}: {escape(why)}")
     if result.manifest_path:
         console.print("[cyan]spindoctor generate-media undo --apply[/cyan] takes them out again.")
+
+
+def _gen_put_in_all(config, systems, games, stage_dir, verbose, apply_changes) -> None:
+    """``put-in --all``: every waiting batch, each place given the best file."""
+    from . import genmedia
+
+    root = genmedia.stage_root(config, stage_dir or "")
+    stages = [s for s in genmedia.list_stages(root) if s.items and not s.put_in_at]
+    if not stages:
+        console.print(f"Nothing is waiting to be put in ({escape(str(root))}).")
+        return
+    try:
+        plans = genmedia.plan_put_in_all(config, stages, systems=systems, games=games)
+    except genmedia.GenMediaError as exc:
+        err_console.print(f"[red]{escape(str(exc))}[/red]")
+        sys.exit(1)
+    total = 0
+    for stage, plan in plans:
+        going = [p for p in plan if p.action != "skip"]
+        better = [p for p in plan if p.action == "skip" and p.why.startswith("the one from ")]
+        total += len(going)
+        console.print(f"{escape(stage.name)}: {len(going)} to put in, {len(better)} with a better file "
+                      f"elsewhere, {len(plan) - len(going) - len(better)} left out.")
+        for p in plan if verbose else ():
+            what = "→ " + escape(str(p.target)) if p.action != "skip" else f"[dim]left out: {escape(p.why)}[/dim]"
+            console.print(f"  {escape(p.item.system)} > {escape(p.item.title)}  {what}")
+    console.print(f"{total} file(s) to put in from {len(plans)} batch(es).")
+    if not total:
+        return
+    if not apply_changes:
+        _print_dry_run(False, "Nothing was copied.")
+        return
+    try:
+        result = genmedia.put_in_many(config, plans, source_dir=root, label=f"generate-media: {len(plans)} batches",
+                                      mark_all=not (systems or games))
+    except (genmedia.GenMediaError, OSError) as exc:
+        err_console.print(f"[red]{escape(str(exc))}[/red]")
+        sys.exit(1)
+    console.print(f"[green]{len(result.imported)} file(s) put in.[/green]")
+    for path, why in result.skipped:
+        console.print(f"  [yellow]left out:[/yellow] {escape(path.name)}: {escape(why)}")
+    if result.manifest_path:
+        console.print("[cyan]spindoctor generate-media undo --apply[/cyan] takes them all out again.")
 
 
 @generate_media_group.command("undo")

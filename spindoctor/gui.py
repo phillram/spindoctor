@@ -979,6 +979,7 @@ _CUSTOM_COMMAND_PRESETS: tuple[str, ...] = (
     "generate-media placeholders --system <SYSTEM> --apply",
     "generate-media put-in",
     "generate-media put-in --apply",
+    "generate-media put-in --all --apply",
     "generate-media record --system <SYSTEM> --count 5",
     "generate-media remove --system <SYSTEM> --apply",
     "generate-media stages",
@@ -13019,7 +13020,15 @@ class _SpinDoctorGUI:
         self.ttk.Button(row, text="Look at it", command=self._gm_review).pack(side="left", padx=6)
         self._gm_put_btn = self.ttk.Button(row, command=self._gm_put_in)
         self._gm_put_btn.pack(side="left")
+        self._gm_put_all_btn = self.ttk.Button(row, command=self._gm_put_in_all)
+        self._gm_put_all_btn.pack(side="left", padx=(6, 0))
         self.ttk.Button(row, text="Undo last", command=self._gm_undo).pack(side="left", padx=6)
+        self._help_text(
+            box,
+            text="All waiting: every batch not put in yet, at once. Each game gets the best file of them all "
+                 "(real media over a drawn title or placeholder, a video over a still, then the newest), "
+                 "so the order batches were made in doesn't matter. Undo last takes them all out again.",
+        ).pack(fill="x", padx=6, pady=(0, 4))
 
         self._gm_stage_names: list[str] = []
         self._global_apply_var.trace_add("write", lambda *_a: self._gm_label_buttons())
@@ -13032,7 +13041,8 @@ class _SpinDoctorGUI:
         for button, show, do in ((self._gm_wheel_btn, "Show wheel pictures", "Make wheel pictures"),
                                  (self._gm_record_btn, "Show games to record", "Record games"),
                                  (self._gm_holder_btn, "Show placeholders", "Make placeholders"),
-                                 (self._gm_put_btn, "Show what goes in", "Put in")):
+                                 (self._gm_put_btn, "Show what goes in", "Put in"),
+                                 (self._gm_put_all_btn, "Show all waiting", "Put in all waiting")):
             button.configure(text=do if apply else show)
 
     def _gm_selection(self, *, all_systems: bool = True) -> Optional[list[str]]:
@@ -13201,6 +13211,9 @@ class _SpinDoctorGUI:
         name = self._gm_chosen_stage()
         if name:
             self._gm_run(["put-in", name])
+
+    def _gm_put_in_all(self) -> None:
+        self._gm_run(["put-in", "--all"])
 
     def _gm_undo(self) -> None:
         self._gm_run(["undo"])

@@ -4407,6 +4407,8 @@ def test_generate_media_batches_waiting_come_first(monkeypatch, tmp_path):
     assert shown[0].endswith("wheel pictures") and shown[1].endswith("placeholders (put in)")
     app._gm_put_in()
     assert _genmedia_args(app) == ["put-in", shown[0], "--apply"]
+    app._gm_put_in_all()
+    assert _genmedia_args(app) == ["put-in", "--all", "--apply"]
     app._gm_stage_var.set(shown[1])
     app._open_path = Mock()
     app._gm_review()
@@ -4421,6 +4423,9 @@ def test_generate_media_page_buttons_follow_the_apply_switch(monkeypatch, tmp_pa
         app._global_apply_var.set(True)
         assert app._gm_record_btn.cget("text") == "Record games"
         assert app._gm_put_btn.cget("text") == "Put in"
+        assert app._gm_put_all_btn.cget("text") == "Put in all waiting"
+        app._global_apply_var.set(False)
+        assert app._gm_put_all_btn.cget("text") == "Show all waiting"
         assert app._gm_stage_var.get() == ""
     finally:
         app.root.destroy()

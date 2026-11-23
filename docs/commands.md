@@ -248,7 +248,7 @@ Options: `--help`.
 
 - `generate-media list`: Show what each wheel is missing, judged the way HyperSpin looks for it. Options: `--system/-s`, `--all`, `--game/-g`, `--details`, `--json`, `--csv`, `--help`.
 - `generate-media placeholders`: Make "No video found" placeholders for games with no video and no still. Options: `--system/-s`, `--all`, `--game/-g`, `--no-video-clip`, `--kind`, `--background`, `--text`, `--show-hidden`, `--redo`, `--stage-dir`, `--verbose/-v`, `--apply`, `--help`.
-- `generate-media put-in BATCH`: Copy a staged batch into HyperSpin's media (default: the newest waiting). Options: `--system/-s`, `--game/-g`, `--stage-dir`, `--verbose/-v`, `--apply`, `--help`.
+- `generate-media put-in BATCH`: Copy a staged batch into HyperSpin's media (default: the newest waiting). Options: `--system/-s`, `--game/-g`, `--stage-dir`, `--all`, `--verbose/-v`, `--apply`, `--help`.
 - `generate-media record`: Launch games and record the videos (or stills) a wheel is missing. Options: `--system/-s`, `--game/-g`, `--count`, `--seconds`, `--wait`, `--settle`, `--minutes`, `--screenshots`, `--no-sound`, `--crop`, `--press`, `--play`, `--show-hidden`, `--cleanup`, `--resume`, `--stage-dir`, `--verbose/-v`, `--yes/-y`, `--apply`, `--help`.
 - `generate-media remove`: Take placeholders (and drawn titles) out of HyperSpin's media again. Options: `--system/-s`, `--all`, `--game/-g`, `--kind`, `--apply`, `--help`.
 - `generate-media stages`: List the staged batches, newest first. Options: `--stage-dir`, `--help`.
