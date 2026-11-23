@@ -255,7 +255,7 @@ Options: `--help`.
 - `generate-media remove`: Take placeholders (and drawn titles) out of HyperSpin's media again. Options: `--system/-s`, `--all`, `--game/-g`, `--kind`, `--apply`, `--help`.
 - `generate-media stages`: List the staged batches, newest first. Options: `--stage-dir`, `--help`.
 - `generate-media undo`: Take the last batch that was put in out of HyperSpin's media again. Options: `--apply`, `--help`.
-- `generate-media wheel-pictures`: Make wheel pictures for games that have none. Options: `--system/-s`, `--all`, `--game/-g`, `--style`, `--font`, `--colours/--colors`, `--glow`, `--size`, `--show-hidden`, `--redraw`, `--no-copy`, `--count`, `--stage-dir`, `--verbose/-v`, `--overwrite`, `--put-in`, `--apply`, `--help`.
+- `generate-media wheel-pictures`: Make wheel pictures for games that have none. Options: `--system/-s`, `--all`, `--game/-g`, `--style`, `--font`, `--colors`, `--effect`, `--glow-color`, `--size`, `--show-hidden`, `--redraw`, `--no-copy`, `--count`, `--stage-dir`, `--verbose/-v`, `--overwrite`, `--put-in`, `--apply`, `--help`.
 
 ## `ignore`
 

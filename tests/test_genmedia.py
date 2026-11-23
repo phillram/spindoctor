@@ -625,14 +625,15 @@ def test_wheel_pictures_take_the_new_styles_and_font_names(cabinet):
     assert "3 file(s) made" in out
 
 
-def test_wheel_pictures_take_own_colours_and_glow_and_list_fonts(cabinet, monkeypatch, tmp_path):
+def test_wheel_pictures_take_own_colors_and_glow_and_list_fonts(cabinet, monkeypatch, tmp_path):
     from spindoctor import titleart
 
-    bad = _run("wheel-pictures", "-s", "NES", "--colours", "#fff,#000", "--apply")
-    assert bad.exit_code == 2 and "three colours" in bad.output
-    assert _run("wheel-pictures", "-s", "NES", "--glow", "greenish", "--apply").exit_code == 2
-    out = _run("wheel-pictures", "-s", "NES", "--no-copy", "--style", "vfd", "--colours", "#ff0000,#cc0000,#880000",
-               "--glow", "none", "--apply").output
+    bad = _run("wheel-pictures", "-s", "NES", "--colors", "#fff,#000", "--apply")
+    assert bad.exit_code == 2 and "three colors" in bad.output
+    assert _run("wheel-pictures", "-s", "NES", "--glow-color", "greenish", "--apply").exit_code == 2
+    assert _run("wheel-pictures", "-s", "NES", "--effect", "sparkle", "--apply").exit_code == 2
+    out = _run("wheel-pictures", "-s", "NES", "--no-copy", "--style", "vfd", "--colors", "#ff0000,#cc0000,#880000",
+               "--effect", "glow", "--glow-color", "#00ff00", "--apply").output
     assert "3 file(s) made" in out
     monkeypatch.setattr(titleart, "installed_fonts", lambda: {"Bebas Neue": tmp_path / "b.ttf", "Impact": tmp_path / "i.ttf"})
     fonts = _run("fonts", "--find", "bebas").output

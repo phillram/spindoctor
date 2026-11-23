@@ -411,7 +411,7 @@ class CaptureRunner(gametest.Runner):
             why = take.error or take.front
         if why:
             return self._judged(result, gametest.FAIL, f"{NOTHING}: {why}")
-        a = self.tools.analyse(take.video)
+        a = self.tools.analyze(take.video)
         if a.problem or a.seconds < 1 or a.is_black:
             return self._judged(result, gametest.FAIL, f"{NOTHING}: {a.verdict}")
         game = self.states.get((item.system, item.game))

@@ -47,39 +47,48 @@ def test_a_drawn_title_is_a_transparent_png_of_the_asked_size(style):
 
 
 @pytest.mark.parametrize("style", sorted(titleart.GLOWS))
-def test_lit_display_styles_glow_in_their_colour(style):
+def test_lit_display_styles_glow_in_their_color(style):
     img = _open(titleart.draw_title("Orbit Runner", style, (400, 175)))
     glow = titleart.GLOWS[style]
     halo = [px for px in img.getdata() if 20 < px[3] < 200]         # round the letters, half see-through
     assert len(halo) > 2000
-    # Mostly the glow's own colour, not the dark shadow other styles cast.
+    # Mostly the glow's own color, not the dark shadow other styles cast.
     tinted = sum(1 for px in halo if sum(abs(a - b) for a, b in zip(px[:3], glow)) < 120)
     assert tinted > len(halo) * 0.5
     plain = _open(titleart.draw_title("Orbit Runner", "chrome", (400, 175)))
     assert not any(sum(abs(a - b) for a, b in zip(px[:3], glow)) < 120 for px in plain.getdata() if 20 < px[3] < 200)
 
 
-def test_own_colours_and_glow_override_the_style():
+def test_own_colors_and_glow_override_the_style():
     plain = _open(titleart.draw_title("Orbit Runner", "chrome", (400, 175)))
     red = _open(titleart.draw_title("Orbit Runner", "chrome", (400, 175),
-                                    colours=[(255, 0, 0), (200, 0, 0), (120, 0, 0)]))
+                                    colors=[(255, 0, 0), (200, 0, 0), (120, 0, 0)]))
     assert plain.tobytes() != red.tobytes()
     reds = [px for px in red.getdata() if px[3] == 255 and px[0] > 100 and px[1] < 40 and px[2] < 40]
     assert len(reds) > 1000
-    glowing = _open(titleart.draw_title("Orbit Runner", "chrome", (400, 175), glow=(0, 255, 0)))
+    glowing = _open(titleart.draw_title("Orbit Runner", "chrome", (400, 175), effect="glow", glow_color=(0, 255, 0)))
     assert sum(1 for px in glowing.getdata() if 20 < px[3] < 200 and px[1] > 150 and px[0] < 100) > 1000
-    unlit = titleart.draw_title("Orbit Runner", "vfd", (400, 175), glow=None)
-    assert unlit != titleart.draw_title("Orbit Runner", "vfd", (400, 175))
-    with pytest.raises(titleart.TitleArtError, match="three colours"):
-        titleart.draw_title("Orbit Runner", colours=[(0, 0, 0)])
+    # The three effects differ; "style" is the style's own (vfd glows, chrome casts a shadow).
+    drawn = {e: titleart.draw_title("Orbit Runner", "vfd", (400, 175), effect=e) for e in titleart.EFFECTS}
+    assert len(set(drawn.values())) == 3
+    assert titleart.draw_title("Orbit Runner", "vfd", (400, 175)) == drawn["glow"]
+    assert titleart.draw_title("Orbit Runner", "chrome", (400, 175)) == titleart.draw_title(
+        "Orbit Runner", "chrome", (400, 175), effect="shadow")
+    flat = _open(drawn["flat"])                 # the edge only: nothing half see-through round it
+    assert sum(1 for px in flat.getdata() if 20 < px[3] < 200) < sum(1 for px in _open(drawn["shadow"]).getdata()
+                                                                    if 20 < px[3] < 200)
+    with pytest.raises(titleart.TitleArtError, match="three colors"):
+        titleart.draw_title("Orbit Runner", colors=[(0, 0, 0)])
+    with pytest.raises(titleart.TitleArtError, match="Unknown effect"):
+        titleart.draw_title("Orbit Runner", effect="sparkle")
 
 
-def test_colours_are_read_and_written():
-    assert titleart.parse_colour("#33ccff") == (51, 204, 255) == titleart.parse_colour("33CCFF")
-    assert titleart.parse_colour("#3cf") == (51, 204, 255)
-    assert titleart.colour_text((51, 204, 255)) == "#33ccff"
-    with pytest.raises(titleart.TitleArtError, match="isn't a colour"):
-        titleart.parse_colour("blue-ish")
+def test_colors_are_read_and_written():
+    assert titleart.parse_color("#33ccff") == (51, 204, 255) == titleart.parse_color("33CCFF")
+    assert titleart.parse_color("#3cf") == (51, 204, 255)
+    assert titleart.color_text((51, 204, 255)) == "#33ccff"
+    with pytest.raises(titleart.TitleArtError, match="isn't a color"):
+        titleart.parse_color("blue-ish")
 
 
 def test_installed_fonts_go_by_their_names(tmp_path, monkeypatch):
@@ -162,7 +171,7 @@ def test_cards_are_opaque_and_carry_the_title(background):
     assert plain.size == titled.size == titleart.CARD_SIZE and plain.mode == "RGB"
     rgb = titled.tobytes()
     yellow = sum(1 for r, g, b in zip(rgb[0::3], rgb[1::3], rgb[2::3]) if r > 230 and 180 < g < 225 and b < 120)
-    assert yellow > 200  # the title's colour
+    assert yellow > 200  # the title's color
 
 
 def test_games_sharing_a_title_are_told_apart_by_what_differs():

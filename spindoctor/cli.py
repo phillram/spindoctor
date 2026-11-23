@@ -7311,15 +7311,16 @@ def _parse_size(_ctx, _param, value):
 @generate_media_group.command("wheel-pictures")
 @_gen_wheel_options
 @click.option("--style", type=click.Choice(TITLE_STYLES), default="chrome", show_default=True,
-              help="Letter colours. lcd, led, vfd and neon look like a lit display; led, vfd and neon glow.")
+              help="Letter colors. lcd, led, vfd and neon look like a lit display; led, vfd and neon glow.")
 @click.option("--font", default=None,
               help="A .ttf or .otf file, or the name of one installed on this PC, like bahnschrift or impact "
                    "(default: a bold font from this PC).")
-@click.option("--colours", "--colors", "colours", default=None, metavar="TOP,MIDDLE,BOTTOM",
-              help="Your own letter colours, top to bottom, as #rrggbb (instead of the style's).")
-@click.option("--glow", default=None, metavar="COLOUR|none",
-              help="Glow round the letters in this #rrggbb colour, or none for the dark shadow "
-                   "(default: the style's).")
+@click.option("--colors", default=None, metavar="TOP,MIDDLE,BOTTOM",
+              help="Your own letter colors, top to bottom, as #rrggbb (instead of the style's).")
+@click.option("--effect", type=click.Choice(["shadow", "glow", "flat"]), default=None,
+              help="Round the letters: a dark shadow, a glow, or nothing but their edge (default: the style's).")
+@click.option("--glow-color", default=None, metavar="#RRGGBB",
+              help="The glow's color (default: the style's glow, else its middle color).")
 @click.option("--size", callback=_parse_size, default=None, metavar="WIDTHxHEIGHT",
               help="Picture size (default: the usual size of that wheel's pictures, else 400x175).")
 @click.option("--show-hidden", is_flag=True,
@@ -7337,7 +7338,8 @@ def _parse_size(_ctx, _param, value):
                    "places (or stand-ins), and generate-media undo takes it out.")
 @click.option("--apply", "apply_changes", is_flag=True,
               help="Make the pictures, in a staging folder. Without it, only list them.")
-def generate_media_wheel(systems, all_systems, games, style, font, colours, glow, size, show_hidden, redraw, no_copy,
+def generate_media_wheel(systems, all_systems, games, style, font, colors, effect, glow_color, size, show_hidden,
+                         redraw, no_copy,
                          count, stage_dir, verbose, overwrite, put_in_after, apply_changes):
     """Make wheel pictures for games that have none.
 
@@ -7350,10 +7352,10 @@ def generate_media_wheel(systems, all_systems, games, style, font, colours, glow
 
     try:
         font_path = titleart.find_font(font) if font else None
-        palette = [titleart.parse_colour(c) for c in colours.split(",")] if colours else None
+        palette = [titleart.parse_color(c) for c in colors.split(",")] if colors else None
         if palette is not None and len(palette) != 3:
-            raise titleart.TitleArtError("--colours takes three colours: top, middle and bottom.")
-        halo = "style" if glow is None else (None if glow.strip().lower() == "none" else titleart.parse_colour(glow))
+            raise titleart.TitleArtError("--colors takes three colors: top, middle and bottom.")
+        glow = titleart.parse_color(glow_color) if glow_color else None
     except titleart.TitleArtError as exc:
         err_console.print(f"[red]{escape(str(exc))}[/red]")
         sys.exit(2)
@@ -7387,7 +7389,8 @@ def generate_media_wheel(systems, all_systems, games, style, font, colours, glow
     with _make_progress(count=True) as prog:
         task = prog.add_task("Drawing…", total=len(jobs))
         errors = genmedia.make_wheel_pictures(
-            stage, jobs, style=style, size=size, font=font_path, config=config, colours=palette, glow=halo,
+            stage, jobs, style=style, size=size, font=font_path, config=config, colors=palette,
+            effect=effect or "style", glow_color=glow,
             progress=lambda n, _total, title: prog.update(task, completed=n, description=escape(title[:40])))
     stage.finish()
     _gen_staged(stage, errors, config=config, put_in=put_in_after, overwrite=overwrite)

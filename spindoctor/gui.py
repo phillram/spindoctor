@@ -13106,10 +13106,11 @@ class _SpinDoctorGUI:
     # ── title designer ───────────────────────────────────────────────────────
 
     _GM_DEFAULT_FONT = "(heavy default)"
+    _GM_BACKGROUNDS = ("Dark and light", "Dark", "Light", "Checkerboard")
 
     def _build_gm_title_designer(self, box) -> None:
         """What to draw (the wheel's games, or its Main Menu logo), how
-        (style, any installed font, own colours, glow) and a live preview."""
+        (style, any installed font, own colors, an effect) and a live preview."""
         from . import titleart
 
         row = self.ttk.Frame(box)
@@ -13133,28 +13134,41 @@ class _SpinDoctorGUI:
                                               values=(self._GM_DEFAULT_FONT,), postcommand=self._gm_load_fonts)
         self._gm_font_box.pack(side="left", padx=6)
         self._gm_font_box.bind("<<ComboboxSelected>>", lambda _e: self._gm_preview_soon())
-        self.ttk.Label(row, text="Colours").pack(side="left", padx=(8, 4))
-        self._gm_colour_vars = [self.tk.StringVar() for _ in range(3)]
-        self._gm_swatches = []
-        for i, where in enumerate(("top", "middle", "bottom")):
-            swatch = self.tk.Button(row, width=2, relief="ridge", command=lambda i=i: self._gm_pick_colour(i))
-            swatch.pack(side="left", padx=1)
-            _attach_tooltip(swatch, f"Letter colour, {where}", self.tk)
-            self._gm_swatches.append(swatch)
-        self._gm_glow_var = self.tk.BooleanVar(value=False)
-        self._gm_glow_colour_var = self.tk.StringVar(value="#00ffe2")
-        self.ttk.Checkbutton(row, text="Glow", variable=self._gm_glow_var,
-                             command=self._gm_preview_soon).pack(side="left", padx=(8, 2))
-        self._gm_glow_swatch = self.tk.Button(row, width=2, relief="ridge", command=self._gm_pick_glow)
-        self._gm_glow_swatch.pack(side="left")
+        row = self.ttk.Frame(box)
+        row.pack(fill="x", padx=6, pady=2)
+        self.ttk.Label(row, text="Colors (click to change)").pack(side="left")
+        self._gm_color_vars = [self.tk.StringVar() for _ in range(3)]
+        self._gm_color_buttons = []
+        for i, where in enumerate(("Top", "Middle", "Bottom")):
+            button = self.tk.Button(row, text=where, width=7, relief="raised", cursor="hand2",
+                                    command=lambda i=i: self._gm_pick_color(i))
+            button.pack(side="left", padx=2)
+            self._gm_color_buttons.append(button)
+        self.ttk.Label(row, text="Effect").pack(side="left", padx=(12, 0))
+        self._gm_effect_var = self.tk.StringVar(value=titleart.default_effect(titleart.DEFAULT_STYLE))
+        effect_box = self.ttk.Combobox(row, textvariable=self._gm_effect_var, state="readonly", width=7,
+                                       values=titleart.EFFECTS)
+        effect_box.pack(side="left", padx=6)
+        effect_box.bind("<<ComboboxSelected>>", lambda _e: self._gm_paint_color_buttons() or self._gm_preview_soon())
+        self._gm_glow_color_var = self.tk.StringVar(value="#00ffe2")
+        self._gm_glow_button = self.tk.Button(row, text="Glow color", width=10, relief="raised", cursor="hand2",
+                                              command=self._gm_pick_glow_color)
+        self._gm_glow_button.pack(side="left", padx=2)
         row = self.ttk.Frame(box)
         row.pack(fill="x", padx=6, pady=2)
         self.ttk.Label(row, text="Preview with").pack(side="left")
         self._gm_preview_text_var = self.tk.StringVar(value="")
-        entry = self.ttk.Entry(row, textvariable=self._gm_preview_text_var, width=32)
+        entry = self.ttk.Entry(row, textvariable=self._gm_preview_text_var, width=28)
         entry.pack(side="left", padx=6)
         entry.bind("<KeyRelease>", lambda _e: self._gm_preview_soon())
-        self._help_text(row, text="(empty: the wheel's name for its logo, else a sample title)").pack(side="left")
+        self.ttk.Label(row, text="on").pack(side="left")
+        self._gm_background_choice_var = self.tk.StringVar(value=self._GM_BACKGROUNDS[0])
+        background_box = self.ttk.Combobox(row, textvariable=self._gm_background_choice_var, state="readonly",
+                                           width=14, values=self._GM_BACKGROUNDS)
+        background_box.pack(side="left", padx=6)
+        background_box.bind("<<ComboboxSelected>>", lambda _e: self._gm_preview_soon())
+        self._help_text(row, text="The background is only for the preview: the picture itself is see-through, "
+                                  "and shows on the theme behind it.").pack(side="left")
         self._gm_preview_label = self.ttk.Label(box)
         self._gm_preview_label.pack(anchor="w", padx=6, pady=(2, 4))
         self._gm_preview_job = None
@@ -13162,45 +13176,58 @@ class _SpinDoctorGUI:
         self._gm_style_picked()
 
     def _gm_style_picked(self) -> None:
-        """A style fills in its own colours and glow, to change from there."""
+        """A style fills in its own colors and effect, to change from there."""
         from . import titleart
 
         style = self._gm_style_var.get() or titleart.DEFAULT_STYLE
-        for var, rgb in zip(self._gm_colour_vars, titleart.STYLES.get(style, titleart.STYLES["chrome"])):
-            var.set(titleart.colour_text(rgb))
+        for var, rgb in zip(self._gm_color_vars, titleart.STYLES.get(style, titleart.STYLES["chrome"])):
+            var.set(titleart.color_text(rgb))
+        self._gm_effect_var.set(titleart.default_effect(style))
         glow = titleart.GLOWS.get(style)
-        self._gm_glow_var.set(glow is not None)
-        if glow is not None:
-            self._gm_glow_colour_var.set(titleart.colour_text(glow))
-        self._gm_paint_swatches()
+        self._gm_glow_color_var.set(titleart.color_text(glow) if glow else self._gm_color_vars[1].get())
+        self._gm_paint_color_buttons()
         self._gm_preview_soon()
 
-    def _gm_paint_swatches(self) -> None:
-        for swatch, var in zip(getattr(self, "_gm_swatches", []), self._gm_colour_vars):
-            swatch.configure(bg=var.get(), activebackground=var.get())
-        glow_swatch = getattr(self, "_gm_glow_swatch", None)
-        if glow_swatch is not None:
-            glow_swatch.configure(bg=self._gm_glow_colour_var.get(), activebackground=self._gm_glow_colour_var.get())
+    @staticmethod
+    def _gm_text_color(hex_color: str) -> str:
+        """Black or white, whichever reads on *hex_color*."""
+        try:
+            r, g, b = (int(hex_color.lstrip("#")[i:i + 2], 16) for i in (0, 2, 4))
+        except ValueError:
+            return "black"
+        return "black" if 0.299 * r + 0.587 * g + 0.114 * b > 140 else "white"
 
-    def _gm_ask_colour(self, current: str, title: str) -> str:
-        from tkinter import colorchooser
+    def _gm_paint_color_buttons(self) -> None:
+        """Each color button shows its color; the glow color only matters with a glow."""
+        for button, var in zip(getattr(self, "_gm_color_buttons", []), self._gm_color_vars):
+            button.configure(bg=var.get(), activebackground=var.get(), fg=self._gm_text_color(var.get()))
+        glow_button = getattr(self, "_gm_glow_button", None)
+        if glow_button is not None:
+            color = self._gm_glow_color_var.get()
+            glow_button.configure(bg=color, activebackground=color, fg=self._gm_text_color(color),
+                                  state="normal" if self._gm_effect_var.get() == "glow" else "disabled")
 
-        picked = colorchooser.askcolor(color=current, title=title, parent=self.root)
-        return picked[1] if picked and picked[1] else ""
+    def _gm_ask_color(self, current: str, title: str) -> str:
+        """Tk's own color dialog (the native one on Windows): the chosen #rrggbb, or "" when canceled."""
+        try:
+            picked = self.root.tk.call("tk_chooseColor", "-initialcolor", current, "-title", title,
+                                       "-parent", str(self.root))
+        except self.tk.TclError:
+            picked = self.root.tk.call("tk_chooseColor", "-title", title, "-parent", str(self.root))
+        return str(picked or "")
 
-    def _gm_pick_colour(self, i: int) -> None:
-        colour = self._gm_ask_colour(self._gm_colour_vars[i].get(), ("Top", "Middle", "Bottom")[i] + " colour")
-        if colour:
-            self._gm_colour_vars[i].set(colour)
-            self._gm_paint_swatches()
+    def _gm_pick_color(self, i: int) -> None:
+        color = self._gm_ask_color(self._gm_color_vars[i].get(), ("Top", "Middle", "Bottom")[i] + " letter color")
+        if color:
+            self._gm_color_vars[i].set(color)
+            self._gm_paint_color_buttons()
             self._gm_preview_soon()
 
-    def _gm_pick_glow(self) -> None:
-        colour = self._gm_ask_colour(self._gm_glow_colour_var.get(), "Glow colour")
-        if colour:
-            self._gm_glow_colour_var.set(colour)
-            self._gm_glow_var.set(True)
-            self._gm_paint_swatches()
+    def _gm_pick_glow_color(self) -> None:
+        color = self._gm_ask_color(self._gm_glow_color_var.get(), "Glow color")
+        if color:
+            self._gm_glow_color_var.set(color)
+            self._gm_paint_color_buttons()
             self._gm_preview_soon()
 
     def _gm_load_fonts(self) -> None:
@@ -13216,27 +13243,30 @@ class _SpinDoctorGUI:
         self._gm_font_box.configure(values=(self._GM_DEFAULT_FONT,) + tuple(self._gm_font_paths))
 
     def _gm_title_look(self):
-        """``(style, font path or None, colours, glow)`` as chosen."""
+        """``(style, font path or None, colors, effect, glow color)`` as chosen."""
         from . import titleart
 
         style = self._gm_style_var.get() or titleart.DEFAULT_STYLE
         font = self._gm_font_paths.get(self._gm_font_var.get()) if self._gm_font_var.get() != self._GM_DEFAULT_FONT else None
-        colours = tuple(titleart.parse_colour(v.get()) for v in self._gm_colour_vars)
-        glow = titleart.parse_colour(self._gm_glow_colour_var.get()) if self._gm_glow_var.get() else None
-        return style, font, colours, glow
+        colors = tuple(titleart.parse_color(v.get()) for v in self._gm_color_vars)
+        effect = self._gm_effect_var.get() or titleart.default_effect(style)
+        glow = titleart.parse_color(self._gm_glow_color_var.get()) if effect == "glow" else None
+        return style, font, colors, effect, glow
 
     def _gm_look_args(self) -> list[str]:
-        """``--style`` and only what differs from it: ``--font``, ``--colours``, ``--glow``."""
+        """``--style`` and only what differs from it: ``--font``, ``--colors``, ``--effect``, ``--glow-color``."""
         from . import titleart
 
-        style, font, colours, glow = self._gm_title_look()
+        style, font, colors, effect, glow = self._gm_title_look()
         args = ["--style", style]
         if font is not None:
             args += ["--font", str(font)]
-        if colours != titleart.STYLES[style]:
-            args += ["--colours", ",".join(titleart.colour_text(c) for c in colours)]
-        if glow != titleart.GLOWS.get(style):
-            args += ["--glow", titleart.colour_text(glow) if glow else "none"]
+        if colors != titleart.STYLES[style]:
+            args += ["--colors", ",".join(titleart.color_text(c) for c in colors)]
+        if effect != titleart.default_effect(style):
+            args += ["--effect", effect]
+        if glow is not None and glow != titleart.GLOWS.get(style, colors[1]):
+            args += ["--glow-color", titleart.color_text(glow)]
         return args
 
     def _gm_preview_soon(self) -> None:
@@ -13246,9 +13276,24 @@ class _SpinDoctorGUI:
             self.root.after_cancel(self._gm_preview_job)
         self._gm_preview_job = self.root.after(150, self._gm_preview)
 
+    def _gm_preview_background(self, size):
+        """What the preview is drawn on (never part of the picture)."""
+        from PIL import Image
+
+        dark, light = (20, 26, 48, 255), (150, 160, 176, 255)
+        choice = self._gm_background_choice_var.get()
+        back = Image.new("RGBA", size, light if choice == "Light" else dark)
+        if choice == "Dark and light":
+            back.paste(light, (size[0] // 2, 0, size[0], size[1]))
+        elif choice == "Checkerboard":
+            back = Image.new("RGBA", size, (255, 255, 255, 255))
+            for y in range(0, size[1], 16):
+                for x in range((y // 16) % 2 * 16, size[0], 32):
+                    back.paste((204, 204, 204, 255), (x, y, x + 16, y + 16))
+        return back
+
     def _gm_preview(self) -> None:
-        """Draw the title as chosen, on half a dark and half a light background
-        (a picture has to read on both), into the preview."""
+        """Draw the title as chosen, on the chosen background, into the preview."""
         import base64
         import io
 
@@ -13265,14 +13310,14 @@ class _SpinDoctorGUI:
             text = (self._gm_system_var.get().strip() or "Your Wheel") if self._gm_target_var.get() == "logo" \
                 else "Sample Game Title"
         try:
-            style, font, colours, glow = self._gm_title_look()
-            png = titleart.draw_title(text, style, titleart.DEFAULT_SIZE, font, colours=colours, glow=glow)
+            style, font, colors, effect, glow = self._gm_title_look()
+            png = titleart.draw_title(text, style, titleart.DEFAULT_SIZE, font, colors=colors, effect=effect,
+                                      glow_color=glow)
         except titleart.TitleArtError as exc:
             self._gm_preview_label.configure(text=str(exc), image="")
             return
         pic = Image.open(io.BytesIO(png)).convert("RGBA")
-        back = Image.new("RGBA", pic.size, (20, 26, 48, 255))
-        back.paste((150, 160, 176, 255), (pic.width // 2, 0, pic.width, pic.height))
+        back = self._gm_preview_background(pic.size)
         back.alpha_composite(pic)
         out = io.BytesIO()
         back.convert("RGB").save(out, "PNG")
@@ -13293,7 +13338,7 @@ class _SpinDoctorGUI:
                 return
         try:
             look = self._gm_look_args()
-        except Exception as exc:  # noqa: BLE001 - a typed colour that isn't one
+        except Exception as exc:  # noqa: BLE001 - a typed color that isn't one
             self._flash_validation(str(exc))
             return
         args = ["wheel-pictures"] + args + look

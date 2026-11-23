@@ -15,7 +15,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Optional, Sequence
 
-#: Letter colours from top to bottom.
+#: Letter colors from top to bottom.
 STYLES = {
     "chrome": ((255, 255, 255), (170, 205, 240), (60, 110, 190)),
     "gold": ((255, 244, 170), (255, 176, 20), (214, 70, 8)),
@@ -25,7 +25,7 @@ STYLES = {
     "vfd": ((214, 255, 250), (76, 236, 222), (0, 156, 170)),        # a vacuum fluorescent display's cyan
     "neon": ((255, 224, 255), (255, 84, 226), (164, 0, 214)),
 }
-#: Styles that glow in this colour instead of casting a dark shadow: lit displays.
+#: Styles that glow in this color instead of casting a dark shadow: lit displays.
 GLOWS = {
     "led": (255, 40, 20),
     "vfd": (0, 255, 226),
@@ -160,7 +160,7 @@ def _first_font(names) -> Optional[Path]:
     return None
 
 
-def parse_colour(text: str) -> RGB:
+def parse_color(text: str) -> RGB:
     """``#rrggbb``, ``rrggbb`` or ``#rgb`` as ``(r, g, b)``."""
     value = text.strip().lstrip("#")
     if len(value) == 3:
@@ -170,10 +170,10 @@ def parse_colour(text: str) -> RGB:
             raise ValueError
         return int(value[0:2], 16), int(value[2:4], 16), int(value[4:6], 16)
     except ValueError:
-        raise TitleArtError(f"{text!r} isn't a colour: use #rrggbb, like #33ccff.") from None
+        raise TitleArtError(f"{text!r} isn't a color: use #rrggbb, like #33ccff.") from None
 
 
-def colour_text(rgb: Sequence[int]) -> str:
+def color_text(rgb: Sequence[int]) -> str:
     return "#{:02x}{:02x}{:02x}".format(*rgb)
 
 
@@ -309,22 +309,35 @@ def _png(img) -> bytes:
 RGB = tuple[int, int, int]
 
 
+#: What goes round the letters, besides their dark edge.
+EFFECTS = ("shadow", "glow", "flat")
+
+
+def default_effect(style: str) -> str:
+    """The effect *style* has of itself: lit displays glow, the rest cast a shadow."""
+    return "glow" if style in GLOWS else "shadow"
+
+
 def draw_title(title: str, style: str = DEFAULT_STYLE, size: tuple[int, int] = DEFAULT_SIZE,
-               font: Optional[Path] = None, colours: Optional[Sequence[RGB]] = None,
-               glow: "RGB | str | None" = "style") -> bytes:
+               font: Optional[Path] = None, colors: Optional[Sequence[RGB]] = None,
+               effect: str = "style", glow_color: Optional[RGB] = None) -> bytes:
     """*title* as a transparent PNG of *size*: heavy letters in *style*'s
-    colours with a dark edge and a soft shadow, or a glow.  *colours* (top,
-    middle, bottom) replace the style's; *glow* is a colour, None for a
-    shadow, or "style" for the style's own."""
+    colors with a dark edge.  *colors* (top, middle, bottom) replace the
+    style's.  *effect*: "shadow" (dark and soft), "glow" (in *glow_color*,
+    else the style's glow color, else its middle color), "flat" (the edge
+    only), or "style" for the style's own (:func:`default_effect`)."""
     _need_pillow()
     from PIL import Image, ImageDraw, ImageFilter
 
     if style not in STYLES:
         raise TitleArtError(f"Unknown style {style!r}: use {', '.join(STYLES)}.")
-    palette = tuple(tuple(c) for c in colours) if colours else STYLES[style]
+    palette = tuple(tuple(c) for c in colors) if colors else STYLES[style]
     if len(palette) != 3:
-        raise TitleArtError("Give three colours: top, middle and bottom.")
-    halo = GLOWS.get(style) if glow == "style" else glow
+        raise TitleArtError("Give three colors: top, middle and bottom.")
+    effect = default_effect(style) if effect == "style" else effect
+    if effect not in EFFECTS:
+        raise TitleArtError(f"Unknown effect {effect!r}: use {', '.join(EFFECTS)}.")
+    halo = (tuple(glow_color) if glow_color else GLOWS.get(style, palette[1])) if effect == "glow" else None
     text = title.upper()
     path = font_for(text, font)
     w, h = size[0] * _SCALE, size[1] * _SCALE
@@ -339,8 +352,8 @@ def draw_title(title: str, style: str = DEFAULT_STYLE, size: tuple[int, int] = D
 
     fill, outline = Image.new("L", (w, h), 0), Image.new("L", (w, h), 0)
     draw_fill, draw_edge = ImageDraw.Draw(fill), ImageDraw.Draw(outline)
-    colours = Image.new("RGBA", (w, h), palette[2] + (255,))
-    paint = ImageDraw.Draw(colours)
+    colors = Image.new("RGBA", (w, h), palette[2] + (255,))
+    paint = ImageDraw.Draw(colors)
     first, middle, last = palette
     for i, line in enumerate(lines):
         y = top + i * step
@@ -355,16 +368,16 @@ def draw_title(title: str, style: str = DEFAULT_STYLE, size: tuple[int, int] = D
                        fill=tuple(round(p + (q - p) * part) for p, q in zip(a, b)) + (255,))
     out = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     if halo is not None:
-        # A lit display: a coloured halo round the letters, strongest close in.
+        # A lit display: a colored halo round the letters, strongest close in.
         for radius, strength in ((0.12, 2), (0.05, 3)):
             glow_mask = outline.filter(ImageFilter.GaussianBlur(letter * radius)).point(
                 lambda v, s=strength: 0 if v * s < 16 else min(255, v * s))     # no faint tail to the edge
             out.paste(tuple(halo) + (255,), (0, 0), glow_mask)
-    else:
+    elif effect == "shadow":
         shadow = outline.filter(ImageFilter.GaussianBlur(letter * 0.04)).point(lambda v: v * 3 // 4)
         out.paste((0, 0, 0, 255), (round(letter * 0.03), round(letter * 0.04)), shadow)
     out.paste(_EDGE, (0, 0), outline)
-    out.paste(colours, (0, 0), fill)
+    out.paste(colors, (0, 0), fill)
     return _png(out.resize(size, Image.LANCZOS))
 
 

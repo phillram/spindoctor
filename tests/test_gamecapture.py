@@ -79,11 +79,11 @@ class FakeTake:
 
 
 class FakeTools:
-    """clips.Tools without ffmpeg.  *analyses*: one per take, in order."""
+    """clips.Tools without ffmpeg.  *analyzes*: one per take, in order."""
 
-    def __init__(self, fake, *analyses, methods=("ddagrab", "gdigrab"), probes=None):
+    def __init__(self, fake, *analyzes, methods=("ddagrab", "gdigrab"), probes=None):
         self.fake = fake
-        self.analyses = list(analyses)
+        self.analyzes = list(analyzes)
         self._methods = list(methods)
         self.probes = probes or {}
         self.takes: list = []
@@ -101,9 +101,9 @@ class FakeTools:
         self.take = FakeTake(self.fake, out, seconds)
         return self.take
 
-    def analyse(self, take):
+    def analyze(self, take):
         assert take.read_bytes() == b"take"
-        return self.analyses.pop(0) if self.analyses else clips.Analysis(**MOVING)
+        return self.analyzes.pop(0) if self.analyzes else clips.Analysis(**MOVING)
 
     def volume(self, sound, skip, seconds):
         return self.sound
@@ -149,12 +149,12 @@ def home(tmp_path, monkeypatch):
     return folder
 
 
-def _setup(tmp_path, *behaviours, analyses=(), **tool_args):
+def _setup(tmp_path, *behaviors, analyzes=(), **tool_args):
     cfg = build_cabinet(tmp_path)
     cfg.output_dir = str(tmp_path / "out")
-    fake = Desktop(Path(cfg.rocketlauncher_dir), list(behaviours))
+    fake = Desktop(Path(cfg.rocketlauncher_dir), list(behaviors))
     FakeSound.clock = fake
-    return cfg, fake, FakeTools(fake, *analyses, **tool_args)
+    return cfg, fake, FakeTools(fake, *analyzes, **tool_args)
 
 
 def _plan(cfg, system="NES", **kwargs):
@@ -243,10 +243,10 @@ def test_key_presses_are_parsed():
 
 
 def test_movement():
-    grey = bytes([100] * 4000)
-    assert not gamecapture.picture_changed(grey, grey)
-    assert not gamecapture.picture_changed(grey, bytes([104] * 4000))      # noise
-    assert gamecapture.picture_changed(grey, bytes([100] * 3600 + [200] * 400))
+    gray = bytes([100] * 4000)
+    assert not gamecapture.picture_changed(gray, gray)
+    assert not gamecapture.picture_changed(gray, bytes([104] * 4000))      # noise
+    assert gamecapture.picture_changed(gray, bytes([100] * 3600 + [200] * 400))
 
 
 # ─── recording ───────────────────────────────────────────────────────────────
@@ -290,7 +290,7 @@ def test_recording_runs_dont_mix_with_test_runs(tmp_path, home):
     (dict(problem="ffmpeg fell over"), "FAIL", "Nothing saved: ffmpeg fell over", []),
 ])
 def test_bad_takes_never_become_the_video(tmp_path, home, analysis, status, reason, files):
-    cfg, fake, tools = _setup(tmp_path, analyses=[clips.Analysis(**analysis)])
+    cfg, fake, tools = _setup(tmp_path, analyzes=[clips.Analysis(**analysis)])
     _done, stage, results = _record(cfg, fake, tools, _plan(cfg, count=1))
     assert results == [("Alpha", status, reason)] and [i.file for i in stage.items] == files
     assert tools.clips == []
@@ -388,7 +388,7 @@ def test_a_window_is_recorded_without_the_rest_of_the_screen(tmp_path, home):
 
 
 def test_screenshots_only(tmp_path, home):
-    cfg, fake, tools = _setup(tmp_path, analyses=[clips.Analysis(**dict(MOVING, seconds=4.0, frozen=4.0))])
+    cfg, fake, tools = _setup(tmp_path, analyzes=[clips.Analysis(**dict(MOVING, seconds=4.0, frozen=4.0))])
     _done, stage, results = _record(cfg, fake, tools, _plan(cfg, count=1, video=False), video=False)
     assert results == [("Alpha", "PASS", "Screenshot taken")]
     assert [(i.media, i.file) for i in stage.items] == [("still", "Media/NES/Video/Alpha.png")]
