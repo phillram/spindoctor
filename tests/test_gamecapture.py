@@ -242,6 +242,20 @@ def test_key_presses_are_parsed():
             gamecapture.parse_presses([bad])
 
 
+def test_keys_joined_with_plus_are_held_together():
+    assert gamecapture.chord("Left+R") == [0x25, ord("R")]
+    assert gamecapture.chord(" Enter ") == [0x0D]
+    for bad in ("", "+", "Left+", "+R", "Left++R", "Left+NoSuchKey"):
+        assert gamecapture.chord(bad) == [], bad
+    assert gamecapture.parse_presses(["2:Left+R"]) == [(2.0, "Left+R")]
+    assert gamecapture.parse_play(["Up Down+A"]) == ["Up", "Down+A"]
+    for bad in ("2:Left+", "2:+R"):
+        with pytest.raises(gamecapture.CaptureError, match="held together"):
+            gamecapture.parse_presses([bad])
+    with pytest.raises(gamecapture.CaptureError, match="held together"):
+        gamecapture.parse_play(["Up Left+NoSuchKey"])
+
+
 def test_movement():
     gray = bytes([100] * 4000)
     assert not gamecapture.picture_changed(gray, gray)
@@ -425,6 +439,14 @@ def test_keys_are_pressed_for_every_game_of_a_run(tmp_path, home):
     _record(cfg, fake, tools, _plan(cfg), presses=presses)
     assert len(fake.launches) >= 2
     assert sum(1 for p in fake.pressed if p == [ord("5")]) == len(fake.launches)
+
+
+def test_a_chord_is_pressed_as_one_press_of_its_keys(tmp_path, home):
+    cfg, fake, tools = _setup(tmp_path, GameBehaviour(exit_key_works=False))
+    _record(cfg, fake, tools, _plan(cfg, count=1), presses=gamecapture.parse_presses(["1:Left+R"]),
+            play=gamecapture.parse_play(["Right+A"]))
+    assert fake.pressed[0] == [0x25, ord("R")]
+    assert [0x27, ord("A")] in fake.pressed[1:]
 
 
 def test_play_keys_are_pressed_at_random_after_the_set_ones(tmp_path, home):

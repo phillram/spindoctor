@@ -7415,10 +7415,12 @@ def generate_media_wheel(systems, all_systems, games, style, font, colors, effec
 @click.option("--crop", type=click.Choice(["auto", "4:3", "full"]), default="auto", show_default=True,
               help="auto drops black bars; 4:3 keeps the middle; full keeps everything.")
 @click.option("--press", "presses", multiple=True, metavar="SECONDS:KEY",
-              help="Press a key this long after each game's window opens, like 3:Enter for Start. Repeatable.")
+              help="Press a key this long after each game's window opens, like 3:Enter for Start, "
+                   "or 2:Left+R for keys held together. Repeatable.")
 @click.option("--play", "play", multiple=True, metavar="KEYS",
-              help="Keys to press at random while waiting and recording, like \"Up Down Left Right A B\", "
-                   "for games that sit still until someone plays (after any --press keys).")
+              help="Keys to press at random while waiting and recording, like \"Up Down Left Right A B\" "
+                   "(Left+A holds keys together), for games that sit still until someone plays "
+                   "(after any --press keys).")
 @click.option("--show-hidden", is_flag=True, help="Also games the wheel hides for having no picture.")
 @click.option("--cleanup", "cleanup_mode", type=click.Choice(["report", "remove", "off"]), default=None,
               help="Files the games create, as in `spindoctor test`. Default: test_cleanup (report).")

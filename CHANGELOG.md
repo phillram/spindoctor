@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **`generate-media record` can hold keys together: `--press 2:Left+R`, `--play "Up Left+A"`.** Some handheld games only begin when Start is pressed while a direction is held (Coleco's Head to Head games), and `--press` and `--play` pressed one key at a time, so those games stood still and became stills. Keys joined with `+` are now held down together, in both options and in the GUI's "Keys after it opens" and "Play with" fields; a key name that isn't a key is still refused before anything launches. Covered by `tests/test_gamecapture.py`.
+
 ### Changed
 
 - **CHANGELOG.md entries must each be on one line.** A release's section becomes its GitHub Release notes, which show every line break, so a wrapped entry was published with ragged lines. `scripts/check_changelog_unreleased.py` (the pre-commit hook) now also fails on hard-wrapped paragraphs and list items, naming the lines, and new `tests/test_changelog.py` runs it in CI. Two notes after nested lists in 2.7.5 get the blank line that keeps them out of the last bullet.

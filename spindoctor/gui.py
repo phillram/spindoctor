@@ -12990,7 +12990,8 @@ class _SpinDoctorGUI:
             box, text="Leave both empty for games that show their own demo. For games that do nothing until "
                       "played (handheld games, many computer games): Keys after it opens, as SECONDS:KEY, "
                       "like 3:Enter for Start or 2:5 3:1 for a coin and Start; Play with, keys pressed at "
-                      "random while it records, like Up Down Left Right A B.",
+                      "random while it records, like Up Down Left Right A B. Join keys with + to hold them "
+                      "together, like 2:Left+R.",
         ).pack(fill="x", padx=6)
         row = self.ttk.Frame(box)
         row.pack(fill="x", padx=6, pady=(2, 6))

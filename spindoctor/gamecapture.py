@@ -80,6 +80,14 @@ class CaptureSettings:
         return total + (RUN_SECONDS if games else 0)
 
 
+def chord(text: str) -> list[int]:
+    """The virtual-key codes of *text*: one key (``Enter``), or keys joined by
+    ``+`` that are held down together (``Left+R``, for a handheld that starts
+    with Start pressed while Left is held).  ``[]`` when any part isn't a key."""
+    vks = [gametest.virtual_key(part) for part in text.strip().split("+")]
+    return vks if all(vk >= 0 for vk in vks) else []
+
+
 def parse_presses(texts) -> list[tuple[float, str]]:
     """``12:Enter`` -> ``(12.0, "Enter")``; :class:`CaptureError` for anything else."""
     out = []
@@ -89,20 +97,23 @@ def parse_presses(texts) -> list[tuple[float, str]]:
             seconds = float(at)
         except ValueError:
             seconds = -1.0
-        if seconds < 0 or gametest.virtual_key(key) < 0:
-            raise CaptureError(f"{text!r} is not a key press: use SECONDS:KEY, like 12:Enter or 15:F1.")
+        if seconds < 0 or not chord(key):
+            raise CaptureError(f"{text!r} is not a key press: use SECONDS:KEY, like 12:Enter or 15:F1, "
+                               "or 2:Left+R for keys held together.")
         out.append((seconds, key.strip()))
     return sorted(out)
 
 
 def parse_play(texts) -> list[str]:
     """``["Up,Down", "A"]`` or ``["Up Down A"]`` -> ``["Up", "Down", "A"]``: the
-    keys ``--play`` presses at random; :class:`CaptureError` for an unknown one."""
+    keys ``--play`` presses at random (``Left+A`` holds two together);
+    :class:`CaptureError` for an unknown one."""
     keys: list[str] = []
     for text in texts:
         for key in text.replace(",", " ").split():
-            if gametest.virtual_key(key) < 0:
-                raise CaptureError(f"{key!r} is not a key: use names like Up, Left, A, 1, Enter or Space.")
+            if not chord(key):
+                raise CaptureError(f"{key!r} is not a key: use names like Up, Left, A, 1, Enter or Space, "
+                                   "or Left+A for keys held together.")
             if key not in keys:
                 keys.append(key)
     return keys
@@ -263,10 +274,10 @@ class CaptureRunner(gametest.Runner):
         while self._pending and self.platform.now() - opened_at >= self._pending[0][0]:
             _at, key = self._pending.pop(0)
             if self._game_in_front(proc, state):
-                self.platform.press_keys([gametest.virtual_key(key)], 80)
+                self.platform.press_keys(chord(key), 80)
         if self.capture.play and not self._pending and self._game_in_front(proc, state):
             key = self._rng.choice(self.capture.play)
-            self.platform.press_keys([gametest.virtual_key(key)], self._rng.randint(*PLAY_HOLD_MS))
+            self.platform.press_keys(chord(key), self._rng.randint(*PLAY_HOLD_MS))
 
     def _game_in_front(self, proc, state) -> bool:
         fg = self.platform.foreground_pid()
