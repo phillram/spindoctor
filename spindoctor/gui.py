@@ -12914,12 +12914,9 @@ class _SpinDoctorGUI:
 
         box = self.ttk.LabelFrame(frame, text="2. Wheel pictures")
         box.pack(fill="x", pady=(0, 8))
+        self._build_gm_title_designer(box)
         row = self.ttk.Frame(box)
         row.pack(fill="x", padx=6, pady=(4, 6))
-        self.ttk.Label(row, text="Letters").pack(side="left")
-        self._gm_style_var = self.tk.StringVar(value="chrome")
-        self.ttk.Combobox(row, textvariable=self._gm_style_var, state="readonly", width=8,
-                          values=("chrome", "gold", "white", "lcd", "led", "vfd", "neon")).pack(side="left", padx=6)
         self._gm_copy_var = self.tk.BooleanVar(value=True)
         self.ttk.Checkbutton(row, text="Reuse pictures already on this PC",
                              variable=self._gm_copy_var).pack(side="left", padx=6)
@@ -13106,11 +13103,200 @@ class _SpinDoctorGUI:
         if args is not None:
             self._gm_run(["list"] + args + (["--details"] if self._gm_details_var.get() else []), apply=False)
 
-    def _gm_wheel_pictures(self) -> None:
-        args = self._gm_selection()
-        if args is None:
+    # ── title designer ───────────────────────────────────────────────────────
+
+    _GM_DEFAULT_FONT = "(heavy default)"
+
+    def _build_gm_title_designer(self, box) -> None:
+        """What to draw (the wheel's games, or its Main Menu logo), how
+        (style, any installed font, own colours, glow) and a live preview."""
+        from . import titleart
+
+        row = self.ttk.Frame(box)
+        row.pack(fill="x", padx=6, pady=(4, 2))
+        self._gm_target_var = self.tk.StringVar(value="games")
+        for value, text in (("games", "The wheel's games"), ("logo", "The wheel's own Main Menu logo")):
+            self.ttk.Radiobutton(row, text=text, value=value, variable=self._gm_target_var,
+                                 command=self._gm_preview_soon).pack(side="left", padx=(0, 10))
+        row = self.ttk.Frame(box)
+        row.pack(fill="x", padx=6, pady=2)
+        self.ttk.Label(row, text="Style").pack(side="left")
+        self._gm_style_var = self.tk.StringVar(value=titleart.DEFAULT_STYLE)
+        style_box = self.ttk.Combobox(row, textvariable=self._gm_style_var, state="readonly", width=8,
+                                      values=tuple(titleart.STYLES))
+        style_box.pack(side="left", padx=6)
+        style_box.bind("<<ComboboxSelected>>", lambda _e: self._gm_style_picked())
+        self.ttk.Label(row, text="Font").pack(side="left", padx=(8, 0))
+        self._gm_font_var = self.tk.StringVar(value=self._GM_DEFAULT_FONT)
+        self._gm_font_paths: dict = {}
+        self._gm_font_box = self.ttk.Combobox(row, textvariable=self._gm_font_var, state="readonly", width=26,
+                                              values=(self._GM_DEFAULT_FONT,), postcommand=self._gm_load_fonts)
+        self._gm_font_box.pack(side="left", padx=6)
+        self._gm_font_box.bind("<<ComboboxSelected>>", lambda _e: self._gm_preview_soon())
+        self.ttk.Label(row, text="Colours").pack(side="left", padx=(8, 4))
+        self._gm_colour_vars = [self.tk.StringVar() for _ in range(3)]
+        self._gm_swatches = []
+        for i, where in enumerate(("top", "middle", "bottom")):
+            swatch = self.tk.Button(row, width=2, relief="ridge", command=lambda i=i: self._gm_pick_colour(i))
+            swatch.pack(side="left", padx=1)
+            _attach_tooltip(swatch, f"Letter colour, {where}", self.tk)
+            self._gm_swatches.append(swatch)
+        self._gm_glow_var = self.tk.BooleanVar(value=False)
+        self._gm_glow_colour_var = self.tk.StringVar(value="#00ffe2")
+        self.ttk.Checkbutton(row, text="Glow", variable=self._gm_glow_var,
+                             command=self._gm_preview_soon).pack(side="left", padx=(8, 2))
+        self._gm_glow_swatch = self.tk.Button(row, width=2, relief="ridge", command=self._gm_pick_glow)
+        self._gm_glow_swatch.pack(side="left")
+        row = self.ttk.Frame(box)
+        row.pack(fill="x", padx=6, pady=2)
+        self.ttk.Label(row, text="Preview with").pack(side="left")
+        self._gm_preview_text_var = self.tk.StringVar(value="")
+        entry = self.ttk.Entry(row, textvariable=self._gm_preview_text_var, width=32)
+        entry.pack(side="left", padx=6)
+        entry.bind("<KeyRelease>", lambda _e: self._gm_preview_soon())
+        self._help_text(row, text="(empty: the wheel's name for its logo, else a sample title)").pack(side="left")
+        self._gm_preview_label = self.ttk.Label(box)
+        self._gm_preview_label.pack(anchor="w", padx=6, pady=(2, 4))
+        self._gm_preview_job = None
+        self._gm_preview_image = None
+        self._gm_style_picked()
+
+    def _gm_style_picked(self) -> None:
+        """A style fills in its own colours and glow, to change from there."""
+        from . import titleart
+
+        style = self._gm_style_var.get() or titleart.DEFAULT_STYLE
+        for var, rgb in zip(self._gm_colour_vars, titleart.STYLES.get(style, titleart.STYLES["chrome"])):
+            var.set(titleart.colour_text(rgb))
+        glow = titleart.GLOWS.get(style)
+        self._gm_glow_var.set(glow is not None)
+        if glow is not None:
+            self._gm_glow_colour_var.set(titleart.colour_text(glow))
+        self._gm_paint_swatches()
+        self._gm_preview_soon()
+
+    def _gm_paint_swatches(self) -> None:
+        for swatch, var in zip(getattr(self, "_gm_swatches", []), self._gm_colour_vars):
+            swatch.configure(bg=var.get(), activebackground=var.get())
+        glow_swatch = getattr(self, "_gm_glow_swatch", None)
+        if glow_swatch is not None:
+            glow_swatch.configure(bg=self._gm_glow_colour_var.get(), activebackground=self._gm_glow_colour_var.get())
+
+    def _gm_ask_colour(self, current: str, title: str) -> str:
+        from tkinter import colorchooser
+
+        picked = colorchooser.askcolor(color=current, title=title, parent=self.root)
+        return picked[1] if picked and picked[1] else ""
+
+    def _gm_pick_colour(self, i: int) -> None:
+        colour = self._gm_ask_colour(self._gm_colour_vars[i].get(), ("Top", "Middle", "Bottom")[i] + " colour")
+        if colour:
+            self._gm_colour_vars[i].set(colour)
+            self._gm_paint_swatches()
+            self._gm_preview_soon()
+
+    def _gm_pick_glow(self) -> None:
+        colour = self._gm_ask_colour(self._gm_glow_colour_var.get(), "Glow colour")
+        if colour:
+            self._gm_glow_colour_var.set(colour)
+            self._gm_glow_var.set(True)
+            self._gm_paint_swatches()
+            self._gm_preview_soon()
+
+    def _gm_load_fonts(self) -> None:
+        """Every font installed on this PC, read the first time the list opens."""
+        from . import titleart
+
+        if self._gm_font_paths or not titleart.pillow_available():
             return
-        args = ["wheel-pictures"] + args + ["--style", self._gm_style_var.get() or "chrome"]
+        try:
+            self._gm_font_paths = dict(titleart.installed_fonts())
+        except titleart.TitleArtError:
+            return
+        self._gm_font_box.configure(values=(self._GM_DEFAULT_FONT,) + tuple(self._gm_font_paths))
+
+    def _gm_title_look(self):
+        """``(style, font path or None, colours, glow)`` as chosen."""
+        from . import titleart
+
+        style = self._gm_style_var.get() or titleart.DEFAULT_STYLE
+        font = self._gm_font_paths.get(self._gm_font_var.get()) if self._gm_font_var.get() != self._GM_DEFAULT_FONT else None
+        colours = tuple(titleart.parse_colour(v.get()) for v in self._gm_colour_vars)
+        glow = titleart.parse_colour(self._gm_glow_colour_var.get()) if self._gm_glow_var.get() else None
+        return style, font, colours, glow
+
+    def _gm_look_args(self) -> list[str]:
+        """``--style`` and only what differs from it: ``--font``, ``--colours``, ``--glow``."""
+        from . import titleart
+
+        style, font, colours, glow = self._gm_title_look()
+        args = ["--style", style]
+        if font is not None:
+            args += ["--font", str(font)]
+        if colours != titleart.STYLES[style]:
+            args += ["--colours", ",".join(titleart.colour_text(c) for c in colours)]
+        if glow != titleart.GLOWS.get(style):
+            args += ["--glow", titleart.colour_text(glow) if glow else "none"]
+        return args
+
+    def _gm_preview_soon(self) -> None:
+        if getattr(self, "_gm_preview_label", None) is None:
+            return
+        if self._gm_preview_job is not None:
+            self.root.after_cancel(self._gm_preview_job)
+        self._gm_preview_job = self.root.after(150, self._gm_preview)
+
+    def _gm_preview(self) -> None:
+        """Draw the title as chosen, on half a dark and half a light background
+        (a picture has to read on both), into the preview."""
+        import base64
+        import io
+
+        from . import titleart
+
+        self._gm_preview_job = None
+        if not titleart.pillow_available():
+            self._gm_preview_label.configure(text="Previews need Pillow.", image="")
+            return
+        from PIL import Image
+
+        text = self._gm_preview_text_var.get().strip()
+        if not text:
+            text = (self._gm_system_var.get().strip() or "Your Wheel") if self._gm_target_var.get() == "logo" \
+                else "Sample Game Title"
+        try:
+            style, font, colours, glow = self._gm_title_look()
+            png = titleart.draw_title(text, style, titleart.DEFAULT_SIZE, font, colours=colours, glow=glow)
+        except titleart.TitleArtError as exc:
+            self._gm_preview_label.configure(text=str(exc), image="")
+            return
+        pic = Image.open(io.BytesIO(png)).convert("RGBA")
+        back = Image.new("RGBA", pic.size, (20, 26, 48, 255))
+        back.paste((150, 160, 176, 255), (pic.width // 2, 0, pic.width, pic.height))
+        back.alpha_composite(pic)
+        out = io.BytesIO()
+        back.convert("RGB").save(out, "PNG")
+        self._gm_preview_image = self.tk.PhotoImage(master=self.root,
+                                                    data=base64.b64encode(out.getvalue()).decode("ascii"))
+        self._gm_preview_label.configure(image=self._gm_preview_image, text="")
+
+    def _gm_wheel_pictures(self) -> None:
+        if self._gm_target_var.get() == "logo":
+            system = self._gm_system_var.get().strip()
+            if not system:
+                self._flash_validation("Pick the wheel in the sidebar: its Main Menu logo is drawn.")
+                return
+            args = ["--system", "Main Menu", "--game", system]
+        else:
+            args = self._gm_selection()
+            if args is None:
+                return
+        try:
+            look = self._gm_look_args()
+        except Exception as exc:  # noqa: BLE001 - a typed colour that isn't one
+            self._flash_validation(str(exc))
+            return
+        args = ["wheel-pictures"] + args + look
         if not self._gm_copy_var.get():
             args.append("--no-copy")
         if self._gm_hidden_var.get():

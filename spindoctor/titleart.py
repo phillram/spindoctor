@@ -160,6 +160,47 @@ def _first_font(names) -> Optional[Path]:
     return None
 
 
+def parse_colour(text: str) -> RGB:
+    """``#rrggbb``, ``rrggbb`` or ``#rgb`` as ``(r, g, b)``."""
+    value = text.strip().lstrip("#")
+    if len(value) == 3:
+        value = "".join(c * 2 for c in value)
+    try:
+        if len(value) != 6:
+            raise ValueError
+        return int(value[0:2], 16), int(value[2:4], 16), int(value[4:6], 16)
+    except ValueError:
+        raise TitleArtError(f"{text!r} isn't a colour: use #rrggbb, like #33ccff.") from None
+
+
+def colour_text(rgb: Sequence[int]) -> str:
+    return "#{:02x}{:02x}{:02x}".format(*rgb)
+
+
+@lru_cache(maxsize=1)
+def installed_fonts() -> dict[str, Path]:
+    """Every font in the PC's font folders, by the name it shows ("Bahnschrift",
+    "Segoe UI Black"), sorted; a font Pillow can't read goes by its file name."""
+    _need_pillow()
+    from PIL import ImageFont
+
+    found: dict[str, Path] = {}
+    for folder in _font_dirs():
+        try:
+            files = sorted(p for p in folder.iterdir() if p.suffix.lower() in (".ttf", ".otf", ".ttc"))
+        except OSError:
+            continue
+        for path in files:
+            try:
+                family, kind = ImageFont.truetype(str(path), 12).getname()
+                name = family if (kind or "").lower() in ("", "regular", "normal", "roman", "book") \
+                    else f"{family} {kind}"
+            except (OSError, ValueError):
+                name = path.stem
+            found.setdefault(name or path.stem, path)
+    return dict(sorted(found.items(), key=lambda kv: kv[0].casefold()))
+
+
 def find_font(name: str) -> Path:
     """The font file *name* stands for: a path to a ``.ttf``/``.otf``/``.ttc``,
     or the file name of one in the PC's font folders, with or without its
@@ -168,6 +209,10 @@ def find_font(name: str) -> Path:
     if path.is_file():
         return path
     stem = name.strip().lower()
+    if pillow_available():
+        for shown, file in installed_fonts().items():
+            if shown.lower() == stem:
+                return file
     for folder in _font_dirs():
         try:
             files = sorted(p for p in folder.iterdir() if p.suffix.lower() in (".ttf", ".otf", ".ttc"))
@@ -261,20 +306,30 @@ def _png(img) -> bytes:
 
 # ─── pictures ─────────────────────────────────────────────────────────────────
 
+RGB = tuple[int, int, int]
+
+
 def draw_title(title: str, style: str = DEFAULT_STYLE, size: tuple[int, int] = DEFAULT_SIZE,
-               font: Optional[Path] = None) -> bytes:
+               font: Optional[Path] = None, colours: Optional[Sequence[RGB]] = None,
+               glow: "RGB | str | None" = "style") -> bytes:
     """*title* as a transparent PNG of *size*: heavy letters in *style*'s
-    colours with a dark edge and a soft shadow."""
+    colours with a dark edge and a soft shadow, or a glow.  *colours* (top,
+    middle, bottom) replace the style's; *glow* is a colour, None for a
+    shadow, or "style" for the style's own."""
     _need_pillow()
     from PIL import Image, ImageDraw, ImageFilter
 
     if style not in STYLES:
         raise TitleArtError(f"Unknown style {style!r}: use {', '.join(STYLES)}.")
+    palette = tuple(tuple(c) for c in colours) if colours else STYLES[style]
+    if len(palette) != 3:
+        raise TitleArtError("Give three colours: top, middle and bottom.")
+    halo = GLOWS.get(style) if glow == "style" else glow
     text = title.upper()
     path = font_for(text, font)
     w, h = size[0] * _SCALE, size[1] * _SCALE
     margin = max(8, size[0] // 40) * _SCALE
-    if style in GLOWS:
+    if halo is not None:
         margin += round(h * 0.08)     # room for the glow, so the picture's edge doesn't cut it off
     lines, letter = layout(text, path, w - 2 * margin, h - 2 * margin, h * 0.62)
     face = _load(path, letter)
@@ -284,9 +339,9 @@ def draw_title(title: str, style: str = DEFAULT_STYLE, size: tuple[int, int] = D
 
     fill, outline = Image.new("L", (w, h), 0), Image.new("L", (w, h), 0)
     draw_fill, draw_edge = ImageDraw.Draw(fill), ImageDraw.Draw(outline)
-    colours = Image.new("RGBA", (w, h), STYLES[style][2] + (255,))
+    colours = Image.new("RGBA", (w, h), palette[2] + (255,))
     paint = ImageDraw.Draw(colours)
-    first, middle, last = STYLES[style]
+    first, middle, last = palette
     for i, line in enumerate(lines):
         y = top + i * step
         draw_edge.text((w / 2, y), line, font=face, fill=255, anchor="mm",
@@ -299,12 +354,12 @@ def draw_title(title: str, style: str = DEFAULT_STYLE, size: tuple[int, int] = D
             paint.line([(0, row), (w, row)],
                        fill=tuple(round(p + (q - p) * part) for p, q in zip(a, b)) + (255,))
     out = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-    if style in GLOWS:
+    if halo is not None:
         # A lit display: a coloured halo round the letters, strongest close in.
         for radius, strength in ((0.12, 2), (0.05, 3)):
-            halo = outline.filter(ImageFilter.GaussianBlur(letter * radius)).point(
+            glow_mask = outline.filter(ImageFilter.GaussianBlur(letter * radius)).point(
                 lambda v, s=strength: 0 if v * s < 16 else min(255, v * s))     # no faint tail to the edge
-            out.paste(GLOWS[style] + (255,), (0, 0), halo)
+            out.paste(tuple(halo) + (255,), (0, 0), glow_mask)
     else:
         shadow = outline.filter(ImageFilter.GaussianBlur(letter * 0.04)).point(lambda v: v * 3 // 4)
         out.paste((0, 0, 0, 255), (round(letter * 0.03), round(letter * 0.04)), shadow)

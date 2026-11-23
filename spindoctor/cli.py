@@ -7315,6 +7315,11 @@ def _parse_size(_ctx, _param, value):
 @click.option("--font", default=None,
               help="A .ttf or .otf file, or the name of one installed on this PC, like bahnschrift or impact "
                    "(default: a bold font from this PC).")
+@click.option("--colours", "--colors", "colours", default=None, metavar="TOP,MIDDLE,BOTTOM",
+              help="Your own letter colours, top to bottom, as #rrggbb (instead of the style's).")
+@click.option("--glow", default=None, metavar="COLOUR|none",
+              help="Glow round the letters in this #rrggbb colour, or none for the dark shadow "
+                   "(default: the style's).")
 @click.option("--size", callback=_parse_size, default=None, metavar="WIDTHxHEIGHT",
               help="Picture size (default: the usual size of that wheel's pictures, else 400x175).")
 @click.option("--show-hidden", is_flag=True,
@@ -7332,7 +7337,7 @@ def _parse_size(_ctx, _param, value):
                    "places (or stand-ins), and generate-media undo takes it out.")
 @click.option("--apply", "apply_changes", is_flag=True,
               help="Make the pictures, in a staging folder. Without it, only list them.")
-def generate_media_wheel(systems, all_systems, games, style, font, size, show_hidden, redraw, no_copy,
+def generate_media_wheel(systems, all_systems, games, style, font, colours, glow, size, show_hidden, redraw, no_copy,
                          count, stage_dir, verbose, overwrite, put_in_after, apply_changes):
     """Make wheel pictures for games that have none.
 
@@ -7343,14 +7348,15 @@ def generate_media_wheel(systems, all_systems, games, style, font, size, show_hi
     """
     from . import genmedia, titleart
 
-    if font:
-        try:
-            font_path = titleart.find_font(font)
-        except titleart.TitleArtError as exc:
-            err_console.print(f"[red]{escape(str(exc))}[/red]")
-            sys.exit(2)
-    else:
-        font_path = None
+    try:
+        font_path = titleart.find_font(font) if font else None
+        palette = [titleart.parse_colour(c) for c in colours.split(",")] if colours else None
+        if palette is not None and len(palette) != 3:
+            raise titleart.TitleArtError("--colours takes three colours: top, middle and bottom.")
+        halo = "style" if glow is None else (None if glow.strip().lower() == "none" else titleart.parse_colour(glow))
+    except titleart.TitleArtError as exc:
+        err_console.print(f"[red]{escape(str(exc))}[/red]")
+        sys.exit(2)
     config = _gen_config()
     states = _gen_states(config, systems, all_systems)
     local = None if no_copy else genmedia.LocalPictures(config)
@@ -7381,7 +7387,7 @@ def generate_media_wheel(systems, all_systems, games, style, font, size, show_hi
     with _make_progress(count=True) as prog:
         task = prog.add_task("Drawing…", total=len(jobs))
         errors = genmedia.make_wheel_pictures(
-            stage, jobs, style=style, size=size, font=font_path, config=config,
+            stage, jobs, style=style, size=size, font=font_path, config=config, colours=palette, glow=halo,
             progress=lambda n, _total, title: prog.update(task, completed=n, description=escape(title[:40])))
     stage.finish()
     _gen_staged(stage, errors, config=config, put_in=put_in_after, overwrite=overwrite)
@@ -7613,6 +7619,26 @@ def generate_media_placeholders(systems, all_systems, games, frontend, kind, bac
         sys.exit(1)
     stage.finish()
     _gen_staged(stage, errors, config=config, put_in=put_in_after)
+
+
+@generate_media_group.command("fonts")
+@click.option("--find", default="", help="Only fonts whose name has this in it.")
+def generate_media_fonts(find):
+    """List the fonts installed on this PC, by the name --font takes.
+
+    wheel-pictures --font accepts any of these names (or a font file).
+    """
+    from . import titleart
+
+    try:
+        fonts = titleart.installed_fonts()
+    except titleart.TitleArtError as exc:
+        err_console.print(f"[red]{escape(str(exc))}[/red]")
+        sys.exit(1)
+    shown = {name: path for name, path in fonts.items() if find.lower() in name.lower()}
+    for name, path in shown.items():
+        console.print(f"{escape(name)}  [dim]{escape(str(path))}[/dim]", highlight=False)
+    console.print(f"[dim]{len(shown)} of {len(fonts)} font(s).[/dim]")
 
 
 @generate_media_group.command("menu-video")

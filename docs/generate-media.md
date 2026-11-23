@@ -92,7 +92,17 @@ tell), in `--style chrome`, `gold` or `white`, or like a lit display: `lcd`
 colour instead of casting a shadow. `--font` takes a font file, or the name of
 one installed on the PC (`--font bahnschrift`, `--font impact`); without it a
 heavy font is picked. A wheel's Main Menu logo is drawn the same way:
-`--system "Main Menu" --game "<wheel>" --style vfd`.
+`--system "Main Menu" --game "<wheel>" --style vfd`. `--colours
+TOP,MIDDLE,BOTTOM` (`#rrggbb` each) replaces the style's letter colours, and
+`--glow #rrggbb` (or `--glow none`) its glow. `generate-media fonts` lists
+every font installed on the PC by the name `--font` takes (`--find bebas`
+narrows it).
+
+In the GUI, **2. Wheel pictures** is a small designer: draw the wheel's games
+or the wheel's own Main Menu logo; pick a style, any installed font (the list
+loads the first time it opens), your own top, middle and bottom colours and a
+glow; and see a preview of the wheel's name or any text, on half a dark and
+half a light background, before anything is made.
 
 With `wheels_only=true`, a game without a picture isn't on its wheel, and
 appears as soon as it gets one. Such games are left out unless you pass

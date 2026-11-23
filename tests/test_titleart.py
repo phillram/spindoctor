@@ -59,6 +59,47 @@ def test_lit_display_styles_glow_in_their_colour(style):
     assert not any(sum(abs(a - b) for a, b in zip(px[:3], glow)) < 120 for px in plain.getdata() if 20 < px[3] < 200)
 
 
+def test_own_colours_and_glow_override_the_style():
+    plain = _open(titleart.draw_title("Orbit Runner", "chrome", (400, 175)))
+    red = _open(titleart.draw_title("Orbit Runner", "chrome", (400, 175),
+                                    colours=[(255, 0, 0), (200, 0, 0), (120, 0, 0)]))
+    assert plain.tobytes() != red.tobytes()
+    reds = [px for px in red.getdata() if px[3] == 255 and px[0] > 100 and px[1] < 40 and px[2] < 40]
+    assert len(reds) > 1000
+    glowing = _open(titleart.draw_title("Orbit Runner", "chrome", (400, 175), glow=(0, 255, 0)))
+    assert sum(1 for px in glowing.getdata() if 20 < px[3] < 200 and px[1] > 150 and px[0] < 100) > 1000
+    unlit = titleart.draw_title("Orbit Runner", "vfd", (400, 175), glow=None)
+    assert unlit != titleart.draw_title("Orbit Runner", "vfd", (400, 175))
+    with pytest.raises(titleart.TitleArtError, match="three colours"):
+        titleart.draw_title("Orbit Runner", colours=[(0, 0, 0)])
+
+
+def test_colours_are_read_and_written():
+    assert titleart.parse_colour("#33ccff") == (51, 204, 255) == titleart.parse_colour("33CCFF")
+    assert titleart.parse_colour("#3cf") == (51, 204, 255)
+    assert titleart.colour_text((51, 204, 255)) == "#33ccff"
+    with pytest.raises(titleart.TitleArtError, match="isn't a colour"):
+        titleart.parse_colour("blue-ish")
+
+
+def test_installed_fonts_go_by_their_names(tmp_path, monkeypatch):
+    real = titleart.font_for("A")
+    if real is None or real.suffix.lower() != ".ttf":
+        pytest.skip("no TrueType font here to copy")
+    (tmp_path / "copy.ttf").write_bytes(real.read_bytes())
+    (tmp_path / "broken.ttf").write_bytes(b"not a font")
+    monkeypatch.setattr(titleart, "_font_dirs", lambda: [tmp_path])
+    titleart.installed_fonts.cache_clear()
+    try:
+        fonts = titleart.installed_fonts()
+        assert fonts["broken"] == tmp_path / "broken.ttf"           # unreadable: its file name
+        named = [n for n, p in fonts.items() if p == tmp_path / "copy.ttf"]
+        assert named and named[0] != "copy"                         # readable: the name it shows
+        assert titleart.find_font(named[0]) == tmp_path / "copy.ttf"
+    finally:
+        titleart.installed_fonts.cache_clear()
+
+
 def test_fonts_can_be_named(tmp_path, monkeypatch):
     for name in ("Fancy.TTF", "other.otf", "notes.txt"):
         (tmp_path / name).write_bytes(b"x")

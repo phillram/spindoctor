@@ -246,6 +246,7 @@ Make the wheel pictures, videos and screenshots a wheel is missing.
 
 Options: `--help`.
 
+- `generate-media fonts`: List the fonts installed on this PC, by the name --font takes. Options: `--find`, `--help`.
 - `generate-media list`: Show what each wheel is missing, judged the way HyperSpin looks for it. Options: `--system/-s`, `--all`, `--game/-g`, `--details`, `--json`, `--csv`, `--help`.
 - `generate-media menu-video`: Make a wheel's Main Menu video from its own game videos. Options: `--system/-s`, `--all`, `--game/-g`, `--count`, `--seconds`, `--stage-dir`, `--overwrite`, `--put-in`, `--apply`, `--help`.
 - `generate-media placeholders`: Make "No video found" placeholders for games with no video and no still. Options: `--system/-s`, `--all`, `--game/-g`, `--no-video-clip`, `--kind`, `--background`, `--text`, `--show-hidden`, `--redo`, `--stage-dir`, `--verbose/-v`, `--put-in`, `--apply`, `--help`.
@@ -254,7 +255,7 @@ Options: `--help`.
 - `generate-media remove`: Take placeholders (and drawn titles) out of HyperSpin's media again. Options: `--system/-s`, `--all`, `--game/-g`, `--kind`, `--apply`, `--help`.
 - `generate-media stages`: List the staged batches, newest first. Options: `--stage-dir`, `--help`.
 - `generate-media undo`: Take the last batch that was put in out of HyperSpin's media again. Options: `--apply`, `--help`.
-- `generate-media wheel-pictures`: Make wheel pictures for games that have none. Options: `--system/-s`, `--all`, `--game/-g`, `--style`, `--font`, `--size`, `--show-hidden`, `--redraw`, `--no-copy`, `--count`, `--stage-dir`, `--verbose/-v`, `--overwrite`, `--put-in`, `--apply`, `--help`.
+- `generate-media wheel-pictures`: Make wheel pictures for games that have none. Options: `--system/-s`, `--all`, `--game/-g`, `--style`, `--font`, `--colours/--colors`, `--glow`, `--size`, `--show-hidden`, `--redraw`, `--no-copy`, `--count`, `--stage-dir`, `--verbose/-v`, `--overwrite`, `--put-in`, `--apply`, `--help`.
 
 ## `ignore`
 

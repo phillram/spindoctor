@@ -4269,9 +4269,12 @@ def _genmedia_logic_app(monkeypatch, apply=False):
     values = {"system": "NES", "all": False, "games": "", "details": False, "style": "chrome",
               "copy": True, "hidden": False, "count": "5", "seconds": "35", "wait": "20", "settle": "40", "minutes": "30",
               "sound": True, "still": False, "crop": "auto", "kind": "clip", "background": "blue",
-              "stage": "", "press": "", "play": ""}
+              "stage": "", "press": "", "play": "", "target": "games", "font": "(heavy default)",
+              "glow": False, "glow_colour": "#00ffe2", "preview_text": ""}
     for name, value in values.items():
         setattr(app, "_gm_" + name + "_var", _Value(value))
+    app._gm_colour_vars = [_Value(c) for c in ("#ffffff", "#aacdf0", "#3c6ebe")]     # chrome's
+    app._gm_font_paths = {}
     app._gm_stage_names = []
     app._global_apply_var = _Value(apply)
     app._flash_validation = Mock()
@@ -4342,6 +4345,66 @@ def test_generate_media_replaces_existing_media_when_asked(monkeypatch):
     app._global_apply_var.set(False)
     app._gm_wheel_pictures()
     assert _genmedia_args(app)[-1] == "--overwrite"                  # the dry run shows what it would replace
+
+
+def test_generate_media_title_look_passes_only_what_differs_from_the_style(monkeypatch, tmp_path):
+    app = _genmedia_logic_app(monkeypatch, apply=True)
+    app._gm_wheel_pictures()
+    assert _genmedia_args(app) == ["wheel-pictures", "--system", "NES", "--style", "chrome", "--apply"]
+    # vfd with its own colours and glow: nothing more than the style.
+    app._gm_style_var.set("vfd")
+    for var, c in zip(app._gm_colour_vars, ("#d6fffa", "#4cecde", "#009caa")):
+        var.set(c)
+    app._gm_glow_var.set(True)
+    app._gm_glow_colour_var.set("#00ffe2")
+    app._gm_wheel_pictures()
+    assert _genmedia_args(app)[-3:] == ["--style", "vfd", "--apply"]
+    # Own colours, no glow, a font from the list.
+    app._gm_colour_vars[0].set("#FF0000")
+    app._gm_glow_var.set(False)
+    app._gm_font_paths = {"Bebas Neue": tmp_path / "BebasNeue.ttf"}
+    app._gm_font_var.set("Bebas Neue")
+    app._gm_wheel_pictures()
+    assert _genmedia_args(app) == ["wheel-pictures", "--system", "NES", "--style", "vfd",
+                                   "--font", str(tmp_path / "BebasNeue.ttf"),
+                                   "--colours", "#ff0000,#4cecde,#009caa", "--glow", "none", "--apply"]
+    # The wheel's own Main Menu logo.
+    app._gm_target_var.set("logo")
+    app._gm_style_var.set("chrome")
+    for var, c in zip(app._gm_colour_vars, ("#ffffff", "#aacdf0", "#3c6ebe")):
+        var.set(c)
+    app._gm_font_var.set("(heavy default)")
+    app._gm_wheel_pictures()
+    assert _genmedia_args(app) == ["wheel-pictures", "--system", "Main Menu", "--game", "NES",
+                                   "--style", "chrome", "--apply"]
+    app._gm_colour_vars[1].set("not a colour")
+    calls = app._run_cli.call_count
+    app._gm_wheel_pictures()
+    assert app._run_cli.call_count == calls and app._flash_validation.called
+
+
+def test_generate_media_title_designer_previews_and_lists_fonts(monkeypatch, tmp_path):
+    from spindoctor import titleart
+
+    if not titleart.pillow_available():
+        pytest.skip("previews need Pillow")
+    monkeypatch.setattr(titleart, "installed_fonts", lambda: {"Some Font": tmp_path / "some.ttf"})
+    app, _cfg = _test_page_app(monkeypatch, tmp_path, output_dir=str(tmp_path / "out"))
+    try:
+        app._select_page("Generate Media")
+        app._gm_style_var.set("neon")
+        app._gm_style_picked()
+        assert app._gm_glow_var.get() and app._gm_colour_vars[1].get() == titleart.colour_text(titleart.STYLES["neon"][1])
+        app._gm_preview_text_var.set("Handheld Electronic")
+        app._gm_preview()
+        assert str(app._gm_preview_label.cget("image")) and app._gm_preview_image.width() == 400
+        app._gm_load_fonts()
+        assert tuple(app._gm_font_box.cget("values")) == ("(heavy default)", "Some Font")
+        app._gm_colour_vars[0].set("nope")
+        app._gm_preview()
+        assert "isn't a colour" in str(app._gm_preview_label.cget("text"))
+    finally:
+        app.root.destroy()
 
 
 def test_generate_media_needs_a_system(monkeypatch):
