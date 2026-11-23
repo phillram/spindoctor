@@ -41,6 +41,15 @@ To skip the look first, `--put-in` on `wheel-pictures`, `record` or
 **Put each new batch in when it's made**). A long recording then ends with the
 videos on the wheel. The batch stays in staging, and `undo` takes it out.
 
+So each step is its own choice: without `--apply` a run only plans (what, and
+for `record` how long) and changes nothing; `--apply` makes into staging;
+`--apply --put-in` also puts it in. Only missing media is made and filled by
+default. `--overwrite` on `wheel-pictures`, `record`, `menu-video` or `put-in`
+also takes games that already have media and replaces it (GUI: tick **Replace
+media the games already have**): `wheel-pictures -g "Sega*" --overwrite` draws
+those games' titles again whatever they have. The old files are kept, and
+`undo` puts them back. Placeholders never replace media, even with it.
+
 Staging is `<output_dir>\generated-media`, or `~/.spindoctor/generated-media`
 without an `output_dir`; `--stage-dir` names another. Batches stay there after
 `put-in`: delete them by hand when you no longer want them.

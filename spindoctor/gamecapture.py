@@ -122,15 +122,18 @@ class CapturePlan:
         return len(self.plan.to_launch)
 
 
-def wants(game: GameState, video: bool) -> bool:
-    """Whether recording would fill a gap of *game*."""
+def wants(game: GameState, video: bool, overwrite: bool = False) -> bool:
+    """Whether recording would fill a gap of *game* (or, with *overwrite*,
+    replace what it has)."""
+    if overwrite:
+        return True
     if video:
         return game.video in ("no", "placeholder", "still")
     return game.video in ("no", "placeholder")
 
 
 def plan_capture(config: Config, states: list[WheelState], *, patterns=(), count: Optional[int] = None,
-                 video: bool = True, show_hidden: bool = False) -> CapturePlan:
+                 video: bool = True, show_hidden: bool = False, overwrite: bool = False) -> CapturePlan:
     """The games to record: those with no video (a still doesn't count as
     one), or with neither when only stills are wanted, games with nothing
     first.  *patterns* names games, which may then also be clones that play
@@ -150,7 +153,7 @@ def plan_capture(config: Config, states: list[WheelState], *, patterns=(), count
             continue
         picked = []
         for game in matching(state.games, patterns):
-            if not (wants(game, video) or (named and game.video == "parent")):
+            if not (wants(game, video, overwrite) or (named and game.video == "parent")):
                 continue
             if game.hidden and not show_hidden:
                 out.left_hidden += 1

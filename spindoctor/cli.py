@@ -7138,7 +7138,8 @@ def _gen_states(config: Config, systems, all_systems: bool) -> list:
     return [genmedia.wheel_state(config, w) for w in wheels]
 
 
-def _gen_staged(stage, errors: list, *, config: Optional[Config] = None, put_in: bool = False) -> None:
+def _gen_staged(stage, errors: list, *, config: Optional[Config] = None, put_in: bool = False,
+                overwrite: bool = False) -> None:
     """What was staged, and what to do with it; with *put_in*, put it in
     (as ``put-in --apply``: only empty places, and ``undo`` takes it out)."""
     for line in errors[:20]:
@@ -7158,8 +7159,9 @@ def _gen_staged(stage, errors: list, *, config: Optional[Config] = None, put_in:
     from . import genmedia
 
     try:
-        plan = genmedia.plan_put_in(config, stage)
-        result = genmedia.put_in(config, stage, plan) if any(p.action != "skip" for p in plan) else None
+        plan = genmedia.plan_put_in(config, stage, overwrite=overwrite)
+        result = (genmedia.put_in(config, stage, plan, overwrite=overwrite)
+                  if any(p.action != "skip" for p in plan) else None)
     except (genmedia.GenMediaError, OSError) as exc:
         err_console.print(f"[red]Not put in: {escape(str(exc))}[/red]")
         console.print(f"Put it in later: [cyan]spindoctor generate-media put-in \"{escape(stage.name)}\" --apply[/cyan]")
@@ -7323,13 +7325,15 @@ def _parse_size(_ctx, _param, value):
 @click.option("--count", type=click.IntRange(1), default=None, help="At most this many pictures.")
 @click.option("--stage-dir", type=click.Path(file_okay=False), default=None, help=_GEN_STAGE_HELP)
 @click.option("--verbose", "-v", is_flag=True, help="List every game.")
+@click.option("--overwrite", is_flag=True,
+              help="Also replace media the games already have (with --put-in, or later with put-in --overwrite). The old files are kept, and undo puts them back.")
 @click.option("--put-in", "put_in_after", is_flag=True,
               help="Put the batch into HyperSpin's media when it is made, as put-in --apply: only empty "
                    "places (or stand-ins), and generate-media undo takes it out.")
 @click.option("--apply", "apply_changes", is_flag=True,
               help="Make the pictures, in a staging folder. Without it, only list them.")
 def generate_media_wheel(systems, all_systems, games, style, font, size, show_hidden, redraw, no_copy,
-                         count, stage_dir, verbose, put_in_after, apply_changes):
+                         count, stage_dir, verbose, overwrite, put_in_after, apply_changes):
     """Make wheel pictures for games that have none.
 
     A picture already on the PC is reused when it is clearly the game's: its
@@ -7356,7 +7360,7 @@ def generate_media_wheel(systems, all_systems, games, style, font, size, show_hi
             console.print(f"[yellow]{escape(s.system)}:[/yellow] {escape(s.problem)}")
             continue
         more, left = genmedia.plan_wheel_pictures(s, games=games, show_hidden=show_hidden, redraw=redraw,
-                                                  local=local)
+                                                  local=local, overwrite=overwrite)
         jobs += more
         hidden += left
     jobs = jobs[:count] if count else jobs
@@ -7380,7 +7384,7 @@ def generate_media_wheel(systems, all_systems, games, style, font, size, show_hi
             stage, jobs, style=style, size=size, font=font_path, config=config,
             progress=lambda n, _total, title: prog.update(task, completed=n, description=escape(title[:40])))
     stage.finish()
-    _gen_staged(stage, errors, config=config, put_in=put_in_after)
+    _gen_staged(stage, errors, config=config, put_in=put_in_after, overwrite=overwrite)
     if errors and not stage.items and not titleart.pillow_available():
         sys.exit(1)
 
@@ -7413,14 +7417,16 @@ def generate_media_wheel(systems, all_systems, games, style, font, size, show_hi
 @click.option("--stage-dir", type=click.Path(file_okay=False), default=None, help=_GEN_STAGE_HELP)
 @click.option("--verbose", "-v", is_flag=True, help="List every picked game.")
 @click.option("--yes", "-y", is_flag=True, help="Don't ask before starting.")
+@click.option("--overwrite", is_flag=True,
+              help="Also replace media the games already have (with --put-in, or later with put-in --overwrite). The old files are kept, and undo puts them back.")
 @click.option("--put-in", "put_in_after", is_flag=True,
               help="Put the batch into HyperSpin's media when it is made, as put-in --apply: only empty "
                    "places (or stand-ins), and generate-media undo takes it out.")
 @click.option("--apply", "apply_changes", is_flag=True,
               help="Launch the games and record them. Without it, only list them.")
 def generate_media_record(systems, games, count, seconds, wait, settle, minutes, screenshots, no_sound, crop,
-                          presses, play, show_hidden, cleanup_mode, resume, stage_dir, verbose, yes, put_in_after,
-                          apply_changes):
+                          presses, play, show_hidden, cleanup_mode, resume, stage_dir, verbose, yes, overwrite,
+                          put_in_after, apply_changes):
     """Launch games and record the videos (or stills) a wheel is missing.
 
     Takes over the screen. Each game is launched through RocketLauncher, runs
@@ -7470,7 +7476,8 @@ def generate_media_record(systems, games, count, seconds, wait, settle, minutes,
             if not systems:
                 raise genmedia.GenMediaError("Name the wheel to record with --system.")
             plan = gamecapture.plan_capture(config, _gen_states(config, systems, False), patterns=games,
-                                            count=count, video=not screenshots, show_hidden=show_hidden)
+                                            count=count, video=not screenshots, show_hidden=show_hidden,
+                                            overwrite=overwrite)
             left = plan.games
     except (gamecapture.CaptureError, genmedia.GenMediaError) as exc:
         err_console.print(f"[red]{escape(str(exc))}[/red]")
@@ -7540,7 +7547,7 @@ def generate_media_record(systems, games, count, seconds, wait, settle, minutes,
     if not done.run.finished:
         console.print(f"Stopped early: {escape(done.halted or 'not every game was recorded')}. "
                       "[cyan]spindoctor generate-media record --resume --apply[/cyan] carries on.")
-    _gen_staged(stage, [], config=config, put_in=put_in_after)
+    _gen_staged(stage, [], config=config, put_in=put_in_after, overwrite=overwrite)
 
 
 @generate_media_group.command("placeholders")
@@ -7618,12 +7625,15 @@ def generate_media_placeholders(systems, all_systems, games, frontend, kind, bac
 @click.option("--seconds", type=click.FloatRange(2, 30), default=7.5, show_default=True,
               help="Seconds of each clip.")
 @click.option("--stage-dir", type=click.Path(file_okay=False), default=None, help=_GEN_STAGE_HELP)
+@click.option("--overwrite", is_flag=True,
+              help="Also replace media the games already have (with --put-in, or later with put-in --overwrite). The old files are kept, and undo puts them back.")
 @click.option("--put-in", "put_in_after", is_flag=True,
               help="Put the batch into HyperSpin's media when it is made, as put-in --apply: only empty "
                    "places (or stand-ins), and generate-media undo takes it out.")
 @click.option("--apply", "apply_changes", is_flag=True,
               help="Make them, in a staging folder. Without it, only list the clips.")
-def generate_media_menu_video(systems, all_systems, games, count, seconds, stage_dir, put_in_after, apply_changes):
+def generate_media_menu_video(systems, all_systems, games, count, seconds, stage_dir, overwrite, put_in_after,
+                              apply_changes):
     """Make a wheel's Main Menu video from its own game videos.
 
     HyperSpin plays Media\\Main Menu\\Video\\<wheel>.mp4 while that wheel is
@@ -7638,7 +7648,7 @@ def generate_media_menu_video(systems, all_systems, games, count, seconds, stage
     config = _gen_config()
     states = _gen_states(config, systems, all_systems)
     menu = genmedia.wheel_state(config, genmedia.MAIN_MENU)
-    jobs = [genmedia.plan_menu_video(menu, s, games=games, count=count) for s in states]
+    jobs = [genmedia.plan_menu_video(menu, s, games=games, count=count, overwrite=overwrite) for s in states]
     ready = [j for j in jobs if j.clips]
     for job in jobs:
         if job.clips:
@@ -7664,7 +7674,7 @@ def generate_media_menu_video(systems, all_systems, games, count, seconds, stage
         except (clips.ClipError, OSError) as exc:
             errors.append(f"{job.system}: {exc}")
     stage.finish()
-    _gen_staged(stage, errors, config=config, put_in=put_in_after)
+    _gen_staged(stage, errors, config=config, put_in=put_in_after, overwrite=overwrite)
 
 
 @generate_media_group.command("remove")
@@ -7743,9 +7753,12 @@ def generate_media_stages(stage_dir):
 @click.option("--all", "all_batches", is_flag=True,
               help="Every waiting batch at once. Each place gets the best file of them all: real media "
                    "over a stand-in, a video over a still, then the newest.")
+@click.option("--overwrite", is_flag=True,
+              help="Also replace media the games already have (not with placeholders). The old files are kept, "
+                   "and undo puts them back.")
 @click.option("--verbose", "-v", is_flag=True, help="List every file.")
 @click.option("--apply", "apply_changes", is_flag=True, help="Copy the files. Without it, only list them.")
-def generate_media_put_in(batch, systems, games, stage_dir, all_batches, verbose, apply_changes):
+def generate_media_put_in(batch, systems, games, stage_dir, all_batches, overwrite, verbose, apply_changes):
     """Copy a staged batch into HyperSpin's media (default: the newest waiting).
 
     Fills only places that are still empty or hold a placeholder; a drawn
@@ -7760,11 +7773,11 @@ def generate_media_put_in(batch, systems, games, stage_dir, all_batches, verbose
         if batch:
             err_console.print("[red]Give a batch or --all, not both.[/red]")
             sys.exit(2)
-        _gen_put_in_all(config, systems, games, stage_dir, verbose, apply_changes)
+        _gen_put_in_all(config, systems, games, stage_dir, verbose, apply_changes, overwrite)
         return
     try:
         stage = genmedia.find_stage(genmedia.stage_root(config, stage_dir or ""), batch)
-        plan = genmedia.plan_put_in(config, stage, systems=systems, games=games)
+        plan = genmedia.plan_put_in(config, stage, systems=systems, games=games, overwrite=overwrite)
     except genmedia.GenMediaError as exc:
         err_console.print(f"[red]{escape(str(exc))}[/red]")
         sys.exit(1)
@@ -7783,7 +7796,7 @@ def generate_media_put_in(batch, systems, games, stage_dir, all_batches, verbose
         _print_dry_run(False, "Nothing was copied.")
         return
     try:
-        result = genmedia.put_in(config, stage, plan)
+        result = genmedia.put_in(config, stage, plan, overwrite=overwrite)
     except (genmedia.GenMediaError, OSError) as exc:
         err_console.print(f"[red]{escape(str(exc))}[/red]")
         sys.exit(1)
@@ -7794,7 +7807,7 @@ def generate_media_put_in(batch, systems, games, stage_dir, all_batches, verbose
         console.print("[cyan]spindoctor generate-media undo --apply[/cyan] takes them out again.")
 
 
-def _gen_put_in_all(config, systems, games, stage_dir, verbose, apply_changes) -> None:
+def _gen_put_in_all(config, systems, games, stage_dir, verbose, apply_changes, overwrite=False) -> None:
     """``put-in --all``: every waiting batch, each place given the best file."""
     from . import genmedia
 
@@ -7804,7 +7817,7 @@ def _gen_put_in_all(config, systems, games, stage_dir, verbose, apply_changes) -
         console.print(f"Nothing is waiting to be put in ({escape(str(root))}).")
         return
     try:
-        plans = genmedia.plan_put_in_all(config, stages, systems=systems, games=games)
+        plans = genmedia.plan_put_in_all(config, stages, systems=systems, games=games, overwrite=overwrite)
     except genmedia.GenMediaError as exc:
         err_console.print(f"[red]{escape(str(exc))}[/red]")
         sys.exit(1)
@@ -7826,7 +7839,7 @@ def _gen_put_in_all(config, systems, games, stage_dir, verbose, apply_changes) -
         return
     try:
         result = genmedia.put_in_many(config, plans, source_dir=root, label=f"generate-media: {len(plans)} batches",
-                                      mark_all=not (systems or games))
+                                      mark_all=not (systems or games), overwrite=overwrite)
     except (genmedia.GenMediaError, OSError) as exc:
         err_console.print(f"[red]{escape(str(exc))}[/red]")
         sys.exit(1)

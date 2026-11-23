@@ -357,17 +357,18 @@ class LocalPictures:
 
 def plan_wheel_pictures(
     state: WheelState, *, games: Iterable[str] = (), show_hidden: bool = False, redraw: bool = False,
-    local: Optional[LocalPictures] = None,
+    local: Optional[LocalPictures] = None, overwrite: bool = False,
 ) -> tuple[list[DrawJob], int]:
     """``(jobs, left hidden)`` for one wheel.
 
     A game that isn't on the wheel because it has no picture would appear once
     it gets one, so it is left out unless *show_hidden*.  *redraw* makes drawn
-    titles again (another style); real pictures are never made again."""
+    titles again (another style); real pictures are made again only with
+    *overwrite*, which draws every game asked for."""
     jobs: list[DrawJob] = []
     kept_hidden = 0
     for game in matching(state.games, games):
-        if game.wheel == "yes" or (game.wheel == "drawn" and not redraw):
+        if not overwrite and (game.wheel == "yes" or (game.wheel == "drawn" and not redraw)):
             continue
         if game.hidden and not show_hidden:
             kept_hidden += 1
@@ -668,7 +669,7 @@ def _video_file(state: WheelState, game: GameState, index: placeholders.Placehol
 
 
 def plan_menu_video(menu: WheelState, state: WheelState, games: Iterable[str] = (),
-                    count: int = MENU_CLIPS) -> MenuVideoJob:
+                    count: int = MENU_CLIPS, overwrite: bool = False) -> MenuVideoJob:
     """Which of *state*'s own videos make its Main Menu video: the games named
     (name or title, ``*`` and ``?``) in the order given, else *count* spread
     evenly over the wheel.  Stills, placeholders and parents' videos don't
@@ -678,7 +679,7 @@ def plan_menu_video(menu: WheelState, state: WheelState, games: Iterable[str] = 
     entry = next((g for g in menu.games if g.name.lower() == state.system.lower()), None)
     if entry is None:
         job.why = "it isn't on the Main Menu"
-    elif entry.video in ("yes", "still"):
+    elif entry.video in ("yes", "still") and not overwrite:
         job.why = "the Main Menu has a video for it already"
     elif menu.video_problem or state.problem or state.video_problem:
         job.why = menu.video_problem or state.problem or state.video_problem
@@ -727,7 +728,7 @@ class PutIn:
 
 
 def plan_put_in(config: Config, stage: Stage, *, systems: Iterable[str] = (),
-                games: Iterable[str] = ()) -> list[PutIn]:
+                games: Iterable[str] = (), overwrite: bool = False) -> list[PutIn]:
     """What each staged file would do now.  A place filled since it was made
     is skipped."""
     wanted = {s.strip().lower() for s in systems}
@@ -753,11 +754,16 @@ def plan_put_in(config: Config, stage: Stage, *, systems: Iterable[str] = (),
         if item.system not in states:
             states[item.system] = wheel_state(config, item.system)
             by_name[item.system] = {g.name: g for g in states[item.system].games}
-        out.append(_place(states[item.system], by_name[item.system].get(item.game), item, source))
+        out.append(_place(states[item.system], by_name[item.system].get(item.game), item, source, overwrite))
     return out
 
 
-def _place(state: WheelState, game: Optional[GameState], item: StageItem, source: Path) -> PutIn:
+# Placeholders stand in for nothing; they never replace media, even with --overwrite.
+PLACEHOLDER_KINDS = ("clip", "picture")
+
+
+def _place(state: WheelState, game: Optional[GameState], item: StageItem, source: Path,
+           overwrite: bool = False) -> PutIn:
     def skip(why: str) -> PutIn:
         return PutIn(item, source, target, "skip", why)
 
@@ -767,18 +773,24 @@ def _place(state: WheelState, game: Optional[GameState], item: StageItem, source
     if game is None:
         return skip("the game isn't on the wheel any more")
     standin = item.kind in STANDIN_KINDS
+    replace_real = overwrite and item.kind not in PLACEHOLDER_KINDS
     if item.media == "wheel":
         if game.wheel == "yes":
-            return skip("it has a wheel picture now")
+            if replace_real and target.is_file():
+                return PutIn(item, source, target, "replace", "replaces its wheel picture (kept for undo)")
+            return skip("it has a wheel picture now" if not replace_real
+                        else "its wheel picture has another name or type; replace it by hand")
         if game.wheel == "drawn" and standin and _newer_there(source, target):
             return skip("a newer drawn picture is there")
         return PutIn(item, source, target, "replace" if game.wheel == "drawn" else "new")
     if state.video_problem:
         return skip(state.video_problem)
-    if game.video == "yes":
-        return skip("it has a video now")
-    if game.video == "still" and item.media == "still":
-        return skip("it has a still picture now")
+    if game.video == "yes" or (game.video == "still" and item.media == "still"):
+        if replace_real and target.is_file():
+            return PutIn(item, source, target, "replace", "replaces its video (kept for undo)")
+        if replace_real:
+            return skip("its video has another name or type; replace it by hand")
+        return skip("it has a video now" if game.video == "yes" else "it has a still picture now")
     if standin and game.video in ("still", "parent"):
         return skip("it has a still picture now" if game.video == "still" else "it plays its parent's video")
     if game.video == "placeholder" and standin and _newer_there(source, target):
@@ -822,13 +834,14 @@ def waiting_files(root: Path) -> dict[tuple[str, str, str], str]:
 
 
 def plan_put_in_all(config: Config, stages: Iterable[Stage], *, systems: Iterable[str] = (),
-                    games: Iterable[str] = ()) -> list[tuple[Stage, list[PutIn]]]:
+                    games: Iterable[str] = (), overwrite: bool = False) -> list[tuple[Stage, list[PutIn]]]:
     """Each batch's plan, with every place given the best of all the batches'
     files for it (see :func:`_better`); the others are left out, naming the
     batch whose file goes in.  So the order batches were made or put in no
     longer matters.  HyperSpin's own No Video clip goes in by itself."""
     systems, games = list(systems), list(games)
-    plans = [(stage, plan_put_in(config, stage, systems=systems, games=games)) for stage in stages]
+    plans = [(stage, plan_put_in(config, stage, systems=systems, games=games, overwrite=overwrite))
+             for stage in stages]
     best: dict[tuple[str, str, str], tuple[tuple, PutIn, Stage]] = {}
     for stage, plan in plans:
         for p in plan:
@@ -846,16 +859,18 @@ def plan_put_in_all(config: Config, stages: Iterable[Stage], *, systems: Iterabl
     return plans
 
 
-def put_in(config: Config, stage: Stage, plan: list[PutIn], manifest_dir: Optional[Path] = None):
+def put_in(config: Config, stage: Stage, plan: list[PutIn], manifest_dir: Optional[Path] = None,
+           overwrite: bool = False):
     """Copy the planned files into HyperSpin's media.  Returns ``media-scan``'s
     :class:`~spindoctor.media_scan.ImportResult`; ``media-scan --undo`` (or
     :func:`undo_put_in`) takes the files out again and puts replaced ones back."""
     return put_in_many(config, [(stage, plan)], manifest_dir=manifest_dir,
-                       source_dir=stage.folder, label=f"generate-media: {stage.name}")
+                       source_dir=stage.folder, label=f"generate-media: {stage.name}", overwrite=overwrite)
 
 
 def put_in_many(config: Config, plans: list[tuple[Stage, list[PutIn]]], *, manifest_dir: Optional[Path] = None,
-                source_dir: Optional[Path] = None, label: str = "generate-media", mark_all: bool = False):
+                source_dir: Optional[Path] = None, label: str = "generate-media", mark_all: bool = False,
+                overwrite: bool = False):
     """:func:`put_in` for several batches at once (from :func:`plan_put_in_all`),
     as one step that one undo takes back.  Batches a file came from are marked
     put in; with *mark_all*, every batch is, as long as anything went in (its
@@ -877,7 +892,8 @@ def put_in_many(config: Config, plans: list[tuple[Stage, list[PutIn]]], *, manif
     # Only HyperSpin's own clip may replace a file that isn't a stand-in.
     if frontend and len(report.matched) > 1:
         raise GenMediaError("HyperSpin's own No Video clip is put in by itself.")
-    result = import_media(report, config, action="copy", overwrite=frontend, manifest_dir=manifest_dir,
+    # With *overwrite* the plan's replacements of real media go ahead: import_media backs each up for undo.
+    result = import_media(report, config, action="copy", overwrite=frontend or overwrite, manifest_dir=manifest_dir,
                           label=label)
     marks: dict[Path, list[placeholders.Placeholder]] = {}
     came_from: dict[Path, Stage] = {}

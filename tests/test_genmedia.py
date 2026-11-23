@@ -451,6 +451,49 @@ def test_put_in_all_command(cabinet):
     assert "waiting" in _run("stages").output
 
 
+def test_overwrite_replaces_real_media_and_undo_brings_it_back(cabinet):
+    folder = cabinet.media_dir / "NES" / "Images" / "Wheel"
+    real = (folder / "Alpha.png").read_bytes()
+    assert "0 wheel picture(s) to make" in _run("wheel-pictures", "-s", "NES", "-g", "alpha").output
+    plan = _run("wheel-pictures", "-s", "NES", "-g", "alpha", "--no-copy", "--overwrite").output
+    assert "1 wheel picture(s) to make" in plan and "DRY RUN" in plan
+    _run("wheel-pictures", "-s", "NES", "-g", "alpha", "--no-copy", "--overwrite", "--apply")
+    stage = genmedia.find_stage(genmedia.stage_root(cabinet))
+    assert {p.why for p in genmedia.plan_put_in(cabinet, stage)} == {"it has a wheel picture now"}
+    assert [p.action for p in genmedia.plan_put_in(cabinet, stage, overwrite=True)] == ["replace"]
+    assert "1 file(s) put in" in _run("put-in", stage.name, "--overwrite", "--apply").output
+    assert (folder / "Alpha.png").read_bytes() != real and placeholders.is_placeholder(folder / "Alpha.png")
+    assert "1 file(s) undone" in _run("undo", "--apply").output
+    assert (folder / "Alpha.png").read_bytes() == real
+
+
+def test_with_put_in_and_overwrite_a_run_replaces_as_it_ends(cabinet):
+    folder = cabinet.media_dir / "NES" / "Images" / "Wheel"
+    real = (folder / "Alpha.png").read_bytes()
+    out = _run("wheel-pictures", "-s", "NES", "-g", "alpha", "--no-copy", "--overwrite", "--put-in", "--apply").output
+    assert "1 file(s) put in" in out and (folder / "Alpha.png").read_bytes() != real
+
+
+def test_placeholders_never_replace_real_media_even_with_overwrite(cabinet):
+    stage = _stage(cabinet)
+    stage.add(stage.new_item("NES", "Alpha", "Alpha", "video", "clip", "Alpha", ".mp4"), data=b"No video found")
+    stage.finish()
+    (p,) = genmedia.plan_put_in(cabinet, stage, overwrite=True)
+    assert p.action == "skip" and p.why == "it has a video now"
+
+
+def test_a_dry_run_with_overwrite_changes_nothing_anywhere(cabinet, monkeypatch):
+    monkeypatch.setattr(clips, "find_tools", lambda config: FakeTools())
+    _file(cabinet.media_dir / "NES" / "Video" / "Charlie.mp4")
+    root = Path(cabinet.hyperspin_dir).parent
+    before = sorted((str(p), p.stat().st_mtime_ns) for p in root.rglob("*") if p.is_file())
+    for args in (("wheel-pictures", "-s", "NES", "--overwrite"), ("menu-video", "-s", "NES", "--overwrite"),
+                 ("placeholders", "-s", "NES"), ("put-in", "--all", "--overwrite")):
+        _run(*args)
+    after = sorted((str(p), p.stat().st_mtime_ns) for p in root.rglob("*") if p.is_file())
+    assert after == before and not genmedia.stage_root(cabinet).exists()
+
+
 def test_a_copied_picture_is_real_media(cabinet):
     jobs, _h = genmedia.plan_wheel_pictures(_state(cabinet), games=["Delta"],
                                             local=genmedia.LocalPictures(cabinet))
@@ -657,6 +700,7 @@ def test_menu_video_picks_the_wheels_own_clips(cabinet):
     _file(cabinet.media_dir / "Main Menu" / "Video" / "NES.mp4")
     menu = _state(cabinet, genmedia.MAIN_MENU)
     assert genmedia.plan_menu_video(menu, _state(cabinet)).why == "the Main Menu has a video for it already"
+    assert len(genmedia.plan_menu_video(menu, _state(cabinet), overwrite=True).clips) == 2     # made again
 
 
 def test_menu_video_spreads_its_clips_over_the_wheel(cabinet):

@@ -124,7 +124,7 @@ def _write(path: Path, entries: Iterable[Placeholder]) -> None:
             for e in sorted(entries, key=lambda e: e.name.casefold())]
     data = {
         "about": "Files SpinDoctor made to stand in for missing media. Missing-media reports "
-                 "still count these games. `spindoctor generate-media placeholders --remove` "
+                 "still count these games. `spindoctor generate-media remove --apply` "
                  "deletes them.",
         "files": rows,
     }

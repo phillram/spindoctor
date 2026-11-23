@@ -4328,6 +4328,22 @@ def test_generate_media_puts_each_batch_in_when_asked(monkeypatch):
     assert "--put-in" not in _genmedia_args(app)                     # a dry run puts nothing in
 
 
+def test_generate_media_replaces_existing_media_when_asked(monkeypatch):
+    app = _genmedia_logic_app(monkeypatch, apply=True)
+    app._gm_overwrite_var = _Value(True)
+    app._gm_wheel_pictures()
+    assert _genmedia_args(app)[-2:] == ["--overwrite", "--apply"]
+    app._gm_menu_video()
+    assert _genmedia_args(app) == ["menu-video", "--system", "NES", "--overwrite", "--apply"]
+    app._gm_put_in_all()
+    assert _genmedia_args(app) == ["put-in", "--all", "--overwrite", "--apply"]
+    app._gm_placeholders()
+    assert "--overwrite" not in _genmedia_args(app)                  # placeholders never replace media
+    app._global_apply_var.set(False)
+    app._gm_wheel_pictures()
+    assert _genmedia_args(app)[-1] == "--overwrite"                  # the dry run shows what it would replace
+
+
 def test_generate_media_needs_a_system(monkeypatch):
     app = _genmedia_logic_app(monkeypatch)
     app._gm_system_var.set("")

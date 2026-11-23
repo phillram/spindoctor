@@ -187,6 +187,8 @@ def test_only_games_missing_a_video_are_planned(tmp_path, home):
     assert [g.game for g in _plan(cfg, video=False).plan.games] == ["Charlie", "Missing"]
     assert [g.game for g in _plan(cfg, count=1).plan.games] == ["Charlie"]
     assert [g.game for g in _plan(cfg, patterns=["b*"]).plan.games] == ["Bravo"]
+    # --overwrite records games that have a video too.
+    assert "Alpha" in [g.game for g in _plan(cfg, overwrite=True).plan.games]
 
 
 def test_wheels_rocketlauncher_cant_launch_are_named(tmp_path, home):

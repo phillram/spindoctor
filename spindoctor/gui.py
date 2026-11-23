@@ -13033,6 +13033,10 @@ class _SpinDoctorGUI:
         self._gm_putin_var = self.tk.BooleanVar(value=False)
         self.ttk.Checkbutton(box, text="Put each new batch in when it's made (pictures, recordings, placeholders, Main Menu videos)",
                              variable=self._gm_putin_var).pack(anchor="w", padx=6)
+        self._gm_overwrite_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(box, text="Replace media the games already have (not with placeholders; Undo last puts "
+                                       "the old files back)",
+                             variable=self._gm_overwrite_var).pack(anchor="w", padx=6)
         self._help_text(
             box,
             text="All waiting: every batch not put in yet, at once. Each game gets the best file of them all "
@@ -13082,6 +13086,9 @@ class _SpinDoctorGUI:
         if (live and args[1] in ("wheel-pictures", "record", "placeholders", "menu-video")
                 and putin is not None and putin.get()):
             args.append("--put-in")
+        overwrite = getattr(self, "_gm_overwrite_var", None)
+        if args[1] in ("wheel-pictures", "record", "menu-video", "put-in") and overwrite is not None and overwrite.get():
+            args.append("--overwrite")      # a dry run shows what it would replace, too
         if live:
             args.append("--apply")
         if recording:
