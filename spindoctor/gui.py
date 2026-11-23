@@ -12885,9 +12885,9 @@ class _SpinDoctorGUI:
         self._help_text(
             frame,
             text=("Finds what a wheel is missing the way HyperSpin looks for it, and makes it on this PC: "
-                  "no internet, no artwork service. With Apply changes off, what each button makes waits in "
-                  "a staging folder to look at, and Put in copies it later. With it on, it goes into "
-                  "HyperSpin too, filling only empty places; Undo last takes it out again."),
+                  "no internet, no artwork service. Everything made waits in a staging folder; nothing "
+                  "goes into HyperSpin before Put in, which fills only empty places and can be undone. "
+                  "With Apply changes off, each button only lists what it would do."),
         ).pack(fill="x", pady=(0, 4))
 
         pick = self.ttk.LabelFrame(frame, text="1. What is missing")
@@ -13030,6 +13030,13 @@ class _SpinDoctorGUI:
         self._gm_put_all_btn = self.ttk.Button(row, command=self._gm_put_in_all)
         self._gm_put_all_btn.pack(side="left", padx=(6, 0))
         self.ttk.Button(row, text="Undo last", command=self._gm_undo).pack(side="left", padx=6)
+        self._gm_putin_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(box, text="Put each new batch in when it's made (pictures, recordings, placeholders, Main Menu videos)",
+                             variable=self._gm_putin_var).pack(anchor="w", padx=6)
+        self._gm_overwrite_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(box, text="Replace media the games already have (not with placeholders; Undo last puts "
+                                       "the old files back)",
+                             variable=self._gm_overwrite_var).pack(anchor="w", padx=6)
         self._help_text(
             box,
             text="All waiting: every batch not put in yet, at once. Each game gets the best file of them all "
@@ -13045,10 +13052,10 @@ class _SpinDoctorGUI:
 
     def _gm_label_buttons(self) -> None:
         apply = bool(self._global_apply_var.get())
-        for button, show, do in ((self._gm_wheel_btn, "Make wheel pictures", "Make + put in wheel pictures"),
-                                 (self._gm_record_btn, "Record games", "Record + put in"),
-                                 (self._gm_menu_btn, "Make Main Menu video", "Make + put in Main Menu video"),
-                                 (self._gm_holder_btn, "Make placeholders", "Make + put in placeholders"),
+        for button, show, do in ((self._gm_wheel_btn, "Show wheel pictures", "Make wheel pictures"),
+                                 (self._gm_record_btn, "Show games to record", "Record games"),
+                                 (self._gm_menu_btn, "Show Main Menu video clips", "Make Main Menu video"),
+                                 (self._gm_holder_btn, "Show placeholders", "Make placeholders"),
                                  (self._gm_put_btn, "Show what goes in", "Put in"),
                                  (self._gm_put_all_btn, "Show all waiting", "Put in all waiting")):
             button.configure(text=do if apply else show)
@@ -13075,12 +13082,18 @@ class _SpinDoctorGUI:
         """Run ``spindoctor generate-media``, with ``--apply`` when it is on."""
         args = ["generate-media"] + args
         live = apply and bool(self._global_apply_var.get())
+        putin = getattr(self, "_gm_putin_var", None)
+        if (live and args[1] in ("wheel-pictures", "record", "placeholders", "menu-video")
+                and putin is not None and putin.get()):
+            args.append("--put-in")
+        overwrite = getattr(self, "_gm_overwrite_var", None)
+        if args[1] in ("wheel-pictures", "record", "menu-video", "put-in") and overwrite is not None and overwrite.get():
+            args.append("--overwrite")      # a dry run shows what it would replace, too
         if live:
             args.append("--apply")
         if recording:
             # Stop then asks the run to close its game first, as for a test run.
-            # Recording launches games with Apply off too: it only stages them then.
-            self._test_run_active = True
+            self._test_run_active = live
         if not self._run_cli("spindoctor", args, on_complete=self._gm_done) and recording:
             self._test_run_active = False
 
@@ -13136,16 +13149,18 @@ class _SpinDoctorGUI:
         args = self._gm_record_args()
         if args is None:
             return
-        if not self._gm_confirm_recording():     # it takes over the screen, Apply on or off
-            return
-        args.append("--yes")
+        if self._global_apply_var.get():
+            if not self._gm_confirm_recording():
+                return
+            args.append("--yes")
         self._gm_run(args, recording=True)
 
     def _gm_resume(self) -> None:
         args = ["record", "--resume"]
-        if not self._gm_confirm_recording():     # it takes over the screen, Apply on or off
-            return
-        args.append("--yes")
+        if self._global_apply_var.get():
+            if not self._gm_confirm_recording():
+                return
+            args.append("--yes")
         self._gm_run(args, recording=True)
 
     def _gm_confirm_recording(self) -> bool:

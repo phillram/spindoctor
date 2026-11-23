@@ -4307,18 +4307,41 @@ def test_generate_media_pictures_and_list(monkeypatch):
     assert not app._test_run_active
 
 
-def test_generate_media_apply_makes_and_puts_in_without_it_only_makes(monkeypatch):
+def test_generate_media_puts_each_batch_in_when_asked(monkeypatch):
     app = _genmedia_logic_app(monkeypatch, apply=True)
+    app._gm_putin_var = _Value(True)
     app._gm_wheel_pictures()
-    assert _genmedia_args(app)[-1] == "--apply" and "--put-in" not in _genmedia_args(app)
+    assert _genmedia_args(app)[-2:] == ["--put-in", "--apply"]
+    app._gm_placeholders()
+    assert _genmedia_args(app)[-2:] == ["--put-in", "--apply"]
+    app.messagebox.askyesno.return_value = True
+    app._gm_record()
+    assert _genmedia_args(app)[-3:] == ["--yes", "--put-in", "--apply"]
+    app._gm_resume()
+    assert _genmedia_args(app) == ["record", "--resume", "--yes", "--put-in", "--apply"]
     app._gm_menu_video()
-    assert _genmedia_args(app) == ["menu-video", "--system", "NES", "--apply"]
+    assert _genmedia_args(app) == ["menu-video", "--system", "NES", "--put-in", "--apply"]
     app._gm_put_in_all()
-    assert _genmedia_args(app) == ["put-in", "--all", "--apply"]
+    assert _genmedia_args(app) == ["put-in", "--all", "--apply"]    # never for put-in itself
     app._global_apply_var.set(False)
-    for action in (app._gm_wheel_pictures, app._gm_placeholders, app._gm_menu_video):
-        action()
-        assert "--apply" not in _genmedia_args(app)        # made into staging only
+    app._gm_wheel_pictures()
+    assert "--put-in" not in _genmedia_args(app)                     # a dry run puts nothing in
+
+
+def test_generate_media_replaces_existing_media_when_asked(monkeypatch):
+    app = _genmedia_logic_app(monkeypatch, apply=True)
+    app._gm_overwrite_var = _Value(True)
+    app._gm_wheel_pictures()
+    assert _genmedia_args(app)[-2:] == ["--overwrite", "--apply"]
+    app._gm_menu_video()
+    assert _genmedia_args(app) == ["menu-video", "--system", "NES", "--overwrite", "--apply"]
+    app._gm_put_in_all()
+    assert _genmedia_args(app) == ["put-in", "--all", "--overwrite", "--apply"]
+    app._gm_placeholders()
+    assert "--overwrite" not in _genmedia_args(app)                  # placeholders never replace media
+    app._global_apply_var.set(False)
+    app._gm_wheel_pictures()
+    assert _genmedia_args(app)[-1] == "--overwrite"                  # the dry run shows what it would replace
 
 
 def test_generate_media_needs_a_system(monkeypatch):
@@ -4334,12 +4357,11 @@ def test_generate_media_needs_a_system(monkeypatch):
 
 def test_generate_media_recording_asks_first_and_stops_like_a_test_run(monkeypatch):
     app = _genmedia_logic_app(monkeypatch)
-    app._gm_record()                # Apply off records too (into staging), so it asks as well
+    app._gm_record()
     assert _genmedia_args(app) == ["record", "--system", "NES", "--count", "5", "--seconds", "35",
-                                   "--wait", "20", "--settle", "40", "--minutes", "30", "--crop", "auto", "--yes"]
-    app.messagebox.askyesno.assert_called_once()
-    assert app._test_run_active
-    app._test_run_active = False
+                                   "--wait", "20", "--settle", "40", "--minutes", "30", "--crop", "auto"]
+    app.messagebox.askyesno.assert_not_called()
+    assert not app._test_run_active
     app._global_apply_var.set(True)
     app.messagebox.askyesno.return_value = False
     calls = app._run_cli.call_count
@@ -4366,7 +4388,7 @@ def test_generate_media_recording_passes_keys_for_games_that_wait_to_be_played(m
     app._gm_play_var.set("  Up Down A  ")
     app._gm_record()
     args = _genmedia_args(app)
-    assert args[-9:] == ["--press", "2:5", "--press", "3:1", "--play", "Up Down A", "--crop", "auto", "--yes"]
+    assert args[-8:] == ["--press", "2:5", "--press", "3:1", "--play", "Up Down A", "--crop", "auto"]
 
 
 @pytest.mark.parametrize("name, bad", [("count", "0"), ("seconds", "4"), ("wait", "x"), ("settle", "601"),
@@ -4434,12 +4456,12 @@ def test_generate_media_page_buttons_follow_the_apply_switch(monkeypatch, tmp_pa
     app, _cfg = _test_page_app(monkeypatch, tmp_path, output_dir=str(tmp_path / "out"))
     try:
         app._select_page("Generate Media")
-        assert app._gm_record_btn.cget("text") == "Record games"
+        assert app._gm_record_btn.cget("text") == "Show games to record"
         app._global_apply_var.set(True)
-        assert app._gm_record_btn.cget("text") == "Record + put in"
+        assert app._gm_record_btn.cget("text") == "Record games"
         assert app._gm_put_btn.cget("text") == "Put in"
         assert app._gm_put_all_btn.cget("text") == "Put in all waiting"
-        assert app._gm_menu_btn.cget("text") == "Make + put in Main Menu video"
+        assert app._gm_menu_btn.cget("text") == "Make Main Menu video"
         app._global_apply_var.set(False)
         assert app._gm_put_all_btn.cget("text") == "Show all waiting"
         assert app._gm_stage_var.get() == ""
