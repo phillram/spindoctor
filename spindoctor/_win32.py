@@ -438,10 +438,23 @@ def press_keys(vks: list[int], hold_ms: int) -> None:
     _require()
     u = _user32()
     for vk in vks:
-        u.keybd_event(vk, u.MapVirtualKeyW(vk, 0) & 0xFF, 0, 0)
+        u.keybd_event(vk, u.MapVirtualKeyW(vk, 0) & 0xFF, key_flags(vk), 0)
     time.sleep(max(60, hold_ms) / 1000.0)
     for vk in reversed(vks):
-        u.keybd_event(vk, u.MapVirtualKeyW(vk, 0) & 0xFF, 2, 0)  # KEYEVENTF_KEYUP
+        u.keybd_event(vk, u.MapVirtualKeyW(vk, 0) & 0xFF, key_flags(vk) | 2, 0)  # KEYEVENTF_KEYUP
+
+
+# Keys whose scan code has the E0 prefix.  Without KEYEVENTF_EXTENDEDKEY a game
+# reading DirectInput (MAME, for one) sees the arrows, Home, End, Page Up/Down,
+# Insert and Delete as the number pad's keys, and right Ctrl/Alt as the left ones.
+_EXTENDED_VKS = frozenset({0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x2D, 0x2E,
+                           0x5B, 0x5C, 0x6F, 0x90, 0xA3, 0xA5})
+
+
+def key_flags(vk: int) -> int:
+    """``keybd_event``'s flags for pressing *vk*: KEYEVENTF_EXTENDEDKEY (1) for
+    the keys in :data:`_EXTENDED_VKS`, else 0."""
+    return 1 if vk in _EXTENDED_VKS else 0
 
 
 def type_keys(vks: list[int]) -> None:
