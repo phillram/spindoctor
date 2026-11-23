@@ -9,6 +9,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Added
 
 - **`generate-media record` can hold keys together: `--press 2:Left+R`, `--play "Up Left+A"`.** Some handheld games only begin when Start is pressed while a direction is held (Coleco's Head to Head games), and `--press` and `--play` pressed one key at a time, so those games stood still and became stills. Keys joined with `+` are now held down together, in both options and in the GUI's "Keys after it opens" and "Play with" fields; a key name that isn't a key is still refused before anything launches. Covered by `tests/test_gamecapture.py`.
+- **`generate-media record --keys-file` gives games their own keys** (GUI: "Games' own keys (file)"). A run pressed the same keys in every game, but handheld games each start their own way (Start while Left is held, Deal first, the shooter), so a wheel of them took one run per kind of game, and with the keys of all of them in `--play`, each game's own came up so seldom that many stood still and became stills. The file has one game per line, its name or title (`*` and `?` work), then `--press` and `--play` as on the command line; a listed game gets only its own keys, one with nothing after its name gets none, and the rest get the run's. A bad line is refused before anything launches, naming its line; the dry run says how many games get their own keys, and `--resume` keeps them. Covered by `tests/test_gamecapture.py` and `tests/test_gui.py`.
 
 ### Changed
 

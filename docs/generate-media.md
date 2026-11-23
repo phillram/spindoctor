@@ -157,6 +157,25 @@ many computer games) need keys:
 - Join keys with `+` to hold them together, in either option: `--press 6:Left+R`
   presses Start while Left is held, which Coleco's Head to Head games need to
   begin.
+- `--keys-file handheld-keys.txt` gives games their own keys, so one run can
+  record a whole wheel of games that each start differently. One game per line:
+  its name or title (`*` and `?` work; quote a title with spaces), then
+  `--press` and `--play` as on the command line. A listed game gets only its
+  own keys, one with nothing after its name gets none, and the rest get the
+  run's. `#` starts a comment:
+
+  ```text
+  # MAME's handhelds, with a control panel's keys (A-F buttons, R Start, S Select)
+  h2hhockey        --press 6:Left+R --play "Left Right A Left+R Right+R"  # Start while Left is held
+  "Computer Gin"   --press 2:D --play "A B C D"                           # Deal, then play
+  wildfire         --play "C A B"                                         # shooter, flippers
+  rzindy500        --press 6:R --press 8:R --play "Left Right Up A"
+  ```
+
+  MAME's own notes on a handheld (in its driver's source) often say how it
+  starts. If a game still doesn't start, press later (6 s rather than 2 s) and
+  put its start keys in `--play` too, where they are held longer. `--resume`
+  keeps the file's keys; the GUI's field is "Games' own keys (file)".
 
 Use the keys the games are set to (the control panel's, on a cabinet). The
 recorder's own key presses don't stop the run; arrow, Home, End, Page Up/Down,
