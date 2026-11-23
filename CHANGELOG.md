@@ -6,6 +6,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **`doctor` flags AHK keymapper hotkeys that RocketLauncher's menus switch off.** RocketLauncher turns its menu navigation keys (`[Navigation]` in `Settings\RocketLauncher.ini`: Up, Down, Left, Right, Select and the P2 set, each a `|` list that often includes panel letters such as `W`) into hotkeys with AutoHotkey's `Hotkey` command, on for a menu and off afterwards. An Internal keymapper profile is appended to the same script, so that replaces a plain hotkey of the same name: `w::` or `~w::` in a profile never fires, while `*w::` and remaps (`w::c`) still do. On a real cabinet a camera button did nothing until `w::` became `*w::`. A new **Keymapper hotkeys** check reads the game profiles under `Profiles\AHK` for systems whose `Keymapper_AHK_Method` is Internal and WARNs per wheel listing each such hotkey, its line and the setting it clashes with. Hotkeys in `#If` contexts and key combinations aren't counted; a wheel that's hidden or off the Main Menu is INFO. Diagnosis only. New `spindoctor/keymapper_hotkeys.py`. Covered by `tests/test_doctor_keymapper_hotkeys.py`.
+- **`doctor` flags Future Pinball when its scripting library isn't registered.** Table scripts run only if Future Pinball's own type library (`{FB22A459-4AD0-4CB3-B959-15158F7139F5}`, inside `Future Pinball.exe`) is registered with Windows, which a folder copied from another PC never is and running the program as a normal user doesn't add. The table then loads, draws and changes camera, but coin, start, flippers and displays do nothing. A new **Future Pinball scripting** check (Windows, when RocketLauncher has Future Pinball or BAM's loader) WARNs when `HKEY_CLASSES_ROOT\TypeLib` lacks it, or names a program that's gone; the fix is a `RegisterTypeLibForUser` snippet in `docs/troubleshooting.md` that needs no administrator rights. Covered by `tests/test_doctor_future_pinball.py`.
+
 ### Documentation
 
 - Refresh and shorten current guides, replace all GUI screenshots with the
