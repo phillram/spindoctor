@@ -15,6 +15,7 @@ Pip console scripts and source wrappers call the same implementations.
 | Configuration/discovery | `config`, `database`, `rocketlauncher`, `rl_rom_paths` |
 | Inspection/integrity | `audit`, `health`, `self_doctor`, `fileinfo`, `verify`, `romheaders` |
 | Metadata/media | `scraper`, `matcher`, `media`, `media_scan` |
+| Generated media | `genmedia` (gaps, staging, putting in), `titleart`, `clips`, `gamecapture`, `_loopback`, `placeholders` |
 | Editing/organization | `edit`, `mainmenu`, `wheel_start`, `organize`, `curate`, `misplaced` |
 | Smart wheels | `favorites`, `recent`, `playtime`, `medialink`, `_wheels` |
 | Backup/move/recovery | `backup`, `migrate`, `cleanup`, `_undo` |
@@ -37,6 +38,11 @@ ownership evidence, not just a PCLauncher directory.
 Bulk matching uses reusable normalized scoring and per-operation media snapshots.
 Do not persist a filesystem snapshot across writes. Metadata response caches
 hash full identities; preserved LEDBlinky library entries are not response caches.
+
+`gamecapture` records through `gametest`'s runner (`runner_class`, `kind`), so
+one journal, one active-run pointer and one recovery serve tests and recordings.
+Anything that asks whether media exists must treat `placeholders` as missing.
+`genmedia`, `titleart`, `clips` and `gamecapture` must never need a network.
 
 ## Safety boundaries
 

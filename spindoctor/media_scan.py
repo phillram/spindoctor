@@ -26,6 +26,7 @@ from typing import Iterable, Optional
 from .config import CONFIG_DIR, Config, MEDIA_TYPES
 from .database import load_database
 from .media import MEDIA_DIR_MAP, MEDIA_EXTENSIONS
+from .placeholders import PlaceholderIndex, is_placeholder
 from .romutils import _find_best_normalized_match, normalize
 from ._utils import move_no_replace, numbered_path_key, unique_path
 from ._undo import begin_step, checkpoint, complete_step, finish_undo, undo_entries
@@ -241,6 +242,7 @@ def match_to_database(
     files = list(scan_results)
     src_dir = Path(files[0].path).parent if files else Path(".")
     report = MediaScanReport(source_dir=src_dir)
+    standins = PlaceholderIndex()
 
     db = load_database(system_name, config.databases_dir)
     candidates = [(name, normalize(name)) for name in db.games()]
@@ -280,7 +282,7 @@ def match_to_database(
             config, system_name, game_name, f.media_type,
             f.path.suffix, output_dir=output_dir,
         )
-        target_has_content = _nonempty(target)
+        target_has_content = _nonempty(target) and not standins.is_placeholder(target)
         sm = ScanMatch(
             local=f, system=system_name,
             game_name=game_name, score=score,
@@ -343,11 +345,16 @@ def import_media(
     include_replacements: bool = False,
     output_dir: Optional[Path] = None,
     manifest_dir: Optional[Path] = None,
+    label: str = "",
 ) -> ImportResult:
     """Import the ``matched`` (and optionally ``replacement``) entries.
 
     Writes a JSON manifest under ``~/.spindoctor/media_imports/`` so a
-    subsequent ``undo_import`` call can reverse the operation.
+    subsequent ``undo_import`` call can reverse the operation.  *label* goes
+    into the manifest, for callers that look for their own.
+
+    A target that is only a stand-in (:mod:`spindoctor.placeholders`) is
+    replaced without *overwrite*, after a backup like any overwritten file.
     """
     if action not in {"copy", "move", "link"}:
         raise ValueError(f"unknown action: {action!r}")
@@ -368,6 +375,8 @@ def import_media(
         "output_dir": str(output_dir) if output_dir else "",
         "imports": manifest_entries,
     }
+    if label:
+        data["label"] = label
     seen_targets = set()
     for sm in items:
         if sm.target_path is None:
@@ -383,7 +392,8 @@ def import_media(
         if target.is_dir():
             result.skipped.append((sm.local.path, f"target is a directory: {target}"))
             continue
-        if (_nonempty(target) or target.is_symlink()) and not overwrite:
+        if ((_nonempty(target) or target.is_symlink()) and not overwrite
+                and not is_placeholder(target)):
             result.skipped.append((sm.local.path, f"exists: {target}"))
             continue
         entry = {

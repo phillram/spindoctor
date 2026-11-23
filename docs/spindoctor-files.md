@@ -33,9 +33,9 @@ Do not bulk-delete `.spindoctor` to clear a cache.
 | `edits/` | Batch metadata edits |
 | `renames/` | Rename/clone |
 | `migrations/` | Drive migration |
-| `media_imports/` | Local media import |
+| `media_imports/` | Local media import, and generated media that was put in |
 | `themes/` | Theme-swap manifests and overwritten-file backups |
-| `tests/` | Launch-test runs and active recovery journal |
+| `tests/` | Launch-test and recording runs, and the active recovery journal |
 
 Misplaced-file manifests live at the ROM root; restructure manifests live in
 the system ROM folder. Snapshot manifests live inside the backup destination.
@@ -49,6 +49,14 @@ screenshots, statistics backup, cleanup report/baseline and recovery journal.
 `test_results_dir` overrides the root. Do not delete `active.json` to bypass an
 unfinished run: use `spindoctor test --recover`. Remove old runs only after
 recovery and retention needs are settled. Screenshots may show the whole monitor.
+
+### Generated media
+
+`generated-media/<batch>/` (under `output_dir` when set, else here) holds what
+`generate-media` made: `stage.json`, `review.html` and the files as they would
+lie in `Media`. Safe to delete once put in. In HyperSpin's media folders,
+`spindoctor-placeholders*.json` names the files that only stand in for missing
+media; without it they count as real media. [Guide](generate-media.md).
 
 ## Configured destinations
 

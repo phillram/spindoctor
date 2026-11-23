@@ -38,6 +38,7 @@ machine coverage. Listxml is cached per executable and invalidated by mtime.
 
 Install compatible ffmpeg/ffprobe to inspect media and repair unsupported MP4
 audio. Automatic repair copies video and re-encodes audio to AAC when needed.
+[`generate-media`](generate-media.md) also records games and makes clips with them.
 
 ## Scraping and library policy
 

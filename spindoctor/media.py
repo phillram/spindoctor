@@ -25,6 +25,7 @@ import requests
 from ._net import make_session
 from ._utils import win_safe_stem as _win_safe_stem
 from .config import Config
+from .placeholders import taken as _taken
 
 
 # Maps media type → tuple of path segments under <Media>/<System>/
@@ -540,7 +541,7 @@ class MediaDownloader:
             )
 
         dest = dest.with_suffix(".mp4")
-        if dest.exists() and not overwrite:
+        if _taken(dest) and not overwrite:
             return DownloadResult(game_name=label, media_type=media_type,
                                   success=True, path=dest, skipped=True)
 
@@ -666,7 +667,7 @@ class MediaDownloader:
             dest = dest.with_suffix(dest.suffix.lower())
 
 
-        if dest.exists() and not overwrite:
+        if _taken(dest) and not overwrite:
             return DownloadResult(game_name=label, media_type=media_type,
                                   success=True, path=dest, skipped=True)
 
@@ -1029,7 +1030,7 @@ class MediaDownloader:
         if source_path.suffix.lower() != dest.suffix.lower():
             dest = dest.with_suffix(source_path.suffix.lower())
 
-        if dest.exists() and not overwrite:
+        if _taken(dest) and not overwrite:
             return DownloadResult(game_name=game_name, media_type=media_type,
                                   success=True, path=dest, skipped=True,
                                   error="File already exists (use --overwrite to replace)")

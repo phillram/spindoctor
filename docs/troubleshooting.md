@@ -75,6 +75,10 @@ Logs redact some secrets, not all identifying data.
 | Zero-byte “present” media | Current audit treats it as missing; fetch-media can re-download. Check failed/partial downloads. |
 | Local videos never play | Inspect `[video defaults] path=`. A redirect replaces the wheel's own Video folder, with no per-game fallback. |
 | Empty wheel despite valid RL ROMs | HyperSpin `roms_only` uses its own path/extensions; RL validation alone does not satisfy that filter. |
+| TV snow or "No Video" plays for a game | HyperSpin plays `Media/Frontend/Video/No Video.flv` when a game has no video. `generate-media list` shows which; `placeholders --no-video-clip` makes a clearer clip. [Guide](generate-media.md). |
+| Reports call a game's media missing though a file is there | Only a SpinDoctor placeholder or drawn title is (`inspect` says so); real media replaces it. `generate-media remove` takes placeholders out. |
+| `generate-media record` saves nothing | Its reason is in the output: black or frozen picture, another window in front, or the game closed. Try a longer `--wait`; close overlays; black on every game means the capture can't see that display mode. |
+| `generate-media record` stops at once | A key, control-panel button or mouse click stops it. Leave the PC alone, and check for a stuck button. |
 | Game hidden or shown as text | Check exact media stem/case/spaces, `wheels_only`, `parents_only`, enabled status and wheel art. |
 | No letter-jump graphic | Supply `Images/Letters/<character>.png` for visible title initials; run `doctor`. |
 | Starts on a different letter/game | Inspect `wheel-start`; set first/last/random with HyperSpin closed. |

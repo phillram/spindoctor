@@ -196,6 +196,7 @@ _SYSTEM_FOLLOWERS: tuple[tuple[str, str], ...] = (
     ("_repath_system_var", ""),
     ("_lg_system_var", ""),
     ("_test_system_var", "_refresh_test_genres"),
+    ("_gm_system_var", ""),
 )
 # One-line description shown under each page's title.
 _PAGE_SUMMARIES = {
@@ -210,6 +211,7 @@ _PAGE_SUMMARIES = {
     "LEDBlinky": "Set up LEDBlinky and manage button colors, brightness and animations.",
     "Lightgun": "Find your lightgun software and set up systems to use it.",
     "Test games": "Launch games through RocketLauncher, one after another, and see which ones break.",
+    "Generate Media": "Make the wheel pictures, videos and screenshots a wheel is missing. Works without internet.",
     "Backup & Restore": "Back up your setup, or restore it from an earlier backup.",
     "Migration": "Move your library to a new drive. Work through the steps in order.",
     "Console": "Run any SpinDoctor command by typing it.",
@@ -221,7 +223,8 @@ _PAGE_SUMMARIES = {
 _SIDEBAR_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("Get started", ("Setup", "Diagnostics")),
     ("Library", ("Systems", "Games", "Metadata & Media", "Maintenance")),
-    ("Wheels & cabinet", ("Custom Wheels", "Intro Video", "LEDBlinky", "Lightgun", "Test games")),
+    ("Wheels & cabinet", ("Custom Wheels", "Intro Video", "LEDBlinky", "Lightgun", "Test games",
+                          "Generate Media")),
     ("Backup & move", ("Backup & Restore", "Migration")),
     ("Advanced", ("History", "Console")),
 )
@@ -789,6 +792,7 @@ _READ_ONLY_COMMANDS: frozenset[str] = frozenset({
     "fav list", "recent list",
     "mainmenu show", "mainmenu edit",
     "test --list-runs",
+    "generate-media list", "generate-media stages",
     "ledblinky audit", "ledblinky check", "ledblinky inspect-rom",
     "ledblinky colors list", "ledblinky lwax flash-check",
     "lightgun audit", "lightgun detect",
@@ -969,6 +973,17 @@ _CUSTOM_COMMAND_PRESETS: tuple[str, ...] = (
     "fetch-meta --all --source thegamesdb --apply",
     "fetch-meta --system <SYSTEM> --apply",
     "fetch-meta --system <SYSTEM> --no-cache --apply",
+    "generate-media list --all",
+    "generate-media list --system <SYSTEM> --details",
+    "generate-media placeholders --no-video-clip --apply",
+    "generate-media placeholders --system <SYSTEM> --apply",
+    "generate-media put-in",
+    "generate-media put-in --apply",
+    "generate-media record --system <SYSTEM> --count 5",
+    "generate-media remove --system <SYSTEM> --apply",
+    "generate-media stages",
+    "generate-media undo --apply",
+    "generate-media wheel-pictures --system <SYSTEM> --apply",
     "media-add --system <SYSTEM> --game <ROM> --type video --file <PATH> --apply",
     "media-add --system <SYSTEM> --game <ROM> --type wheel --file <PATH> --apply",
     "media-scan --all",
@@ -2707,6 +2722,7 @@ class _SpinDoctorGUI:
         self._add_scrollable_tab(nb, self._build_ledblinky_tab,    "LEDBlinky")
         self._add_scrollable_tab(nb, self._build_lightgun_tab,     "Lightgun")
         self._add_scrollable_tab(nb, self._build_test_games_tab,   "Test games")
+        self._add_scrollable_tab(nb, self._build_genmedia_tab,     "Generate Media")
         self._add_scrollable_tab(nb, self._build_backup_tab,       "Backup & Restore")
         self._add_scrollable_tab(nb, self._build_migrate_tab,      "Migration")
         # History tab is the only one that intentionally fills its own
@@ -3159,7 +3175,7 @@ class _SpinDoctorGUI:
         inner = self.ttk.Frame(canvas)
         self._page_header(inner, label).pack(fill="x")
         # The page's own widgets are built on first selection — building
-        # all 15 pages up front costs ~0.5s of Tk layout before the
+        # all 16 pages up front costs ~0.5s of Tk layout before the
         # window can paint. Cross-page readers guard with getattr for
         # exactly this reason.
         self._lazy_pages[label] = (inner, builder)
@@ -12859,6 +12875,314 @@ class _SpinDoctorGUI:
             self._flash_validation("No test runs yet.")
             return
         self._open_path(self._test_last_run, missing_label="The run folder")
+
+    # ── Generate Media tab ────────────────────────────────────────────────────
+
+    def _build_genmedia_tab(self, parent):
+        frame = self.ttk.Frame(parent, padding=12)
+        self._help_text(
+            frame,
+            text=("Finds what a wheel is missing the way HyperSpin looks for it, and makes it on this PC: "
+                  "no internet, no artwork service. Everything made waits in a staging folder; nothing "
+                  "goes into HyperSpin before Put in, which fills only empty places and can be undone. "
+                  "With Apply changes off, each button only lists what it would do."),
+        ).pack(fill="x", pady=(0, 4))
+
+        pick = self.ttk.LabelFrame(frame, text="1. What is missing")
+        pick.pack(fill="x", pady=(0, 8))
+        row = self.ttk.Frame(pick)
+        row.pack(fill="x", padx=6, pady=(4, 2))
+        self._gm_system_var = self.tk.StringVar()
+        self._gm_all_var = self.tk.BooleanVar(value=False)
+        self._sidebar_system_row(row, self._gm_system_var, all_var=self._gm_all_var).pack(side="left")
+        self.ttk.Checkbutton(row, text="All systems (not for recording)",
+                             variable=self._gm_all_var).pack(side="left", padx=6)
+        row = self.ttk.Frame(pick)
+        row.pack(fill="x", padx=6, pady=(0, 6))
+        self.ttk.Label(row, text="Game names").pack(side="left")
+        self._gm_games_var = self.tk.StringVar()
+        self.ttk.Entry(row, textvariable=self._gm_games_var, width=40).pack(side="left", padx=6)
+        self._gm_details_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(row, text="List the games", variable=self._gm_details_var).pack(side="left", padx=6)
+        self.ttk.Button(row, text="Show what's missing", command=self._gm_list).pack(side="left", padx=6)
+        self._help_text(
+            pick, text="Leave the names empty for every game that is missing something. Names and titles "
+                       "take * and ? wildcards; separate several with |.",
+        ).pack(fill="x", padx=6)
+
+        box = self.ttk.LabelFrame(frame, text="2. Wheel pictures")
+        box.pack(fill="x", pady=(0, 8))
+        row = self.ttk.Frame(box)
+        row.pack(fill="x", padx=6, pady=(4, 6))
+        self.ttk.Label(row, text="Letters").pack(side="left")
+        self._gm_style_var = self.tk.StringVar(value="chrome")
+        self.ttk.Combobox(row, textvariable=self._gm_style_var, state="readonly", width=8,
+                          values=("chrome", "gold", "white")).pack(side="left", padx=6)
+        self._gm_copy_var = self.tk.BooleanVar(value=True)
+        self.ttk.Checkbutton(row, text="Reuse pictures already on this PC",
+                             variable=self._gm_copy_var).pack(side="left", padx=6)
+        self._gm_hidden_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(row, text="Also games the wheel hides (they appear once they have one)",
+                             variable=self._gm_hidden_var).pack(side="left", padx=6)
+        self._gm_wheel_btn = self.ttk.Button(row, command=self._gm_wheel_pictures)
+        self._gm_wheel_btn.pack(side="left", padx=6)
+
+        box = self.ttk.LabelFrame(frame, text="3. Videos and screenshots, recorded from the games")
+        box.pack(fill="x", pady=(0, 8))
+        self.ttk.Label(
+            box, style="Warn.TLabel", justify="left", wraplength=self._px(860),
+            text=("Games open full screen: leave the cabinet alone while it records. Any key, panel button "
+                  "or mouse click stops it. It won't start while HyperSpin or a game is open."),
+        ).pack(anchor="w", padx=6, pady=(4, 2))
+        row = self.ttk.Frame(box)
+        row.pack(fill="x", padx=6, pady=2)
+        self._gm_count_var = self.tk.StringVar(value="5")
+        self._gm_seconds_var = self.tk.StringVar(value="35")
+        self._gm_wait_var = self.tk.StringVar(value="20")
+        self._gm_minutes_var = self.tk.StringVar(value="30")
+        for label, var, low, high in (("Games at most", self._gm_count_var, 1, 100000),
+                                      ("Seconds", self._gm_seconds_var, 5, 600),
+                                      ("Wait first", self._gm_wait_var, 1, 600),
+                                      ("Stop after minutes (0 = don't)", self._gm_minutes_var, 0, 10000)):
+            self.ttk.Label(row, text=label).pack(side="left")
+            self.ttk.Spinbox(row, from_=low, to=high, width=6, textvariable=var).pack(side="left", padx=(4, 12))
+        row = self.ttk.Frame(box)
+        row.pack(fill="x", padx=6, pady=2)
+        self._gm_sound_var = self.tk.BooleanVar(value=True)
+        self._gm_still_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(row, text="Sound", variable=self._gm_sound_var).pack(side="left")
+        self.ttk.Checkbutton(row, text="Screenshots only", variable=self._gm_still_var).pack(side="left", padx=12)
+        self.ttk.Label(row, text="Picture").pack(side="left")
+        self._gm_crop_var = self.tk.StringVar(value="auto")
+        self.ttk.Combobox(row, textvariable=self._gm_crop_var, state="readonly", width=6,
+                          values=("auto", "4:3", "full")).pack(side="left", padx=6)
+        row = self.ttk.Frame(box)
+        row.pack(fill="x", padx=6, pady=(2, 6))
+        self._gm_record_btn = self.ttk.Button(row, command=self._gm_record)
+        self._gm_record_btn.pack(side="left")
+        self.ttk.Button(row, text="Carry on last recording",
+                        command=self._gm_resume).pack(side="left", padx=6)
+        self.ttk.Button(row, text="Stop after this game",
+                        command=self._test_stop_after_game).pack(side="left")
+
+        box = self.ttk.LabelFrame(frame, text="4. Placeholders for games with no video and no picture")
+        box.pack(fill="x", pady=(0, 8))
+        row = self.ttk.Frame(box)
+        row.pack(fill="x", padx=6, pady=(4, 2))
+        self._gm_kind_var = self.tk.StringVar(value="clip")
+        for value, label in (("clip", '"No video found" clip'), ("picture", '"No screenshot found" picture')):
+            self.ttk.Radiobutton(row, text=label, value=value, variable=self._gm_kind_var).pack(
+                side="left", padx=(0, 8))
+        self.ttk.Label(row, text="Background").pack(side="left")
+        self._gm_background_var = self.tk.StringVar(value="blue")
+        self.ttk.Combobox(row, textvariable=self._gm_background_var, state="readonly", width=6,
+                          values=("blue", "snow")).pack(side="left", padx=6)
+        row = self.ttk.Frame(box)
+        row.pack(fill="x", padx=6, pady=(2, 6))
+        self._gm_holder_btn = self.ttk.Button(row, command=self._gm_placeholders)
+        self._gm_holder_btn.pack(side="left")
+        self.ttk.Button(row, text="Remove placeholders", command=self._gm_remove).pack(side="left", padx=6)
+        self.ttk.Button(row, text="New \"No Video\" clip for every wheel",
+                        command=self._gm_frontend).pack(side="left")
+        self._help_text(
+            box, text="HyperSpin already plays one clip of its own, No Video.flv, for every game without a "
+                      "video: a new one covers the whole cabinet with one file. Placeholders carry the "
+                      "game's title instead. Games with one still count as missing their video, and a real "
+                      "video replaces it.",
+        ).pack(fill="x", padx=6)
+
+        box = self.ttk.LabelFrame(frame, text="5. Put it in")
+        box.pack(fill="x", pady=(0, 8))
+        row = self.ttk.Frame(box)
+        row.pack(fill="x", padx=6, pady=(4, 6))
+        self.ttk.Label(row, text="Batch").pack(side="left")
+        self._gm_stage_var = self.tk.StringVar()
+        self._gm_stage_combo = self.ttk.Combobox(row, textvariable=self._gm_stage_var, state="readonly", width=40)
+        self._gm_stage_combo.pack(side="left", padx=6)
+        self.ttk.Button(row, text="Refresh", command=self._gm_refresh_stages).pack(side="left")
+        self.ttk.Button(row, text="Look at it", command=self._gm_review).pack(side="left", padx=6)
+        self._gm_put_btn = self.ttk.Button(row, command=self._gm_put_in)
+        self._gm_put_btn.pack(side="left")
+        self.ttk.Button(row, text="Undo last", command=self._gm_undo).pack(side="left", padx=6)
+
+        self._gm_stage_names: list[str] = []
+        self._global_apply_var.trace_add("write", lambda *_a: self._gm_label_buttons())
+        self._gm_label_buttons()
+        self._gm_refresh_stages()
+        return frame
+
+    def _gm_label_buttons(self) -> None:
+        apply = bool(self._global_apply_var.get())
+        for button, show, do in ((self._gm_wheel_btn, "Show wheel pictures", "Make wheel pictures"),
+                                 (self._gm_record_btn, "Show games to record", "Record games"),
+                                 (self._gm_holder_btn, "Show placeholders", "Make placeholders"),
+                                 (self._gm_put_btn, "Show what goes in", "Put in")):
+            button.configure(text=do if apply else show)
+
+    def _gm_selection(self, *, all_systems: bool = True) -> Optional[list[str]]:
+        """``--system`` / ``--all`` and ``--game`` arguments, or None (after
+        saying why) without a system."""
+        args: list[str] = []
+        system = self._gm_system_var.get().strip()
+        if all_systems and self._gm_all_var.get():
+            args.append("--all")
+        elif system:
+            args += ["--system", system]
+        else:
+            self._flash_validation("Pick a system in the sidebar"
+                                   + (" or check All systems." if all_systems else " to record."))
+            return None
+        for name in self._gm_games_var.get().split("|"):
+            if name.strip():
+                args += ["--game", name.strip()]
+        return args
+
+    def _gm_run(self, args: list[str], *, apply: bool = True, recording: bool = False) -> None:
+        """Run ``spindoctor generate-media``, with ``--apply`` when it is on."""
+        args = ["generate-media"] + args
+        live = apply and bool(self._global_apply_var.get())
+        if live:
+            args.append("--apply")
+        if recording:
+            # Stop then asks the run to close its game first, as for a test run.
+            self._test_run_active = live
+        if not self._run_cli("spindoctor", args, on_complete=self._gm_done) and recording:
+            self._test_run_active = False
+
+    def _gm_done(self, _rc: int) -> None:
+        self._test_run_active = False
+        self._gm_refresh_stages()
+
+    def _gm_list(self) -> None:
+        args = self._gm_selection()
+        if args is not None:
+            self._gm_run(["list"] + args + (["--details"] if self._gm_details_var.get() else []), apply=False)
+
+    def _gm_wheel_pictures(self) -> None:
+        args = self._gm_selection()
+        if args is None:
+            return
+        args = ["wheel-pictures"] + args + ["--style", self._gm_style_var.get() or "chrome"]
+        if not self._gm_copy_var.get():
+            args.append("--no-copy")
+        if self._gm_hidden_var.get():
+            args.append("--show-hidden")
+        self._gm_run(args)
+
+    def _gm_record_args(self) -> Optional[list[str]]:
+        args = self._gm_selection(all_systems=False)
+        if args is None:
+            return None
+        args = ["record"] + args
+        for option, var, label, low, high in (
+                ("--count", self._gm_count_var, "Games at most", 1, 100000),
+                ("--seconds", self._gm_seconds_var, "Seconds", 5, 600),
+                ("--wait", self._gm_wait_var, "Wait first", 1, 600),
+                ("--minutes", self._gm_minutes_var, "Stop after minutes", 0, 10000)):
+            text = var.get().strip()
+            if not text.isdigit() or not low <= int(text) <= high:
+                self._flash_validation(f"{label} must be a whole number from {low} to {high}.")
+                return None
+            args += [option, text]
+        if not self._gm_sound_var.get():
+            args.append("--no-sound")
+        if self._gm_still_var.get():
+            args.append("--screenshots")
+        if self._gm_hidden_var.get():
+            args.append("--show-hidden")
+        return args + ["--crop", self._gm_crop_var.get() or "auto"]
+
+    def _gm_record(self) -> None:
+        args = self._gm_record_args()
+        if args is None:
+            return
+        if self._global_apply_var.get():
+            if not self._gm_confirm_recording():
+                return
+            args.append("--yes")
+        self._gm_run(args, recording=True)
+
+    def _gm_resume(self) -> None:
+        args = ["record", "--resume"]
+        if self._global_apply_var.get():
+            if not self._gm_confirm_recording():
+                return
+            args.append("--yes")
+        self._gm_run(args, recording=True)
+
+    def _gm_confirm_recording(self) -> bool:
+        return bool(self.messagebox.askyesno(
+            "Record games",
+            "Games will open full screen, one after another, until they are recorded or the time is up. "
+            "It starts once nobody has touched the keyboard or mouse for 15 seconds.\n\n"
+            "Any key, panel button or mouse click stops it. Start?",
+        ))
+
+    def _gm_placeholders(self) -> None:
+        args = self._gm_selection()
+        if args is None:
+            return
+        self._gm_run(["placeholders"] + args + ["--kind", self._gm_kind_var.get() or "clip",
+                                                "--background", self._gm_background_var.get() or "blue"])
+
+    def _gm_frontend(self) -> None:
+        self._gm_run(["placeholders", "--no-video-clip", "--background", self._gm_background_var.get() or "blue"])
+
+    def _gm_remove(self) -> None:
+        args = self._gm_selection()
+        if args is None:
+            return
+        if self._global_apply_var.get() and not self.messagebox.askyesno(
+            "Remove placeholders",
+            "Delete the \"No video found\" clips and \"No screenshot found\" pictures SpinDoctor put in? "
+            "Only files that haven't changed since are deleted. They can be made again.",
+        ):
+            return
+        self._gm_run(["remove"] + args)
+
+    def _gm_root(self) -> Path:
+        from . import genmedia
+
+        return genmedia.stage_root(load_config())
+
+    def _gm_refresh_stages(self) -> None:
+        """Fill the batch list: the ones waiting first, newest first."""
+        from . import genmedia
+
+        try:
+            stages = [s for s in genmedia.list_stages(self._gm_root()) if s.items]
+        except Exception:  # noqa: BLE001 - an unreadable folder just means no batches
+            stages = []
+        stages.sort(key=lambda s: bool(s.put_in_at))
+        self._gm_stage_names = [s.name for s in stages]
+        shown = [s.name + (" (put in)" if s.put_in_at else "") for s in stages]
+        combo = getattr(self, "_gm_stage_combo", None)
+        if combo is None:
+            return
+        combo.configure(values=shown)
+        self._gm_stage_var.set(shown[0] if shown else "")
+
+    def _gm_chosen_stage(self) -> str:
+        """The chosen batch's name, or "" (after saying so)."""
+        shown = self._gm_stage_var.get()
+        for name in self._gm_stage_names:
+            if shown in (name, name + " (put in)"):
+                return name
+        self._flash_validation("No batch is waiting: make something first.")
+        return ""
+
+    def _gm_review(self) -> None:
+        name = self._gm_chosen_stage()
+        if name:
+            self._open_path(self._gm_root() / name / "review.html", missing_label="The review page")
+
+    def _gm_put_in(self) -> None:
+        name = self._gm_chosen_stage()
+        if name:
+            self._gm_run(["put-in", name])
+
+    def _gm_undo(self) -> None:
+        self._gm_run(["undo"])
 
     # ── Tools tab (Custom wheels + Install wheel helpers) ─────────────────────
 

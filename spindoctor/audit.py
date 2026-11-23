@@ -12,6 +12,7 @@ from typing import Iterable, Optional
 from ._utils import win_safe_stem
 from .config import Config, MEDIA_TYPES, get_rom_extensions, get_system_overrides, get_systems
 from .database import GameEntry, load_database
+from .placeholders import PlaceholderIndex, is_list_name, read as read_placeholders
 from .rl_rom_paths import _raw_game_names, _RomLookup
 from .romutils import clean_display_name, derive_pc_title, _find_best_normalized_match, normalize
 
@@ -473,29 +474,41 @@ _MEDIA_SLOTS = {
 
 
 class MediaIndex:
-    """One read-only media snapshot per system, never cached between operations."""
+    """One read-only media snapshot per system, never cached between operations.
+
+    Files that only stand in for missing media (:mod:`spindoctor.placeholders`)
+    don't count: their game is still missing them."""
 
     def __init__(self, system_name: str, media_base: Path) -> None:
         self._stems: dict[str, set[str]] = {}
         self._theme_names: set[str] = set()
         for kind, (subdir, extensions) in _MEDIA_SLOTS.items():
-            stems: set[str] = set()
-            self._stems[kind] = stems
+            folder = media_base / system_name / subdir
+            found: dict[str, int] = {}
+            listed = False
+            self._stems[kind] = set()
             try:
-                with os.scandir(media_base / system_name / subdir) as entries:
+                with os.scandir(folder) as entries:
                     for entry in entries:
                         try:
                             if kind == "theme" and (entry.is_file() or entry.is_dir()):
                                 self._theme_names.add(entry.name.casefold())
-                            stem, ext = os.path.splitext(entry.name)
+                            ext = os.path.splitext(entry.name)[1]
                             if ext.lower() not in extensions:
+                                listed = listed or is_list_name(entry.name)
                                 continue
-                            if entry.is_file() and entry.stat().st_size > 0:
-                                stems.add(stem.casefold())
+                            size = entry.stat().st_size if entry.is_file() else 0
+                            if size > 0:
+                                found[entry.name.casefold()] = size
                         except OSError:
                             continue
             except OSError:
                 continue
+            standins = read_placeholders(folder) if listed else {}
+            self._stems[kind] = {
+                os.path.splitext(name)[0] for name, size in found.items()
+                if name not in standins or standins[name].size != size
+            }
 
     def check(self, game_name: str) -> MediaStatus:
         stem = win_safe_stem(game_name).casefold()
@@ -519,10 +532,11 @@ def check_media(game_name: str, system_name: str, media_base: Path) -> MediaStat
 def _exists(directory: Path, stem: str, extensions: Iterable[str]) -> bool:
     if not directory.exists():
         return False
+    standins = PlaceholderIndex()
     for ext in extensions:
         try:
             path = directory / f"{stem}{ext}"
-            if path.is_file() and path.stat().st_size > 0:
+            if path.is_file() and path.stat().st_size > 0 and not standins.is_placeholder(path):
                 return True
         except OSError:
             pass
