@@ -89,10 +89,23 @@ game, or the same game's on another wheel (same database name, year and maker).
 usual size of that wheel's other pictures (400x175 where there are too few to
 tell), in `--style chrome`, `gold` or `white`, or like a lit display: `lcd`
 (a handheld's greenish LCD), and `led`, `vfd` and `neon`, which glow in their
-colour instead of casting a shadow. `--font` takes a font file, or the name of
+color instead of casting a shadow. `--font` takes a font file, or the name of
 one installed on the PC (`--font bahnschrift`, `--font impact`); without it a
 heavy font is picked. A wheel's Main Menu logo is drawn the same way:
-`--system "Main Menu" --game "<wheel>" --style vfd`.
+`--system "Main Menu" --game "<wheel>" --style vfd`. `--colors
+TOP,MIDDLE,BOTTOM` (`#rrggbb` each) replaces the style's letter colors.
+`--effect` puts a `shadow`, a `glow` or nothing (`flat`) round the letters,
+and `--glow-color #rrggbb` colors the glow. `generate-media fonts` lists every
+font installed on the PC by the name `--font` takes (`--find bebas` narrows
+it).
+
+In the GUI, **2. Wheel pictures** is a small designer: draw the wheel's games
+or the wheel's own Main Menu logo; pick a style, any installed font (the list
+loads the first time it opens), your own top, middle and bottom colors (click
+a color button for the color dialog), and an effect with its glow color; and
+see a preview of the wheel's name or any text before anything is made. The
+preview's background (dark and light, dark, light, or a checkerboard) is only
+for looking: the picture is see-through and shows the theme behind it.
 
 With `wheels_only=true`, a game without a picture isn't on its wheel, and
 appears as soon as it gets one. Such games are left out unless you pass

@@ -625,6 +625,21 @@ def test_wheel_pictures_take_the_new_styles_and_font_names(cabinet):
     assert "3 file(s) made" in out
 
 
+def test_wheel_pictures_take_own_colors_and_glow_and_list_fonts(cabinet, monkeypatch, tmp_path):
+    from spindoctor import titleart
+
+    bad = _run("wheel-pictures", "-s", "NES", "--colors", "#fff,#000", "--apply")
+    assert bad.exit_code == 2 and "three colors" in bad.output
+    assert _run("wheel-pictures", "-s", "NES", "--glow-color", "greenish", "--apply").exit_code == 2
+    assert _run("wheel-pictures", "-s", "NES", "--effect", "sparkle", "--apply").exit_code == 2
+    out = _run("wheel-pictures", "-s", "NES", "--no-copy", "--style", "vfd", "--colors", "#ff0000,#cc0000,#880000",
+               "--effect", "glow", "--glow-color", "#00ff00", "--apply").output
+    assert "3 file(s) made" in out
+    monkeypatch.setattr(titleart, "installed_fonts", lambda: {"Bebas Neue": tmp_path / "b.ttf", "Impact": tmp_path / "i.ttf"})
+    fonts = _run("fonts", "--find", "bebas").output
+    assert "Bebas Neue" in fonts and "Impact" not in fonts and "1 of 2 font(s)" in fonts
+
+
 def test_list_says_what_waits_in_staging(cabinet):
     assert "waiting in staging" not in _run("list", "-s", "NES").output
     _run("wheel-pictures", "-s", "NES", "--no-copy", "--apply")

@@ -559,7 +559,8 @@ Progress = Callable[[int, int, str], None]
 
 def make_wheel_pictures(stage: Stage, jobs: list[DrawJob], *, style: str = titleart.DEFAULT_STYLE,
                         size: Optional[tuple[int, int]] = None, font: Optional[Path] = None,
-                        config: Optional[Config] = None, progress: Optional[Progress] = None) -> list[str]:
+                        config: Optional[Config] = None, progress: Optional[Progress] = None,
+                        colors=None, effect="style", glow_color=None) -> list[str]:
     """Stage a picture for every job; returns what went wrong."""
     sizes: dict[str, tuple[int, int]] = {}
     errors: list[str] = []
@@ -576,7 +577,8 @@ def make_wheel_pictures(stage: Stage, jobs: list[DrawJob], *, style: str = title
             if size is None and game.system not in sizes:
                 sizes[game.system] = (typical_size(config.media_dir / game.system / "Images" / "Wheel")
                                       if config is not None else titleart.DEFAULT_SIZE)
-            stage.add(item, data=titleart.draw_title(game.title, style, size or sizes[game.system], font))
+            stage.add(item, data=titleart.draw_title(game.title, style, size or sizes[game.system], font,
+                                                     colors=colors, effect=effect, glow_color=glow_color))
         except (OSError, titleart.TitleArtError) as exc:
             errors.append(f"{game.system} > {game.name}: {exc}")
     return errors

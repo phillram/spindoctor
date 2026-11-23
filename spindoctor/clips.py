@@ -134,7 +134,7 @@ def _db(text: str) -> float:
 
 
 def parse_analysis(text: str) -> Analysis:
-    """:class:`Analysis` from the log of :func:`analyse_command`."""
+    """:class:`Analysis` from the log of :func:`analyze_command`."""
     out = Analysis()
     times = [_clock(m) for m in _TIME_RE.finditer(text)]
     m = _DURATION_RE.search(text)
@@ -222,7 +222,7 @@ def read_pgm(data: bytes) -> Optional[tuple[int, int, bytes]]:
 def content_box(width: int, height: int, pixels: bytes, lit: int = LIT,
                 count: int = LIT_PIXELS) -> Optional[tuple[int, int, int, int]]:
     """``(left, top, right, bottom)`` (right and bottom exclusive) of the rows
-    and columns of a grey picture with at least *count* pixels brighter than
+    and columns of a gray picture with at least *count* pixels brighter than
     *lit*; None when there are none.  Unlike ffmpeg's ``cropdetect``, which
     judges a row by its average, a score line or a row of LEDs on black counts."""
     rows = [0] * height
@@ -351,9 +351,9 @@ def probe_command(ffmpeg: str, method: str, seconds: float = 1.5,
 CHANGES = "fps=10,mpdecimate=hi=256:lo=128:frac=0.33,showinfo"
 
 
-def analyse_command(ffmpeg: str, take: Path, max_frame: Optional[Path] = None) -> list[str]:
+def analyze_command(ffmpeg: str, take: Path, max_frame: Optional[Path] = None) -> list[str]:
     """Black, changing and crop findings in the log; with *max_frame*, also
-    the take's brightest picture as a grey PGM there (needs ffmpeg's
+    the take's brightest picture as a gray PGM there (needs ffmpeg's
     ``lagfun``), which :func:`crop_from_max_frame` reads the black bars from."""
     detect = _blackdetect(0.5) + ",cropdetect=limit=24:round=2:reset=0"
     cmd = [ffmpeg, "-hide_banner", "-nostdin", "-i", str(take)]
@@ -605,13 +605,13 @@ class Tools:
             raise ClipError(f"Couldn't run ffmpeg ({self.ffmpeg}): {exc}") from exc
         return Take(proc, time.time())
 
-    def analyse(self, take: Path) -> Analysis:
+    def analyze(self, take: Path) -> Analysis:
         if not take.is_file() or take.stat().st_size == 0:
             return Analysis(problem="nothing was recorded")
         self.methods()      # reads the filter list once
         max_frame = take.with_name(take.stem + ".max.pgm") if " lagfun " in (self._filters or "") else None
         try:
-            done = self._run(analyse_command(self.ffmpeg, take, max_frame), 180)
+            done = self._run(analyze_command(self.ffmpeg, take, max_frame), 180)
         except ClipError as exc:
             return Analysis(problem=str(exc))
         a = parse_analysis(done.stderr)

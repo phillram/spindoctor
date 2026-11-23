@@ -67,7 +67,7 @@ def test_a_tall_or_wide_game_is_not_a_dark_scene():
 
 
 def _pgm(width, height, lit):
-    """A black grey picture with *lit* pixels ``(x, y)`` at 200."""
+    """A black gray picture with *lit* pixels ``(x, y)`` at 200."""
     px = bytearray(width * height)
     for x, y in lit:
         px[y * width + x] = 200
@@ -76,7 +76,7 @@ def _pgm(width, height, lit):
 
 def test_pgm_pictures_are_read():
     assert clips.read_pgm(_pgm(4, 3, [(1, 1)]))[:2] == (4, 3)
-    assert clips.read_pgm(b"P6\n4 3\n255\n" + bytes(36)) is None   # colour
+    assert clips.read_pgm(b"P6\n4 3\n255\n" + bytes(36)) is None   # color
     assert clips.read_pgm(b"P5\n4 3\n255\n" + bytes(5)) is None    # cut short
     assert clips.read_pgm(b"P5\n4 3\n65535\n" + bytes(24)) is None  # 16-bit
 
@@ -109,11 +109,11 @@ def test_a_crop_is_read_from_the_brightest_picture():
 
 
 def test_the_brightest_picture_is_asked_for_only_with_a_file():
-    plain = clips.analyse_command("ffmpeg", Path("take.mkv"))
+    plain = clips.analyze_command("ffmpeg", Path("take.mkv"))
     graph = plain[plain.index("-filter_complex") + 1]
     assert "mpdecimate" in graph and "showinfo" in graph and "lagfun" not in graph
     assert "freezedetect" not in graph and plain.count("-map") == 2
-    both = clips.analyse_command("ffmpeg", Path("take.mkv"), Path("take.max.pgm"))
+    both = clips.analyze_command("ffmpeg", Path("take.mkv"), Path("take.max.pgm"))
     graph = both[both.index("-filter_complex") + 1]
     assert "cropdetect" in graph and "lagfun=decay=1" in graph and "format=gray" in graph
     assert both[-1] == "take.max.pgm" and both.count("-map") == 3
@@ -121,7 +121,7 @@ def test_the_brightest_picture_is_asked_for_only_with_a_file():
 
 def test_black_is_judged_strictly_enough_for_handhelds():
     # ffmpeg's 0.98 makes a few lit LEDs on a black screen a black picture.
-    graph = clips.analyse_command("ffmpeg", Path("take.mkv"))
+    graph = clips.analyze_command("ffmpeg", Path("take.mkv"))
     probe = ",".join(clips.probe_command("ffmpeg", "gdigrab"))
     for text in (graph[graph.index("-filter_complex") + 1], probe):
         assert f"pic_th={clips.BLACK_PICTURE:g}" in text and clips.BLACK_PICTURE >= 0.999
@@ -339,27 +339,27 @@ def _made(tmp_path, source, name, seconds=4) -> Path:
 @real
 def test_real_takes_are_judged(tmp_path):
     tools = clips.Tools(_FFMPEG, shutil.which("ffprobe"))
-    moving = tools.analyse(_made(tmp_path, "testsrc2=s=960x720:r=30,pad=1280:720:160:0:black", "m.mkv"))
+    moving = tools.analyze(_made(tmp_path, "testsrc2=s=960x720:r=30,pad=1280:720:160:0:black", "m.mkv"))
     assert moving.verdict == "" and clips.choose_crop("auto", moving) == (960, 720, 160, 0)
-    assert tools.analyse(_made(tmp_path, "color=black:s=1280x720:r=30", "b.mkv")).is_black
-    frozen = tools.analyse(_made(tmp_path, "smptebars=s=1280x720:r=30", "f.mkv"))
+    assert tools.analyze(_made(tmp_path, "color=black:s=1280x720:r=30", "b.mkv")).is_black
+    frozen = tools.analyze(_made(tmp_path, "smptebars=s=1280x720:r=30", "f.mkv"))
     assert frozen.is_frozen and not frozen.is_black
     # A handheld's small screen on black: 1.6% of the take is lit, and it moves.
-    small = tools.analyse(_made(tmp_path, "testsrc2=s=120x120:r=30,pad=1280:720:580:300:black", "h.mkv"))
+    small = tools.analyze(_made(tmp_path, "testsrc2=s=120x120:r=30,pad=1280:720:580:300:black", "h.mkv"))
     assert small.verdict == "" and not small.is_black
     # A pinball's ball, one 12x12 LED crossing black: 0.016% of the take.
-    ball = tools.analyse(_made(tmp_path, "color=black:s=1280x720:r=30[b];color=white:s=12x12:r=30[d];"
+    ball = tools.analyze(_made(tmp_path, "color=black:s=1280x720:r=30[b];color=white:s=12x12:r=30[d];"
                                          "[b][d]overlay=x='mod(t*200,1200)':y=300[out0]", "p.mkv"))
     assert ball.verdict == "" and not ball.is_black
     # A score line on black above the game: cropdetect would cut it off, the brightest picture doesn't.
-    scored = tools.analyse(_made(tmp_path, "testsrc2=s=640x600:r=30,pad=640:720:0:120:black,"
+    scored = tools.analyze(_made(tmp_path, "testsrc2=s=640x600:r=30,pad=640:720:0:120:black,"
                                            "drawbox=x=300:y=10:w=40:h=6:color=white:t=fill,"
                                            "pad=1280:720:320:0:black", "s.mkv"))
     if " lagfun " in (tools._filters or ""):
         w, h, x, y = scored.crop
         assert y <= 10 and y + h >= 700 and 300 <= x <= 320 and 640 <= w <= 680
     assert not list(tmp_path.glob("*.pgm"))
-    assert tools.analyse(tmp_path / "missing.mkv").verdict == "nothing was recorded"
+    assert tools.analyze(tmp_path / "missing.mkv").verdict == "nothing was recorded"
 
 
 def test_a_montage_part_starts_where_the_clip_has_enough_left():

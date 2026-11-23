@@ -4269,9 +4269,13 @@ def _genmedia_logic_app(monkeypatch, apply=False):
     values = {"system": "NES", "all": False, "games": "", "details": False, "style": "chrome",
               "copy": True, "hidden": False, "count": "5", "seconds": "35", "wait": "20", "settle": "40", "minutes": "30",
               "sound": True, "still": False, "crop": "auto", "kind": "clip", "background": "blue",
-              "stage": "", "press": "", "play": ""}
+              "stage": "", "press": "", "play": "", "target": "games", "font": "(heavy default)",
+              "effect": "shadow", "glow_color": "#00ffe2", "preview_text": "",
+              "background_choice": "Dark and light"}
     for name, value in values.items():
         setattr(app, "_gm_" + name + "_var", _Value(value))
+    app._gm_color_vars = [_Value(c) for c in ("#ffffff", "#aacdf0", "#3c6ebe")]     # chrome's
+    app._gm_font_paths = {}
     app._gm_stage_names = []
     app._global_apply_var = _Value(apply)
     app._flash_validation = Mock()
@@ -4342,6 +4346,159 @@ def test_generate_media_replaces_existing_media_when_asked(monkeypatch):
     app._global_apply_var.set(False)
     app._gm_wheel_pictures()
     assert _genmedia_args(app)[-1] == "--overwrite"                  # the dry run shows what it would replace
+
+
+def test_generate_media_title_look_passes_only_what_differs_from_the_style(monkeypatch, tmp_path):
+    app = _genmedia_logic_app(monkeypatch, apply=True)
+    app._gm_wheel_pictures()
+    assert _genmedia_args(app) == ["wheel-pictures", "--system", "NES", "--style", "chrome", "--apply"]
+    # vfd with its own colors, its glow and glow color: nothing more than the style.
+    app._gm_style_var.set("vfd")
+    for var, c in zip(app._gm_color_vars, ("#d6fffa", "#4cecde", "#009caa")):
+        var.set(c)
+    app._gm_effect_var.set("glow")
+    app._gm_glow_color_var.set("#00ffe2")
+    app._gm_wheel_pictures()
+    assert _genmedia_args(app)[-3:] == ["--style", "vfd", "--apply"]
+    # Own colors, another glow color, a font from the list.
+    app._gm_color_vars[0].set("#FF0000")
+    app._gm_glow_color_var.set("#00ff00")
+    app._gm_font_paths = {"Bebas Neue": tmp_path / "BebasNeue.ttf"}
+    app._gm_font_var.set("Bebas Neue")
+    app._gm_wheel_pictures()
+    assert _genmedia_args(app) == ["wheel-pictures", "--system", "NES", "--style", "vfd",
+                                   "--font", str(tmp_path / "BebasNeue.ttf"),
+                                   "--colors", "#ff0000,#4cecde,#009caa", "--glow-color", "#00ff00", "--apply"]
+    # Flat instead of the glow: the glow color no longer matters.
+    app._gm_effect_var.set("flat")
+    app._gm_wheel_pictures()
+    assert _genmedia_args(app)[-3:] == ["--effect", "flat", "--apply"] and "--glow-color" not in _genmedia_args(app)
+    # The wheel's own Main Menu logo.
+    app._gm_target_var.set("logo")
+    app._gm_style_var.set("chrome")
+    for var, c in zip(app._gm_color_vars, ("#ffffff", "#aacdf0", "#3c6ebe")):
+        var.set(c)
+    app._gm_effect_var.set("shadow")
+    app._gm_font_var.set("(heavy default)")
+    app._gm_wheel_pictures()
+    assert _genmedia_args(app) == ["wheel-pictures", "--system", "Main Menu", "--game", "NES",
+                                   "--style", "chrome", "--apply"]
+    app._gm_color_vars[1].set("not a color")
+    calls = app._run_cli.call_count
+    app._gm_wheel_pictures()
+    assert app._run_cli.call_count == calls and app._flash_validation.called
+
+
+def test_generate_media_color_dialog_is_tks_own():
+    """No tkinter.colorchooser: it isn't in every Tk build SpinDoctor runs with, and clicks did nothing."""
+    calls = []
+
+    class Root:
+        class tk:
+            @staticmethod
+            def call(*args):
+                calls.append(args)
+                return "#123456"
+
+        def __str__(self):
+            return "."
+
+    app = gui._SpinDoctorGUI.__new__(gui._SpinDoctorGUI)
+    app.root = Root()
+    app.tk = __import__("tkinter")
+    assert app._gm_ask_color("#ffffff", "Top letter color") == "#123456"
+    assert calls == [("tk_chooseColor", "-initialcolor", "#ffffff", "-title", "Top letter color", "-parent", ".")]
+    Root.tk.call = staticmethod(lambda *args: "")
+    assert app._gm_ask_color("#ffffff", "Glow color") == ""          # cancelled
+
+
+def test_generate_media_title_designer_previews_and_lists_fonts(monkeypatch, tmp_path):
+    from spindoctor import titleart
+
+    if not titleart.pillow_available():
+        pytest.skip("previews need Pillow")
+    monkeypatch.setattr(titleart, "installed_fonts", lambda: {"Some Font": tmp_path / "some.ttf"})
+    app, _cfg = _test_page_app(monkeypatch, tmp_path, output_dir=str(tmp_path / "out"))
+    try:
+        app._select_page("Generate Media")
+        # The background choice says what it is with help text off; its note, when on, has a line of its own
+        # (beside other widgets in a row, a wrapping help label got no width and never showed).
+        labels = {str(w.cget("text")): w for w in _widgets(app._gm_preview_label.master)
+                  if w.winfo_class() == "TLabel"}
+        assert "Background (preview only)" in labels
+        note = next(text for text in labels if text.startswith("The background is only for the preview"))
+        assert labels[note].master.master is app._gm_preview_label.master
+        app._gm_style_var.set("neon")
+        app._gm_style_picked()
+        assert app._gm_effect_var.get() == "glow"
+        assert app._gm_color_vars[1].get() == titleart.color_text(titleart.STYLES["neon"][1])
+        assert str(app._gm_glow_button.cget("state")) == "normal"
+        # A color button opens the color dialog, and what is picked shows on the button and in the preview.
+        monkeypatch.setattr(app, "_gm_ask_color", lambda current, title: "#ff0000")
+        app._gm_color_buttons[0].invoke()
+        assert app._gm_color_vars[0].get() == "#ff0000" and app._gm_color_buttons[0].cget("bg") == "#ff0000"
+        app._gm_effect_var.set("flat")
+        app._gm_paint_color_buttons()
+        assert str(app._gm_glow_button.cget("state")) == "disabled"
+        app._gm_preview_text_var.set("Handheld Electronic")
+        for background in app._GM_BACKGROUNDS:
+            app._gm_background_choice_var.set(background)
+            app._gm_preview()
+            assert str(app._gm_preview_label.cget("image")) and app._gm_preview_image.width() == 400
+        app._gm_load_fonts()
+        assert tuple(app._gm_font_box.cget("values")) == ("(heavy default)", "Some Font")
+        app._gm_color_vars[0].set("nope")
+        app._gm_preview()
+        assert "isn't a color" in str(app._gm_preview_label.cget("text"))
+    finally:
+        app.root.destroy()
+
+
+def _widgets(widget):
+    """Every widget under *widget*."""
+    for child in widget.winfo_children():
+        yield child
+        yield from _widgets(child)
+
+
+def _buttons(widget):
+    """Every button under *widget*."""
+    return (child for child in _widgets(widget) if child.winfo_class() in ("TButton", "Button"))
+
+
+@pytest.mark.parametrize("apply", [False, True])
+def test_every_generate_media_button_runs_without_an_error(monkeypatch, tmp_path, apply):
+    """Press each button on the page, as a click does, with Apply off and on: none may fail."""
+    from spindoctor import titleart
+
+    monkeypatch.setattr(titleart, "installed_fonts", lambda: {})
+    app, _cfg = _test_page_app(monkeypatch, tmp_path, output_dir=str(tmp_path / "out"))
+    errors = []
+    app.root.report_callback_exception = lambda *exc: errors.append(exc)
+    try:
+        app._select_page("Generate Media")
+        app._global_apply_var.set(apply)
+        app._gm_system_var.set("NES")
+        ran = []
+        monkeypatch.setattr(app, "_run_cli", lambda program, args, **kw: ran.append(args) or True)
+        monkeypatch.setattr(app, "_gm_ask_color", lambda current, title: "#00ff00")
+        monkeypatch.setattr(app, "_open_path", lambda *a, **kw: None)
+        app.messagebox = Mock()
+        app.messagebox.askyesno.return_value = True
+        app._flash_validation = Mock()
+        pressed = 0
+        page = app._gm_preview_label.master.master      # box 2's frame: the page with all five boxes
+        for button in _buttons(page):
+            if str(button.cget("state")) == "disabled":
+                continue
+            button.invoke()
+            app.root.update()
+            pressed += 1
+        assert pressed >= 15 and not errors, errors
+        assert any(args[:2] == ["generate-media", "wheel-pictures"] for args in ran)
+        assert any(args[:2] == ["generate-media", "record"] for args in ran)
+    finally:
+        app.root.destroy()
 
 
 def test_generate_media_needs_a_system(monkeypatch):

@@ -270,6 +270,23 @@ def test_safe_writer_successful_write_passes_through():
 _PY39_METHODS = {"removeprefix", "removesuffix"}
 
 
+def test_titleart_imports_without_subscriptable_builtin_tuple():
+    """Python 3.8 evaluates type aliases even with postponed annotations."""
+    import runpy
+    from pathlib import Path
+
+    import spindoctor
+
+    class LegacyTuple:
+        pass
+
+    namespace = runpy.run_path(
+        str(Path(spindoctor.__file__).with_name("titleart.py")),
+        init_globals={"tuple": LegacyTuple},
+    )
+    assert "RGB" in namespace
+
+
 def test_package_avoids_python39_string_methods():
     import pathlib
 
