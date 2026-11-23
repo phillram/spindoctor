@@ -61,7 +61,7 @@ both ways: start a game with the controllers off, then again with one on.
 | Emulator | What takes the panel's place | Keep the panel working |
 |---|---|---|
 | ActiveGS | `joystickMode:joystick1` in `Documents\ActiveGSLocalData\activegs.conf` uses the first controller, and the numpad only when there is none | `joystickMode:keypad` |
-| AppleWin | Joystick 1 on **PC Joystick #1** does the same | **Keyboard (numpad)** in its input settings |
+| AppleWin | Joystick 1 on **PC Joystick #1** does the same | **Keyboard (numpad)** in its input settings (`Joystick0 Emu Type v3` = `3` in its registry key) |
 | Project64 with N-Rage | `xInput=1` in a `[Controller n]` section of `NRage.ini` reads only an Xbox-type pad | `xInput=0`, and bind the panel's keys |
 
 Close the emulator and back up the file first. A numpad joystick needs numpad keys,
@@ -165,6 +165,7 @@ PadKeys_Keys(x, y, b, pov) {	; stick 0-65535, button bits, D-pad in hundredths o
 - **Keep the names unique.** The functions and the label share the module's script with
   RocketLauncher's own.
 
-Checked in ActiveGS with DualShock 4 controllers (DS4Windows running): the panel and a
-controller both worked in play, with this file plus three more buttons. The AppleWin
-row is from its source; for N-Rage, `xInput=0` was also tried on the cabinet.
+Checked in ActiveGS and AppleWin with DualShock 4 controllers (DS4Windows running): the
+panel and a controller both worked in play, with this file plus three more buttons
+(AppleWin's window class is `APPLE2FRAME`). For N-Rage, `xInput=0` was also tried on
+the cabinet.
