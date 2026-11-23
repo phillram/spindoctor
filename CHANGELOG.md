@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [3.4.0] - 2026-11-23
+
+Offline media generation release. Make missing wheel art, game videos, screenshots
+and Main Menu videos locally, with a live title designer in the GUI, staged installs
+and undo. Also adds cabinet diagnostics, speeds up GUI startup and repeated library
+work, and refreshes the guides. No breaking CLI or configuration changes.
+
 ### Added
 
 - **`doctor` flags AHK keymapper hotkeys that RocketLauncher's menus switch off.** RocketLauncher turns its menu navigation keys (`[Navigation]` in `Settings\RocketLauncher.ini`: Up, Down, Left, Right, Select and the P2 set, each a `|` list that often includes panel letters such as `W`) into hotkeys with AutoHotkey's `Hotkey` command, on for a menu and off afterwards. An Internal keymapper profile is appended to the same script, so that replaces a plain hotkey of the same name: `w::` or `~w::` in a profile never fires, while `*w::` and remaps (`w::c`) still do. On a real cabinet a camera button did nothing until `w::` became `*w::`. A new **Keymapper hotkeys** check reads the game profiles under `Profiles\AHK` for systems whose `Keymapper_AHK_Method` is Internal and WARNs per wheel listing each such hotkey, its line and the setting it clashes with. Hotkeys in `#If` contexts and key combinations aren't counted; a wheel that's hidden or off the Main Menu is INFO. Diagnosis only. New `spindoctor/keymapper_hotkeys.py`. Covered by `tests/test_doctor_keymapper_hotkeys.py`.
@@ -2524,7 +2531,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v3.3.0...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v3.4.0...HEAD
+[3.4.0]: https://github.com/phillram/spindoctor/compare/v3.3.0...v3.4.0
 [3.3.0]: https://github.com/phillram/spindoctor/compare/v3.2.0...v3.3.0
 [3.2.0]: https://github.com/phillram/spindoctor/compare/v3.1.0...v3.2.0
 [3.1.0]: https://github.com/phillram/spindoctor/compare/v3.0.0...v3.1.0
