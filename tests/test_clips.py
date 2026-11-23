@@ -81,6 +81,9 @@ def test_fit_size_keeps_the_shape_and_even_sides():
     assert clips.fit_size(960, 720) == (640, 480)
     assert clips.fit_size(1920, 1080) == (640, 360)
     assert clips.fit_size(448, 576) == (374, 480)
+    assert clips.fit_size(1268, 944) == (640, 480)     # a crop a few lines off 4:3
+    assert clips.fit_size(1276, 720) == (640, 360)
+    assert clips.fit_size(1200, 720) == (640, 384)     # 5:3 stays 5:3
     assert clips.fit_size(0, 0) == clips.CLIP_SIZE
 
 

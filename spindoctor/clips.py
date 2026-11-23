@@ -46,9 +46,15 @@ def _even(n: float) -> int:
 
 
 def fit_size(width: int, height: int, box: tuple[int, int] = CLIP_SIZE) -> tuple[int, int]:
-    """*width* x *height* scaled to fit inside *box*, with even sides."""
+    """*width* x *height* scaled to fit inside *box*, with even sides.  A
+    picture within 3% of 4:3 or 16:9 (a crop a few lines off) gets exactly
+    that shape, as the wheel's other videos have."""
     if width <= 0 or height <= 0:
         return box
+    for shape in (4 / 3, 16 / 9):
+        if abs(width / height / shape - 1) <= 0.03:
+            width, height = shape, 1.0
+            break
     scale = min(box[0] / width, box[1] / height)
     return (min(box[0], max(2, round(width * scale / 2) * 2)),
             min(box[1], max(2, round(height * scale / 2) * 2)))
