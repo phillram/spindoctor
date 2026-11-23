@@ -68,19 +68,25 @@ appears as soon as it gets one. Such games are left out unless you pass
 `--show-hidden`, so extra disks and sides that are meant to stay hidden do.
 
 Drawn titles count as missing, so `fetch-media` or an import replaces them with
-a real logo. `--redraw` draws them again in another style.
+a real logo. `--redraw` draws them again in another style. Two different games
+of one wheel that would draw the same title (two makers' "Electronic Football")
+get what tells their descriptions apart: "Electronic Football - Conic". A
+game's regional copies and revisions keep one title.
 
 ## Recording games
 
 `record` launches each game through RocketLauncher, as
 [launch tests](workflows.md#launch-tests) do, lets it run `--wait` seconds (20),
-waits up to 40 more for a picture that moves, records `--seconds` (35), and
-closes it with its exit key. Play statistics are put back after every game.
+waits up to `--settle` more (40) for a picture that moves, records `--seconds`
+(35), and closes it with its exit key. Play statistics are put back after every
+game.
 
 Before it starts:
 
 - It launches nothing without `--apply`, and asks first (`--yes` skips that).
-  The plan says how many games and how long: about 75 seconds per game.
+  The plan says how many games and how long: the wait, half the settle time and
+  the recording, plus about 18 seconds per game (launch, close, cleanup and the
+  pause before the next) and 90 for the run.
 - It refuses while HyperSpin or a game is open, and waits until nobody has
   used the keyboard or mouse for 15 seconds.
 - It starts no new game after `--minutes` (30). `--resume` carries on later.
@@ -90,15 +96,37 @@ stops it and closes the game; so do **Stop**, **Stop after this game** and
 Ctrl+C. Game pads are not watched.
 
 A black or frozen picture, or another window in front of the game, never
-becomes its video. A frozen picture that isn't black makes a still instead. The
-games' own demo is what gets recorded; `--press 12:Enter` presses a key that
-many seconds after the window opens, for one named game.
+becomes its video. A picture is black when 99.99% of it is dark, so a
+handheld's small screen on black, or a pinball's few lit LEDs, is not. A picture
+that changes nowhere for 2 seconds is standing still; a small change counts (a
+ball, a few LEDs), and a take that stands still most of the time makes a still
+instead, unless it's black.
+
+Most arcade and console games show their own demo, and that is what gets
+recorded. Games that do nothing until someone plays (handheld electronic games,
+many computer games) need keys:
+
+- `--press 3:Enter` presses a key that many seconds after each game's window
+  opens: Start, or `--press 2:5 --press 3:1` for a coin and Start.
+- `--play "Up Down Left Right A B"` then presses one of those keys at random,
+  about once a second, while it waits and records.
+
+Use the keys the games are set to (the control panel's, on a cabinet). The
+recorder's own key presses don't stop the run; arrow, Home, End, Page Up/Down,
+Insert and Delete reach the game as those keys, not the number pad's. Keys that
+quit or pause the game don't belong in `--play`. Games like Simon end at the
+first wrong key: give them Start in `--play` too, so a new game starts often.
+`--settle 3` keeps such runs short, since the game starts moving once played.
 
 Sound is the PC's own output, through Windows' loopback, brought to about
 -20 dB. Without a usable sound device the clip is silent; `--no-sound` asks for
 that. The clip is H.264 Main with AAC, at most 640x480, at 30 frames a second.
-`--crop auto` drops black bars; `4:3` keeps the middle; `full` keeps the whole
-screen, bezel and all. `--screenshots` takes a still only.
+`--crop auto` drops black bars, read from the brightest picture of the whole
+take, so a score line or a row of LEDs on black stays in, and a tall game (a
+handheld's portrait screen, at least 60% of the height) or a wide one keeps its
+shape; `4:3` keeps the middle; `full` keeps the whole screen, bezel and all.
+`--screenshots` takes a still only. MAME writes `cfg\<game>.cfg` when a game closes: `--cleanup remove`
+takes such files out again (see [launch tests](workflows.md#launch-tests)).
 
 Stills go into the video folder, where HyperSpin shows them in the video's
 place. Artwork slots hold boxes, cartridges or discs depending on the theme, so

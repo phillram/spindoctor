@@ -544,3 +544,14 @@ def test_missing_ffmpeg_stops_clips_but_not_pictures(cabinet, monkeypatch):
 
 def test_a_bad_size_is_refused(cabinet):
     assert _run("wheel-pictures", "-s", "NES", "--size", "huge").exit_code == 2
+
+
+def test_two_games_with_one_title_are_told_apart(cabinet):
+    rows = ('<game name="cnfball"><description>Electronic Football (handheld, Conic)</description></game>'
+            '<game name="efball"><description>Electronic Football (handheld, Epoch)</description></game>'
+            '<game name="tetris"><description>Tetris (USA)</description></game>'
+            '<game name="tetrisa"><description>Tetris (Europe)</description></game>')
+    _file(cabinet.databases_dir / "Handhelds" / "Handhelds.xml", f"<menu>{rows}</menu>".encode())
+    titles = {g.name: g.title for g in genmedia.wheel_state(cabinet, "Handhelds").games}
+    assert titles == {"cnfball": "Electronic Football - Conic", "efball": "Electronic Football - Epoch",
+                      "tetris": "Tetris", "tetrisa": "Tetris"}

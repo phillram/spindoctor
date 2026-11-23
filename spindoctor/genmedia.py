@@ -162,6 +162,7 @@ def wheel_state(config: Config, system: str) -> WheelState:
         return any(not index.is_placeholder(p) for p in paths or ())
 
     raw = _raw_game_names(system, config.databases_dir)
+    described: list[str] = []
     for key, e in entries.items():
         clone = (e.cloneof or "").strip()
         is_clone = bool(clone) and clone.lower() != key.lower()
@@ -184,6 +185,16 @@ def wheel_state(config: Config, system: str) -> WheelState:
             game.video = "placeholder"
         game.hidden = state.wheels_only and game.wheel == "no"
         state.games.append(game)
+        described.append(e.description or "")
+    # Different games with one title (two makers' "Electronic Football") get
+    # titles that tell them apart, so their drawn pictures do too.
+    same: dict[str, list[int]] = {}
+    for i, game in enumerate(state.games):
+        same.setdefault(game.title.lower(), []).append(i)
+    for group in (g for g in same.values() if len(g) > 1):
+        titles = titleart.tell_apart([described[i] for i in group], state.games[group[0]].title)
+        for i, title in zip(group, titles):
+            state.games[i].title = title
     if not state.games:
         state.problem = "HyperSpin lists no games on it"
     return state

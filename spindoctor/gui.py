@@ -12939,10 +12939,12 @@ class _SpinDoctorGUI:
         self._gm_count_var = self.tk.StringVar(value="5")
         self._gm_seconds_var = self.tk.StringVar(value="35")
         self._gm_wait_var = self.tk.StringVar(value="20")
+        self._gm_settle_var = self.tk.StringVar(value="40")
         self._gm_minutes_var = self.tk.StringVar(value="30")
         for label, var, low, high in (("Games at most", self._gm_count_var, 1, 100000),
                                       ("Seconds", self._gm_seconds_var, 5, 600),
                                       ("Wait first", self._gm_wait_var, 1, 600),
+                                      ("Then for movement", self._gm_settle_var, 0, 600),
                                       ("Stop after minutes (0 = don't)", self._gm_minutes_var, 0, 10000)):
             self.ttk.Label(row, text=label).pack(side="left")
             self.ttk.Spinbox(row, from_=low, to=high, width=6, textvariable=var).pack(side="left", padx=(4, 12))
@@ -12956,6 +12958,20 @@ class _SpinDoctorGUI:
         self._gm_crop_var = self.tk.StringVar(value="auto")
         self.ttk.Combobox(row, textvariable=self._gm_crop_var, state="readonly", width=6,
                           values=("auto", "4:3", "full")).pack(side="left", padx=6)
+        row = self.ttk.Frame(box)
+        row.pack(fill="x", padx=6, pady=2)
+        self.ttk.Label(row, text="Keys after it opens").pack(side="left")
+        self._gm_press_var = self.tk.StringVar()
+        self.ttk.Entry(row, textvariable=self._gm_press_var, width=18).pack(side="left", padx=(4, 12))
+        self.ttk.Label(row, text="Play with").pack(side="left")
+        self._gm_play_var = self.tk.StringVar()
+        self.ttk.Entry(row, textvariable=self._gm_play_var, width=30).pack(side="left", padx=4)
+        self._help_text(
+            box, text="Leave both empty for games that show their own demo. For games that do nothing until "
+                      "played (handheld games, many computer games): Keys after it opens, as SECONDS:KEY, "
+                      "like 3:Enter for Start or 2:5 3:1 for a coin and Start; Play with, keys pressed at "
+                      "random while it records, like Up Down Left Right A B.",
+        ).pack(fill="x", padx=6)
         row = self.ttk.Frame(box)
         row.pack(fill="x", padx=6, pady=(2, 6))
         self._gm_record_btn = self.ttk.Button(row, command=self._gm_record)
@@ -13078,6 +13094,7 @@ class _SpinDoctorGUI:
                 ("--count", self._gm_count_var, "Games at most", 1, 100000),
                 ("--seconds", self._gm_seconds_var, "Seconds", 5, 600),
                 ("--wait", self._gm_wait_var, "Wait first", 1, 600),
+                ("--settle", self._gm_settle_var, "Then for movement", 0, 600),
                 ("--minutes", self._gm_minutes_var, "Stop after minutes", 0, 10000)):
             text = var.get().strip()
             if not text.isdigit() or not low <= int(text) <= high:
@@ -13090,6 +13107,10 @@ class _SpinDoctorGUI:
             args.append("--screenshots")
         if self._gm_hidden_var.get():
             args.append("--show-hidden")
+        for press in self._gm_press_var.get().replace(",", " ").split():
+            args += ["--press", press]
+        if self._gm_play_var.get().strip():
+            args += ["--play", self._gm_play_var.get().strip()]
         return args + ["--crop", self._gm_crop_var.get() or "auto"]
 
     def _gm_record(self) -> None:

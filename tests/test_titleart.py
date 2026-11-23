@@ -97,3 +97,11 @@ def test_cards_are_opaque_and_carry_the_title(background):
     rgb = titled.tobytes()
     yellow = sum(1 for r, g, b in zip(rgb[0::3], rgb[1::3], rgb[2::3]) if r > 230 and 180 < g < 225 and b < 120)
     assert yellow > 200  # the title's colour
+
+
+def test_games_sharing_a_title_are_told_apart_by_what_differs():
+    assert titleart.tell_apart(["Electronic Football (handheld, Conic)", "Electronic Football (handheld, Epoch)"],
+                               "Electronic Football") == ["Electronic Football - Conic", "Electronic Football - Epoch"]
+    # A game's regional copies and revisions keep one picture.
+    assert titleart.tell_apart(["Tetris (USA)", "Tetris (Europe) (Rev 1)"], "Tetris") == ["Tetris", "Tetris"]
+    assert titleart.tell_apart(["Pac-Man (Coleco)", "Pac-Man"], "Pac-Man") == ["Pac-Man - Coleco", "Pac-Man"]
