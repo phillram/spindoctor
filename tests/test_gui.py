@@ -91,9 +91,41 @@ def test_resolve_dev_install_prefers_path_binary(monkeypatch, tmp_path):
     fake.write_text("#!/bin/sh\necho ok\n")
     monkeypatch.setattr(gui.shutil, "which",
                         lambda name: str(fake) if name == "spindoctor" else None)
+    monkeypatch.setattr(gui, "_path_binary_matches", lambda path: path == str(fake))
 
     argv = gui.resolve_cli_command("spindoctor")
     assert argv == [str(fake)]
+
+
+def test_resolve_dev_install_skips_another_versions_path_binary(monkeypatch, tmp_path):
+    """An older release's spindoctor.exe on PATH (left by a v3 install, or put
+    there for its ffmpeg) lacks newer commands: the GUI's buttons then failed
+    with "No such command". Its own code runs instead."""
+    monkeypatch.setattr(sys, "frozen", False, raising=False)
+    old = tmp_path / "spindoctor.exe"
+    old.write_bytes(b"")
+    monkeypatch.setattr(gui.shutil, "which", lambda name: str(old) if name == "spindoctor" else None)
+    gui._path_binary_matches.cache_clear()
+    reported = []
+
+    def run(argv, **kwargs):
+        reported.append(argv)
+        return _fake_completed(stdout="spindoctor, version 0.0.1\n")
+
+    monkeypatch.setattr(gui.subprocess, "run", run)
+    try:
+        assert gui.resolve_cli_command("spindoctor") == [sys.executable, "-m", "spindoctor.cli"]
+        gui.resolve_cli_command("spindoctor")
+        assert reported == [[str(old), "--version"]]                     # asked once
+        monkeypatch.setattr(gui.subprocess, "run",
+                            lambda argv, **kw: _fake_completed(stdout=f"spindoctor, version {gui.__version__}\n"))
+        gui._path_binary_matches.cache_clear()
+        assert gui.resolve_cli_command("spindoctor") == [str(old)]         # the same version is used
+        monkeypatch.setattr(gui.subprocess, "run", lambda *a, **k: (_ for _ in ()).throw(OSError("no")))
+        gui._path_binary_matches.cache_clear()
+        assert gui.resolve_cli_command("spindoctor")[0] == sys.executable  # can't say: not used
+    finally:
+        gui._path_binary_matches.cache_clear()
 
 
 def test_resolve_frozen_ignores_stale_sibling(monkeypatch, tmp_path):
