@@ -60,6 +60,12 @@ spindoctor fetch-meta --system MAME --auto-best
 spindoctor fetch-media --system MAME --types wheel,background,video
 spindoctor fetch-steam-media --system "PC Games" --game Hades --steam-id 1145360
 spindoctor media-scan D:\MediaPack --system MAME
+spindoctor generate-media list --all
+spindoctor generate-media wheel-pictures --system MAME
+spindoctor generate-media record --system MAME --count 5
+spindoctor generate-media placeholders --no-video-clip
+spindoctor generate-media put-in
+spindoctor generate-media undo
 spindoctor generate-config
 spindoctor theme-scan --keyword controller
 spindoctor theme-apply D:\Packs\Buttons
@@ -68,6 +74,8 @@ spindoctor theme-fill --system MAME --default
 
 `--auto-best` accepts ambiguous provider matches. Use per-game overrides for
 known IDs, or skip ambiguity in unattended work. Zero-byte media is missing.
+`generate-media` works offline and stages its files until `put-in`;
+[guide](generate-media.md).
 
 ## Wheels and cabinet helpers
 

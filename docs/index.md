@@ -11,6 +11,7 @@ CLI examples use `spindoctor` (pip); Windows binaries use `spindoctor-cli`.
 | Navigate the app | [GUI pages and screenshots](gui.md) |
 | Find a command | [Cheatsheet](cli-cheatsheet.md), [generated command reference](commands.md) |
 | Refresh, back up, migrate or undo | [Workflows](workflows.md) |
+| Make missing wheel pictures, videos and screenshots | [Generate missing media](generate-media.md) |
 | Install wheel refreshers and Toolkit helpers | [Standalone tools](standalone-tools.md) |
 | Configure synthetic-wheel art and sound | [Synthetic-wheel media](synthetic-wheel-media.md) |
 | Tour consoles while idle | [Idle tour](idle-tour.md) |

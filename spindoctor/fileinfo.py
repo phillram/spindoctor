@@ -29,6 +29,7 @@ from .database import GameEntry
 _CREATE_NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
 from .introvideo import video_duration_seconds
 from .media import MEDIA_DIR_MAP
+from .placeholders import PlaceholderIndex
 from ._utils import dir_size as _dir_size, win_safe_stem
 
 
@@ -85,6 +86,9 @@ class FileDetail:
 
     # Video / audio
     duration_seconds: Optional[float] = None
+
+    # Only a stand-in is there (spindoctor.placeholders); exists stays False.
+    placeholder: bool = False
 
     error: str = ""
 
@@ -202,12 +206,15 @@ def find_media_file(
     system_name: str,
     media_type: str,
     media_base: Path,
+    standins: Optional[PlaceholderIndex] = None,
 ) -> FileDetail:
     """Locate the actual media file on disk and return its FileDetail.
 
     Tries each supported extension for the media type.  Returns a
     FileDetail with exists=False pointing to the canonical expected path
-    if nothing is found.
+    if nothing is found, or only a stand-in for missing media (then with
+    ``placeholder`` set).  Callers with many games pass one *standins*, so
+    each folder's list is read once.
     """
     game_name = win_safe_stem(game_name)
     dir_parts = MEDIA_DIR_MAP.get(media_type, (media_type.capitalize(),))
@@ -227,9 +234,14 @@ def find_media_file(
             return d
 
     exts = _MEDIA_SEARCH_EXTS.get(media_type, [".bin"])
+    standins = standins or PlaceholderIndex()
+    only_standin = False
     for ext in exts:
         candidate = directory / f"{game_name}{ext}"
         if candidate.exists():
+            if standins.is_placeholder(candidate):
+                only_standin = True
+                continue
             return scan_file(candidate, media_type)
 
     # Not found — return pointer to canonical path
@@ -240,6 +252,7 @@ def find_media_file(
         media_type=media_type,
         extension=default_ext,
         exists=False,
+        placeholder=only_standin,
     )
 
 
@@ -277,6 +290,7 @@ def scan_game(
     media_base: Path,
     db_entry: Optional["GameEntry"] = None,
     media_types: Optional[list[str]] = None,
+    standins: Optional[PlaceholderIndex] = None,
 ) -> GameFileReport:
     """Build a full GameFileReport for one game."""
     report = GameFileReport(game_name=game_name, system_name=system_name)
@@ -293,7 +307,7 @@ def scan_game(
 
     types = media_types or MEDIA_TYPES
     for mt in types:
-        report.media[mt] = find_media_file(game_name, system_name, mt, media_base)
+        report.media[mt] = find_media_file(game_name, system_name, mt, media_base, standins)
 
     return report
 
@@ -308,11 +322,13 @@ def scan_system(
 ) -> list[GameFileReport]:
     """Scan all (or a subset of) games in a system."""
     names = game_names or sorted(db_games.keys())
+    standins = PlaceholderIndex()
     return [
         scan_game(
             name, system_name, roms_base, media_base,
             db_entry=db_games.get(name),
             media_types=media_types,
+            standins=standins,
         )
         for name in names
     ]

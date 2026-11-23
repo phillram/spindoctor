@@ -4,6 +4,7 @@ A GUI and CLI librarian for HyperSpin + RocketLauncher cabinets.
 
 - Audit ROMs, databases and media; verify against DATs; find duplicates and misplaced files.
 - Fetch metadata and artwork from ScreenScraper, TheGamesDB and Steam; import local media.
+- Make missing wheel pictures, videos and screenshots on the PC, without internet.
 - Manage systems, PC games, wheel order and first/last/random wheel starts.
 - Build Favorites, Recently Played and Most Played wheels.
 - Configure LEDBlinky profiles, colors and animations, and Sinden/DemulShooter hooks.

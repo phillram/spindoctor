@@ -1409,6 +1409,8 @@ def _print_game_detail(report, *, verbose_path: bool = True) -> None:
             )
         else:
             expected = str(detail.path) if detail else "—"
+            if detail and detail.placeholder:
+                expected += "  (only a SpinDoctor placeholder)"
             media_tbl.add_row(
                 mt,
                 "[red]✗[/red]",
@@ -6222,6 +6224,7 @@ def fetch_media(system, all_systems, game, types, source, overwrite, pick_media,
 
     from .audit import MediaIndex, check_media
     from .media import MediaDownloader
+    from .placeholders import taken
     from .scraper import MetadataError, build_client
 
     media_types = [t.strip() for t in types.split(",") if t.strip() in MEDIA_TYPES]
@@ -6416,7 +6419,7 @@ def fetch_media(system, all_systems, game, types, source, overwrite, pick_media,
                 for mt in media_types:
                     dest = downloader.media_path(sys_name, gname, mt)
                     url = jobs_url_map.get(gname, {}).get(mt, "")
-                    if dest.exists() and not overwrite:
+                    if taken(dest) and not overwrite:
                         console.print(
                             f"    [dim]{mt:<12}[/dim]  existing      {dest}"
                         )
@@ -6839,6 +6842,7 @@ def media_add(system, game, media_type, source_file, move, overwrite,
     config = _checked_cfg()
 
     from .media import MediaDownloader
+    from .placeholders import taken
     out_path = Path(output_dir) if output_dir else None
     downloader = MediaDownloader(config, output_dir_override=out_path)
 
@@ -6848,7 +6852,7 @@ def media_add(system, game, media_type, source_file, move, overwrite,
         if src.suffix.lower() != dest.suffix.lower():
             dest = dest.with_suffix(src.suffix.lower())
         verb = "move" if move else "copy"
-        if dest.exists() and not overwrite:
+        if taken(dest) and not overwrite:
             console.print(
                 f"[yellow]Would skip:[/yellow] {dest} already exists "
                 f"(pass --overwrite to replace)."
@@ -7095,6 +7099,590 @@ def media_scan_cmd(
             "\n[yellow]Nothing to import.[/yellow] "
             "(Pass --overwrite to also import the 'replacement' bucket.)"
         )
+
+
+# ─── generate-media ───────────────────────────────────────────────────────────
+
+_GEN_WHEELS_HELP = "Wheel (repeatable)."
+_GEN_GAMES_HELP = "Only these games, by name or title (* and ? wildcards). Repeatable."
+_GEN_STAGE_HELP = ("Staging folder (default: <output_dir>/generated-media, else "
+                   "~/.spindoctor/generated-media).")
+
+
+def _gen_wheel_options(func):
+    func = click.option("--game", "-g", "games", multiple=True, help=_GEN_GAMES_HELP)(func)
+    func = click.option("--all", "all_systems", is_flag=True,
+                        help="Every wheel on the Main Menu except Custom Wheels.")(func)
+    return click.option("--system", "-s", "systems", multiple=True, help=_GEN_WHEELS_HELP)(func)
+
+
+def _gen_config() -> Config:
+    config = _cfg()
+    if not config.hyperspin_dir:
+        err_console.print("[red]Set hyperspin_dir first[/red] ([cyan]spindoctor config set[/cyan]).")
+        sys.exit(1)
+    return config
+
+
+def _gen_states(config: Config, systems, all_systems: bool) -> list:
+    """The wheels' :class:`genmedia.WheelState`; exits on a bad selection."""
+    from . import genmedia
+
+    try:
+        wheels = genmedia.resolve_wheels(config, systems, all_systems)
+    except genmedia.GenMediaError as exc:
+        err_console.print(f"[red]{escape(str(exc))}[/red]")
+        sys.exit(1)
+    return [genmedia.wheel_state(config, w) for w in wheels]
+
+
+def _gen_staged(stage, errors: list) -> None:
+    """What was staged, and what to do with it."""
+    for line in errors[:20]:
+        err_console.print(f"[red]{escape(line)}[/red]")
+    if len(errors) > 20:
+        err_console.print(f"[red]… and {len(errors) - 20} more.[/red]")
+    if not stage.items:
+        shutil.rmtree(stage.folder, ignore_errors=True)
+        console.print("Nothing was made.")
+        return
+    console.print(f"\n[green]{len(stage.items)} file(s) made[/green], waiting in {escape(str(stage.folder))}")
+    console.print(f"Look at them: {escape(str(stage.folder / 'review.html'))}")
+    console.print(f"Then: [cyan]spindoctor generate-media put-in \"{escape(stage.name)}\" --apply[/cyan]")
+
+
+@cli.group("generate-media")
+def generate_media_group():
+    """Make the wheel pictures, videos and screenshots a wheel is missing.
+
+    Works without internet: titles are drawn with a font on this PC, and
+    videos are recorded from the games themselves. Nothing goes into
+    HyperSpin's media before `put-in`, which fills only empty places and can
+    be undone.
+
+    \b
+    1. list             what each wheel is missing
+    2. wheel-pictures   draw titles (or reuse a picture already on the PC)
+       record           launch games and record a video or a screenshot
+       placeholders     "No video found" for games with nothing
+    3. put-in           copy a staged batch into HyperSpin's media
+       undo             take the last batch out again
+    """
+
+
+@generate_media_group.command("list")
+@_gen_wheel_options
+@click.option("--details", is_flag=True, help="List the games, not only the counts.")
+@click.option("--json", "as_json", is_flag=True, help="Print it as JSON.")
+@click.option("--csv", "csv_path", type=click.Path(), default=None, help="Write one line per game.")
+def generate_media_list(systems, all_systems, games, details, as_json, csv_path):
+    """Show what each wheel is missing, judged the way HyperSpin looks for it.
+
+    \b
+    Wheel picture: none, or only a title SpinDoctor drew.
+    Video:         none, only a still picture, only a placeholder, or the
+                   parent game's (which HyperSpin plays, so it isn't missing).
+    Hidden:        not on the wheel, because it lists only games with a picture.
+    """
+    from . import genmedia
+
+    config = _gen_config()
+    states = _gen_states(config, systems, all_systems)
+    rows = [g for s in states for g in genmedia.matching(s.games, games)]
+    lacking = [g for g in rows if g.wheel != "yes" or g.video not in ("yes", "parent")]
+    if csv_path:
+        _write_dict_csv(Path(csv_path), ["system", "name", "title", "wheel", "video", "hidden"],
+                        [{"system": g.system, "name": g.name, "title": g.title, "wheel": g.wheel,
+                          "video": g.video, "hidden": g.hidden} for g in lacking])
+    if as_json:
+        click.echo(json.dumps([{
+            "system": s.system, "problem": s.problem, "video_problem": s.video_problem,
+            "wheels_only": s.wheels_only,
+            "games": [{"name": g.name, "title": g.title, "wheel": g.wheel, "video": g.video,
+                       "hidden": g.hidden} for g in genmedia.matching(s.games, games)],
+        } for s in states], indent=2))
+        return
+    heads = ("Games", "No pic", "Hidden", "Drawn", "No video", "Still", "Placeh.")
+    counted = [[len(s.games), s.count(wheel="no"), s.hidden, s.count(wheel="drawn"),
+                s.count(video="no"), s.count(video="still"), s.count(video="placeholder")] for s in states]
+    total = [sum(column) for column in zip(*counted)]
+    # What no wheel has needs no column, and fixed columns fit a narrow window.
+    shown = [i for i, n in enumerate(total) if n or i in (0, 1, 4)]
+    width = min(40, max(len(s.system) for s in states))
+
+    def line(name, values, style=""):
+        text = f"{name[:width]:<{width}}" + "".join(f"{v:>10}" for v in values)
+        console.print(f"[{style}]{escape(text)}[/{style}]" if style else escape(text), highlight=False)
+
+    line("Wheel", [heads[i] for i in shown], "bold")
+    complete = 0
+    for s, counts in zip(states, counted):
+        if len(states) > 1 and not s.problem and not any(counts[1:]):
+            complete += 1
+            continue
+        line(s.system, [f"{counts[i]:,}" if counts[i] else "-" for i in shown])
+    if len(states) > 1:
+        line("Total", [f"{total[i]:,}" for i in shown], "bold")
+    console.print("[dim]No pic: no wheel picture. Hidden: not on the wheel because of that. "
+                  "Still: a picture instead of a video.[/dim]")
+    if complete:
+        console.print(f"[dim]{complete} wheel(s) are missing nothing.[/dim]")
+    for s in states:
+        for why in filter(None, (s.problem, s.video_problem)):
+            console.print(f"[yellow]{escape(s.system)}:[/yellow] {escape(why)}")
+    if details:
+        said = {"no": "none", "drawn": "drawn", "still": "still only", "placeholder": "placeholder"}
+        for g in lacking:
+            parts = []
+            if g.wheel != "yes":
+                parts.append(f"wheel picture: {said[g.wheel]}")
+            if g.video not in ("yes", "parent"):
+                parts.append(f"video: {said[g.video]}")
+            if g.hidden:
+                parts.append("hidden")
+            console.print(f"{escape(g.system)} > {escape(g.title)} [dim]({escape(g.name)})[/dim]  {'; '.join(parts)}")
+    if len(states) == 1 and not states[0].problem and config.rocketlauncher_dir:
+        from .audit import audit_system
+
+        extra = audit_system(states[0].system, config, check_media_flag=False, fuzzy=False,
+                             check_mame_controls=False).roms_not_in_db
+        if extra:
+            console.print(f"{extra} game file(s) aren't on the wheel's list: "
+                          f"[cyan]spindoctor update-db --system \"{escape(states[0].system)}\"[/cyan] shows them.")
+
+
+def _parse_size(_ctx, _param, value):
+    if not value:
+        return None
+    match = re.fullmatch(r"(\d{2,4})[xX](\d{2,4})", value.strip())
+    if not match:
+        raise click.BadParameter("use WIDTHxHEIGHT, like 400x175")
+    return int(match.group(1)), int(match.group(2))
+
+
+@generate_media_group.command("wheel-pictures")
+@_gen_wheel_options
+@click.option("--style", type=click.Choice(["chrome", "gold", "white"]), default="chrome", show_default=True,
+              help="Letter colours.")
+@click.option("--font", type=click.Path(exists=True, dir_okay=False), default=None,
+              help="A .ttf or .otf file (default: a bold font from this PC).")
+@click.option("--size", callback=_parse_size, default=None, metavar="WIDTHxHEIGHT",
+              help="Picture size (default: the usual size of that wheel's pictures, else 400x175).")
+@click.option("--show-hidden", is_flag=True,
+              help="Also games the wheel hides for having no picture: they appear once they have one.")
+@click.option("--redraw", is_flag=True, help="Draw titles again that SpinDoctor drew earlier.")
+@click.option("--no-copy", is_flag=True,
+              help="Always draw: don't reuse the parent's picture, a misnamed one or another wheel's.")
+@click.option("--count", type=click.IntRange(1), default=None, help="At most this many pictures.")
+@click.option("--stage-dir", type=click.Path(file_okay=False), default=None, help=_GEN_STAGE_HELP)
+@click.option("--verbose", "-v", is_flag=True, help="List every game.")
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Make the pictures, in a staging folder. Without it, only list them.")
+def generate_media_wheel(systems, all_systems, games, style, font, size, show_hidden, redraw, no_copy,
+                         count, stage_dir, verbose, apply_changes):
+    """Make wheel pictures for games that have none.
+
+    A picture already on the PC is reused when it is clearly the game's: its
+    parent's, one saved under nearly the same name, or the same game on
+    another wheel (same name, year and maker). Otherwise the title is drawn.
+    Drawn titles stay listed as missing, so a real logo replaces them.
+    """
+    from . import genmedia, titleart
+
+    config = _gen_config()
+    states = _gen_states(config, systems, all_systems)
+    local = None if no_copy else genmedia.LocalPictures(config)
+    jobs, hidden = [], 0
+    for s in states:
+        if s.problem:
+            console.print(f"[yellow]{escape(s.system)}:[/yellow] {escape(s.problem)}")
+            continue
+        more, left = genmedia.plan_wheel_pictures(s, games=games, show_hidden=show_hidden, redraw=redraw,
+                                                  local=local)
+        jobs += more
+        hidden += left
+    jobs = jobs[:count] if count else jobs
+    copied = sum(1 for j in jobs if j.source)
+    console.print(f"{len(jobs)} wheel picture(s) to make: {len(jobs) - copied} drawn, {copied} already on this PC.")
+    if hidden:
+        console.print(f"[dim]{hidden} game(s) stay hidden: their wheel lists only games with a picture. "
+                      "--show-hidden makes theirs too, which puts them on the wheel.[/dim]")
+    for job in jobs if verbose or (len(jobs) <= 20 and not apply_changes) else ():
+        note = f"  [dim]{escape(job.note)}[/dim]" if job.note else ""
+        console.print(f"  {escape(job.game.system)} > {escape(job.game.title)}{note}")
+    if not jobs:
+        return
+    if not apply_changes:
+        _print_dry_run(False, "No pictures were made.")
+        return
+    stage = genmedia.Stage.create(genmedia.stage_root(config, stage_dir or ""), "wheel pictures")
+    with _make_progress(count=True) as prog:
+        task = prog.add_task("Drawing…", total=len(jobs))
+        errors = genmedia.make_wheel_pictures(
+            stage, jobs, style=style, size=size, font=Path(font) if font else None, config=config,
+            progress=lambda n, _total, title: prog.update(task, completed=n, description=escape(title[:40])))
+    stage.finish()
+    _gen_staged(stage, errors)
+    if errors and not stage.items and not titleart.pillow_available():
+        sys.exit(1)
+
+
+@generate_media_group.command("record")
+@click.option("--system", "-s", "systems", multiple=True, help=_GEN_WHEELS_HELP)
+@click.option("--game", "-g", "games", multiple=True, help=_GEN_GAMES_HELP)
+@click.option("--count", type=click.IntRange(1), default=None, help="At most this many games.")
+@click.option("--seconds", type=click.IntRange(5, 600), default=35, show_default=True,
+              help="Length of the recording.")
+@click.option("--wait", type=click.IntRange(1, 600), default=20, show_default=True,
+              help="Seconds a game runs before recording may start.")
+@click.option("--minutes", type=click.IntRange(0), default=30, show_default=True,
+              help="Start no new game after this many minutes (0 = no limit). --resume carries on.")
+@click.option("--screenshots", is_flag=True, help="Take a still picture only, for games with no video and no still.")
+@click.option("--no-sound", is_flag=True, help="Don't record the PC's sound.")
+@click.option("--crop", type=click.Choice(["auto", "4:3", "full"]), default="auto", show_default=True,
+              help="auto drops black bars; 4:3 keeps the middle; full keeps everything.")
+@click.option("--press", "presses", multiple=True, metavar="SECONDS:KEY",
+              help="Press a key this long after the game's window opens, like 12:Enter. Repeatable; "
+                   "for one game only.")
+@click.option("--show-hidden", is_flag=True, help="Also games the wheel hides for having no picture.")
+@click.option("--cleanup", "cleanup_mode", type=click.Choice(["report", "remove", "off"]), default=None,
+              help="Files the games create, as in `spindoctor test`. Default: test_cleanup (report).")
+@click.option("--resume", is_flag=True, help="Carry on the newest recording that didn't finish.")
+@click.option("--stage-dir", type=click.Path(file_okay=False), default=None, help=_GEN_STAGE_HELP)
+@click.option("--verbose", "-v", is_flag=True, help="List every picked game.")
+@click.option("--yes", "-y", is_flag=True, help="Don't ask before starting.")
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Launch the games and record them. Without it, only list them.")
+def generate_media_record(systems, games, count, seconds, wait, minutes, screenshots, no_sound, crop, presses,
+                          show_hidden, cleanup_mode, resume, stage_dir, verbose, yes, apply_changes):
+    """Launch games and record the videos (or stills) a wheel is missing.
+
+    Takes over the screen. Each game is launched through RocketLauncher, runs
+    --wait seconds, is recorded once its picture moves, and is closed. A
+    black or frozen picture, or another window in front, is never saved as
+    the video. Play statistics are put back after every game.
+
+    Won't start while HyperSpin or a game is open, or until nobody has used
+    the PC for 15 seconds. Any key, control-panel button or mouse click stops
+    it. Windows only, with ffmpeg.
+
+    \b
+    Examples:
+      spindoctor generate-media record -s "Sega Naomi" --count 10
+      spindoctor generate-media record -s "Sega Naomi" --count 10 --apply
+      spindoctor generate-media record -s MAME -g pacman --press 25:5 --press 27:1 --apply
+      spindoctor generate-media record --resume --apply
+    """
+    from . import _testrun, clips, gamecapture, gametest, genmedia
+    from .playtime import format_duration
+
+    config = _gen_config()
+    if not config.rocketlauncher_dir:
+        err_console.print("[red]Set rocketlauncher_dir first[/red] ([cyan]spindoctor config set[/cyan]).")
+        sys.exit(1)
+    run_dir = stage = None
+    try:
+        if resume:
+            found = gamecapture.unfinished_run(config)
+            if found is None:
+                console.print("There's no unfinished recording to carry on.")
+                return
+            run_dir, info = found
+            capture = gamecapture.resumed_settings(info)
+            stage = genmedia.Stage.load(Path(info["stage"]))
+            wheels = {r.get("System", "") for r in gametest.read_csv(run_dir / "plan.csv")}
+            plan = gamecapture.resumed_plan(config, run_dir,
+                                            [genmedia.wheel_state(config, w) for w in sorted(wheels)])
+            done = {(r["System"], r["Game"]) for r in gametest.read_csv(run_dir / "results.csv")}
+            left = sum(1 for g in plan.plan.to_launch if (g.system, g.game) not in done)
+            console.print(f"Carrying on {escape(run_dir.name)}: {left} game(s) left.")
+        else:
+            capture = gamecapture.CaptureSettings(
+                wait=wait, seconds=seconds, minutes=minutes, video=not screenshots, sound=not no_sound,
+                crop=crop, presses=gamecapture.parse_presses(presses))
+            if not systems:
+                raise genmedia.GenMediaError("Name the wheel to record with --system.")
+            plan = gamecapture.plan_capture(config, _gen_states(config, systems, False), patterns=games,
+                                            count=count, video=not screenshots, show_hidden=show_hidden)
+            left = plan.games
+            if presses and left != 1:
+                raise genmedia.GenMediaError("--press is for one game: name it with --game.")
+    except (gamecapture.CaptureError, genmedia.GenMediaError) as exc:
+        err_console.print(f"[red]{escape(str(exc))}[/red]")
+        sys.exit(1)
+
+    for wheel, why in plan.problems:
+        console.print(f"[yellow]{escape(wheel)}:[/yellow] {escape(why)}")
+    unready = [g for g in plan.plan.games if not g.launch]
+    if not resume:
+        console.print(f"{left} game(s) to record"
+                      + (f", {len(unready)} can't be launched" if unready else "") + ".")
+        for g in plan.plan.games if verbose or len(plan.plan.games) <= 20 else ():
+            why = f"  [red]{escape(g.reason)}[/red]" if g.reason else ""
+            console.print(f"  {escape(g.system)} > {escape(g.description or g.game)}{why}")
+        if plan.left_hidden:
+            console.print(f"[dim]{plan.left_hidden} game(s) are hidden from their wheel and left out "
+                          "(--show-hidden records them too).[/dim]")
+    if not left:
+        return
+    need = format_duration(capture.estimate(left))
+    limit = (f" It stops after {capture.minutes} minutes; --resume carries on."
+             if capture.minutes and left * capture.per_game() > capture.minutes * 60 else "")
+    console.print(f"That takes over the screen for about {need}.{limit}")
+    if not apply_changes:
+        _print_dry_run(False, "Nothing was launched.")
+        return
+    if sys.platform != "win32":
+        err_console.print("[red]Recording needs Windows: RocketLauncher only runs there.[/red]")
+        sys.exit(1)
+    try:
+        tools = clips.find_tools(config)
+        platform = gametest.WindowsPlatform()
+        report = gametest.recover(config, platform)
+        if report is not None:
+            _print_test_recovery(report)
+        gamecapture.check_ready(config, platform)
+        if not yes and not click.confirm(f"Start recording {left} game(s) now?", default=False):
+            console.print("Nothing was started.")
+            return
+        gamecapture.wait_until_idle(platform, lambda text: console.print(f"[dim]{escape(text)}[/dim]"))
+        gamecapture.check_ready(config, platform)
+    except (gamecapture.CaptureError, clips.ClipError, _testrun.ActiveRunError) as exc:
+        err_console.print(f"[red]{escape(str(exc))}[/red]")
+        sys.exit(1)
+    if stage is None:
+        stage = genmedia.Stage.create(genmedia.stage_root(config, stage_dir or ""),
+                                      "screenshots" if screenshots else "recordings")
+    console.print("Leave the PC alone now. Any key, button or mouse click stops it, and so does Ctrl+C here.")
+
+    from ._loopback import LoopbackRecorder
+
+    def show(number, total, item, result, left_s):
+        style = _TEST_STYLE.get(result.status, "")
+        console.print(f"[{number:>4}/{total}] {escape(item.system)} > {escape(item.description or item.game)}  "
+                      f"[{style}]{escape(result.reason)}[/{style}]  "
+                      f"[dim]({result.seconds}s, {format_duration(int(left_s))} left)[/dim]")
+
+    try:
+        done = gamecapture.record(config, plan, capture, stage, platform, tools, run_dir=run_dir,
+                                  sound_factory=LoopbackRecorder, on_result=show, cleanup=cleanup_mode)
+    except KeyboardInterrupt:
+        err_console.print("\n[yellow]Stopped.[/yellow] The play statistics are back; "
+                          "[cyan]spindoctor generate-media record --resume --apply[/cyan] carries on.")
+        sys.exit(130)
+    c = done.run.counts
+    console.print(f"\n{c.get('PASS', 0)} recorded, {c.get('WARN', 0)} still only, {c.get('FAIL', 0)} with nothing saved.")
+    if not done.run.finished:
+        console.print(f"Stopped early: {escape(done.halted or 'not every game was recorded')}. "
+                      "[cyan]spindoctor generate-media record --resume --apply[/cyan] carries on.")
+    _gen_staged(stage, [])
+
+
+@generate_media_group.command("placeholders")
+@_gen_wheel_options
+@click.option("--no-video-clip", "frontend", is_flag=True,
+              help="Make a new clip for HyperSpin's own No Video.flv instead: one file that plays for "
+                   "every game on every wheel without a video. No wheel needed.")
+@click.option("--kind", type=click.Choice(["clip", "picture"]), default="clip", show_default=True,
+              help="clip: a video saying \"No video found\". picture: a still saying \"No screenshot found\".")
+@click.option("--background", type=click.Choice(["blue", "snow"]), default="blue", show_default=True)
+@click.option("--text", default="", help="Say something else.")
+@click.option("--show-hidden", is_flag=True, help="Also games the wheel hides for having no picture.")
+@click.option("--redo", is_flag=True, help="Make placeholders again that are there already.")
+@click.option("--stage-dir", type=click.Path(file_okay=False), default=None, help=_GEN_STAGE_HELP)
+@click.option("--verbose", "-v", is_flag=True, help="List every game.")
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Make them, in a staging folder. Without it, only list them.")
+def generate_media_placeholders(systems, all_systems, games, frontend, kind, background, text, show_hidden,
+                                redo, stage_dir, verbose, apply_changes):
+    """Make "No video found" placeholders for games with no video and no still.
+
+    They carry the game's title and are marked: reports still count those
+    games as missing their video, a download or import replaces them, and
+    `generate-media remove` takes them out.
+    """
+    from . import clips, genmedia, titleart
+
+    config = _gen_config()
+    picked = []
+    if not frontend:
+        for s in _gen_states(config, systems, all_systems):
+            for why in filter(None, (s.problem, s.video_problem)):
+                console.print(f"[yellow]{escape(s.system)}:[/yellow] {escape(why)}")
+            picked += genmedia.plan_placeholders(s, games=games, show_hidden=show_hidden, redo=redo)
+        console.print(f"{len(picked)} game(s) have neither a video nor a still picture.")
+        for g in picked if verbose or (len(picked) <= 20 and not apply_changes) else ():
+            console.print(f"  {escape(g.system)} > {escape(g.title)}")
+        if not picked:
+            return
+    else:
+        console.print("A new clip for HyperSpin's own No Video.flv, which plays for every game without a video.")
+    if not apply_changes:
+        _print_dry_run(False, "No placeholders were made.")
+        return
+    try:
+        tools = clips.find_tools(config) if frontend or kind == "clip" else None
+        stage = genmedia.Stage.create(genmedia.stage_root(config, stage_dir or ""),
+                                      "No Video clip" if frontend else "placeholders")
+        errors: list = []
+        if frontend:
+            genmedia.make_frontend_clip(stage, background=background, text=text, tools=tools)
+        else:
+            with _make_progress(count=True) as prog:
+                task = prog.add_task("Making placeholders…", total=len(picked))
+                errors = genmedia.make_placeholders(
+                    stage, picked, kind=kind, background=background, text=text, tools=tools,
+                    progress=lambda n, _total, title: prog.update(task, completed=n, description=escape(title[:40])))
+    except (clips.ClipError, titleart.TitleArtError, OSError) as exc:
+        err_console.print(f"[red]{escape(str(exc))}[/red]")
+        sys.exit(1)
+    stage.finish()
+    _gen_staged(stage, errors)
+
+
+@generate_media_group.command("remove")
+@_gen_wheel_options
+@click.option("--kind", "kinds", multiple=True, type=click.Choice(["clip", "picture", "drawn"]),
+              help="Which stand-ins: placeholder clips, placeholder pictures, drawn wheel titles. "
+                   "Repeatable (default: clip and picture).")
+@click.option("--apply", "apply_changes", is_flag=True, help="Delete them. Without it, only count them.")
+def generate_media_remove(systems, all_systems, games, kinds, apply_changes):
+    """Take placeholders (and drawn titles) out of HyperSpin's media again.
+
+    Deletes only files SpinDoctor made and that haven't changed since.
+    """
+    from . import genmedia, placeholders
+
+    config = _gen_config()
+    kinds = kinds or ("clip", "picture")
+    try:
+        wheels = genmedia.resolve_wheels(config, systems, all_systems)
+    except genmedia.GenMediaError as exc:
+        err_console.print(f"[red]{escape(str(exc))}[/red]")
+        sys.exit(1)
+    removed = 0
+    for system, folder in genmedia.standin_folders(config, wheels):
+        found = placeholders.find(folder, kinds)
+        names = None
+        if games:
+            wanted = {g.name for g in genmedia.matching(genmedia.wheel_state(config, system).games, games)}
+            found = [(p, e) for p, e in found if e.game in wanted]
+            names = wanted
+        if not found:
+            continue
+        if not apply_changes:
+            removed += len(found)
+            console.print(f"{escape(system)}: {len(found)} in {escape(str(folder))}")
+            continue
+        result = placeholders.remove(folder, kinds, names)
+        removed += len(result.removed)
+        console.print(f"{escape(system)}: {len(result.removed)} removed from {escape(str(folder))}")
+        for path in result.changed:
+            console.print(f"  [yellow]left alone (changed since):[/yellow] {escape(str(path))}")
+        for line in result.errors:
+            err_console.print(f"  [red]{escape(line)}[/red]")
+    if not removed:
+        console.print("No placeholders to remove.")
+    elif not apply_changes:
+        _print_dry_run(False, f"{removed} file(s) would be deleted.")
+
+
+@generate_media_group.command("stages")
+@click.option("--stage-dir", type=click.Path(file_okay=False), default=None, help=_GEN_STAGE_HELP)
+def generate_media_stages(stage_dir):
+    """List the staged batches, newest first."""
+    from . import genmedia
+
+    root = genmedia.stage_root(_cfg(), stage_dir or "")
+    stages = genmedia.list_stages(root)
+    if not stages:
+        console.print(f"No staged batches in {escape(str(root))}.")
+        return
+    table = Table(box=box.SIMPLE)
+    for col in ("Batch", "Files", "State"):
+        table.add_column(col)
+    for s in stages:
+        table.add_row(escape(s.name), str(len(s.items)),
+                      f"put in {escape(s.put_in_at.replace('T', ' '))}" if s.put_in_at else "waiting")
+    console.print(table)
+    console.print(f"[dim]{escape(str(root))}[/dim]")
+
+
+@generate_media_group.command("put-in")
+@click.argument("batch", required=False, default="")
+@click.option("--system", "-s", "systems", multiple=True, help="Only this wheel's files. Repeatable.")
+@click.option("--game", "-g", "games", multiple=True, help=_GEN_GAMES_HELP)
+@click.option("--stage-dir", type=click.Path(file_okay=False), default=None, help=_GEN_STAGE_HELP)
+@click.option("--verbose", "-v", is_flag=True, help="List every file.")
+@click.option("--apply", "apply_changes", is_flag=True, help="Copy the files. Without it, only list them.")
+def generate_media_put_in(batch, systems, games, stage_dir, verbose, apply_changes):
+    """Copy a staged batch into HyperSpin's media (default: the newest waiting).
+
+    Fills only places that are still empty or hold a placeholder. Files
+    deleted from the staging folder are left out. `generate-media undo`
+    takes the batch out again.
+    """
+    from . import genmedia
+
+    config = _gen_config()
+    try:
+        stage = genmedia.find_stage(genmedia.stage_root(config, stage_dir or ""), batch)
+        plan = genmedia.plan_put_in(config, stage, systems=systems, games=games)
+    except genmedia.GenMediaError as exc:
+        err_console.print(f"[red]{escape(str(exc))}[/red]")
+        sys.exit(1)
+    going = [p for p in plan if p.action != "skip"]
+    skipped = [p for p in plan if p.action == "skip"]
+    console.print(f"{escape(stage.name)}: {len(going)} file(s) to put in, {len(skipped)} left out.")
+    for p in going if verbose or (len(going) <= 20 and not apply_changes) else ():
+        note = f" [dim]({escape(p.why)})[/dim]" if p.why else (" [dim](replaces a placeholder)[/dim]"
+                                                              if p.action == "replace" else "")
+        console.print(f"  {escape(p.item.system)} > {escape(p.item.title)}  →  {escape(str(p.target))}{note}")
+    for p in skipped if verbose or len(skipped) <= 10 else ():
+        console.print(f"  [dim]left out: {escape(p.item.system)} > {escape(p.item.title)}: {escape(p.why)}[/dim]")
+    if not going:
+        return
+    if not apply_changes:
+        _print_dry_run(False, "Nothing was copied.")
+        return
+    try:
+        result = genmedia.put_in(config, stage, plan)
+    except (genmedia.GenMediaError, OSError) as exc:
+        err_console.print(f"[red]{escape(str(exc))}[/red]")
+        sys.exit(1)
+    console.print(f"[green]{len(result.imported)} file(s) put in.[/green]")
+    for path, why in result.skipped:
+        console.print(f"  [yellow]left out:[/yellow] {escape(path.name)}: {escape(why)}")
+    if result.manifest_path:
+        console.print("[cyan]spindoctor generate-media undo --apply[/cyan] takes them out again.")
+
+
+@generate_media_group.command("undo")
+@click.option("--apply", "apply_changes", is_flag=True, help="Undo it. Without it, only say what would be undone.")
+def generate_media_undo(apply_changes):
+    """Take the last batch that was put in out of HyperSpin's media again.
+
+    Files it replaced come back. The staged files stay, so the batch can be
+    put in again.
+    """
+    from . import genmedia
+
+    manifest = genmedia.last_put_in()
+    if manifest is None:
+        console.print("Nothing to undo: no generated media has been put in.")
+        return
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    console.print(f"{len(data.get('imports', []))} file(s) put in {escape(str(data.get('timestamp', '')))} "
+                  f"from {escape(Path(data.get('source_dir') or '').name)}")
+    if not apply_changes:
+        _print_dry_run(False, "Nothing was undone.")
+        return
+    _manifest, summary = genmedia.undo_put_in()
+    console.print(f"[green]{summary['reverted']} file(s) undone.[/green]")
+    for line in summary["errors"]:
+        err_console.print(f"  [red]{escape(line)}[/red]")
+    if summary["errors"]:
+        sys.exit(1)
 
 
 # ─── update-db ────────────────────────────────────────────────────────────────

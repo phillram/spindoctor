@@ -17,6 +17,7 @@ import re
 import struct
 import subprocess
 import sys
+import threading
 import time
 import uuid
 from dataclasses import dataclass
@@ -346,6 +347,43 @@ def screen_rect() -> tuple[int, int, int, int]:
     _require()
     u = _user32()
     return 0, 0, u.GetSystemMetrics(0), u.GetSystemMetrics(1)
+
+
+def monitor_count() -> int:
+    """How many monitors the desktop is spread over."""
+    _require()
+    return int(_user32().GetSystemMetrics(80))  # SM_CMONITORS
+
+
+def idle_seconds() -> float:
+    """Seconds since the last keyboard or mouse input, programs' included."""
+    _require()
+    import ctypes
+    from ctypes import wintypes as w
+
+    class LASTINPUTINFO(ctypes.Structure):
+        _fields_ = [("cbSize", w.UINT), ("dwTime", w.DWORD)]
+
+    info = LASTINPUTINFO(ctypes.sizeof(LASTINPUTINFO), 0)
+    if not ctypes.WinDLL("user32").GetLastInputInfo(ctypes.byref(info)):
+        return 0.0
+    tick = ctypes.WinDLL("kernel32").GetTickCount
+    tick.restype = w.DWORD
+    return ((tick() - info.dwTime) & 0xFFFFFFFF) / 1000.0
+
+
+def keep_display_on(on: bool) -> None:
+    """Keep the screen (and the PC) awake until called with False: nobody
+    presses anything during a run, and a screen that turns itself off would
+    be recorded black.  Lasts as long as the calling thread."""
+    _require()
+    import ctypes
+
+    fn = ctypes.WinDLL("kernel32").SetThreadExecutionState
+    fn.argtypes = [ctypes.c_uint]
+    fn.restype = ctypes.c_uint
+    # ES_CONTINUOUS, with ES_SYSTEM_REQUIRED and ES_DISPLAY_REQUIRED when on.
+    fn(0x80000000 | (0x00000003 if on else 0))
 
 
 def list_windows() -> list[WinInfo]:
@@ -764,6 +802,143 @@ def capture_screen(thumb_width: int) -> Optional[Shot]:
         for bmp in bitmaps:
             g.DeleteObject(bmp)
         u.ReleaseDC(None, screen)
+
+
+# ─── is someone there? ────────────────────────────────────────────────────────
+
+def raw_input_source(data: bytes, pointer_size: int) -> str:
+    """"keyboard" or "mouse" when the ``RAWINPUT`` structure in *data* is a
+    person pressing a key or a mouse button; "" for anything else.
+
+    Keys a program sends (``SendInput``, ``keybd_event``, AutoHotkey) come
+    without a device handle, so SpinDoctor's own and RocketLauncher's don't
+    count.  Neither do releases, or moving the mouse: a light gun does that by
+    itself."""
+    header = 8 + 2 * pointer_size
+    if len(data) < header + 8:
+        return ""
+    kind = struct.unpack_from("<I", data, 0)[0]
+    device = struct.unpack_from("<Q" if pointer_size == 8 else "<I", data, 8)[0]
+    if not device:
+        return ""
+    if kind == 1:  # RIM_TYPEKEYBOARD: MakeCode, Flags, Reserved, VKey
+        _code, flags, _reserved, vkey = struct.unpack_from("<4H", data, header)
+        return "keyboard" if not flags & 1 and vkey != 0xFF else ""
+    if kind == 0:  # RIM_TYPEMOUSE: usFlags, padding, usButtonFlags, usButtonData
+        buttons = struct.unpack_from("<H", data, header + 4)[0]
+        return "mouse" if buttons & 0x155 else ""  # the five "button down" bits
+    return ""
+
+
+class InputWatcher:
+    """Notices someone at the keyboard (a control panel's encoder is one) or
+    pressing a mouse button, in whatever window: ``used`` then says which.
+
+    Raw Input on a message-only window of its own thread, not a hook, so it
+    can't slow the game's input down.  Game pads aren't watched: an analogue
+    stick is never quite still."""
+
+    def __init__(self) -> None:
+        _require()
+        self.used = ""
+        self._thread_id = 0
+        self._ready = threading.Event()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+        self._ready.wait(5)
+
+    def _run(self) -> None:
+        try:
+            self._watch()
+        except Exception:  # noqa: BLE001 - without it a run can still be stopped
+            pass
+        finally:
+            self._ready.set()
+
+    def _watch(self) -> None:
+        import ctypes
+        from ctypes import wintypes as w
+
+        user32 = ctypes.WinDLL("user32", use_last_error=True)
+        kernel32 = ctypes.WinDLL("kernel32")
+        pointer = ctypes.sizeof(ctypes.c_void_p)
+        header = 8 + 2 * pointer
+        lresult = ctypes.c_ssize_t
+        wndproc = ctypes.WINFUNCTYPE(lresult, w.HWND, w.UINT, w.WPARAM, w.LPARAM)
+
+        class WNDCLASSW(ctypes.Structure):
+            _fields_ = [("style", w.UINT), ("lpfnWndProc", wndproc), ("cbClsExtra", ctypes.c_int),
+                        ("cbWndExtra", ctypes.c_int), ("hInstance", w.HINSTANCE), ("hIcon", w.HANDLE),
+                        ("hCursor", w.HANDLE), ("hbrBackground", w.HANDLE),
+                        ("lpszMenuName", w.LPCWSTR), ("lpszClassName", w.LPCWSTR)]
+
+        class RAWINPUTDEVICE(ctypes.Structure):
+            _fields_ = [("usUsagePage", w.USHORT), ("usUsage", w.USHORT), ("dwFlags", w.DWORD),
+                        ("hwndTarget", w.HWND)]
+
+        user32.DefWindowProcW.argtypes = [w.HWND, w.UINT, w.WPARAM, w.LPARAM]
+        user32.DefWindowProcW.restype = lresult
+        user32.CreateWindowExW.argtypes = [w.DWORD, w.LPCWSTR, w.LPCWSTR, w.DWORD, ctypes.c_int,
+                                           ctypes.c_int, ctypes.c_int, ctypes.c_int, w.HWND, w.HMENU,
+                                           w.HINSTANCE, w.LPVOID]
+        user32.CreateWindowExW.restype = w.HWND
+        user32.DestroyWindow.argtypes = [w.HWND]
+        user32.GetMessageW.argtypes = [ctypes.POINTER(w.MSG), w.HWND, w.UINT, w.UINT]
+        user32.DispatchMessageW.argtypes = [ctypes.POINTER(w.MSG)]
+        user32.DispatchMessageW.restype = lresult
+        user32.RegisterRawInputDevices.argtypes = [ctypes.POINTER(RAWINPUTDEVICE), w.UINT, w.UINT]
+        user32.GetRawInputData.argtypes = [w.HANDLE, w.UINT, w.LPVOID, ctypes.POINTER(w.UINT), w.UINT]
+        user32.GetRawInputData.restype = w.UINT
+        user32.RegisterClassW.argtypes = [ctypes.POINTER(WNDCLASSW)]
+        kernel32.GetModuleHandleW.argtypes = [w.LPCWSTR]
+        kernel32.GetModuleHandleW.restype = w.HMODULE
+
+        def proc(hwnd, message, wparam, lparam):
+            if message == 0x00FF:  # WM_INPUT
+                size = w.UINT(0)
+                user32.GetRawInputData(lparam, 0x10000003, None, ctypes.byref(size), header)
+                if 0 < size.value <= 4096:
+                    buf = ctypes.create_string_buffer(size.value)
+                    got = user32.GetRawInputData(lparam, 0x10000003, buf, ctypes.byref(size), header)
+                    if 0 < got <= len(buf.raw):
+                        self.used = raw_input_source(buf.raw[:got], pointer) or self.used
+            return user32.DefWindowProcW(hwnd, message, wparam, lparam)
+
+        callback = wndproc(proc)
+        instance = kernel32.GetModuleHandleW(None)
+        cls = WNDCLASSW(lpfnWndProc=callback, hInstance=instance,
+                        lpszClassName=f"SpinDoctorInput{os.getpid()}_{threading.get_ident()}")
+        if not user32.RegisterClassW(ctypes.byref(cls)):
+            return
+        hwnd = user32.CreateWindowExW(0, cls.lpszClassName, None, 0, 0, 0, 0, 0,
+                                      w.HWND(-3), None, instance, None)  # HWND_MESSAGE
+        if not hwnd:
+            return
+        try:
+            devices = (RAWINPUTDEVICE * 2)()
+            for i, usage in enumerate((6, 2)):  # keyboard, mouse (generic desktop page)
+                devices[i].usUsagePage, devices[i].usUsage = 1, usage
+                devices[i].dwFlags, devices[i].hwndTarget = 0x100, hwnd  # RIDEV_INPUTSINK
+            if not user32.RegisterRawInputDevices(devices, 2, ctypes.sizeof(RAWINPUTDEVICE)):
+                return
+            self._thread_id = kernel32.GetCurrentThreadId()
+            self._ready.set()
+            msg = w.MSG()
+            while user32.GetMessageW(ctypes.byref(msg), None, 0, 0) > 0:
+                user32.DispatchMessageW(ctypes.byref(msg))
+        finally:
+            user32.DestroyWindow(hwnd)
+
+    @property
+    def watching(self) -> bool:
+        return bool(self._thread_id) and self._thread.is_alive()
+
+    def close(self) -> None:
+        if self._thread_id and self._thread.is_alive():
+            import ctypes
+
+            ctypes.WinDLL("user32").PostThreadMessageW(self._thread_id, 0x0012, 0, 0)  # WM_QUIT
+            self._thread.join(timeout=2)
 
 
 # ─── launching ────────────────────────────────────────────────────────────────

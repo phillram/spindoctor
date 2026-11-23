@@ -541,6 +541,18 @@ class WindowsPlatform:
     def start(self, args: list[str], cwd: str):
         return self._w.start_process(args, cwd)
 
+    def idle_seconds(self) -> float:
+        return self._w.idle_seconds()
+
+    def monitor_count(self) -> int:
+        return self._w.monitor_count()
+
+    def keep_display_on(self, on: bool) -> None:
+        self._w.keep_display_on(on)
+
+    def watch_inputs(self):
+        return self._w.InputWatcher()
+
     def worker_pid(self) -> int:
         return os.getpid()
 
@@ -727,6 +739,17 @@ class Runner:
         self.journal.data["current"]["processes"] = procs
         self.journal.save()
 
+    def on_poll(self, proc, state: Observation, opened_at: Optional[float]) -> None:
+        """Called about once a second while a game starts and runs; *opened_at*
+        is when its window opened (None before that).  For subclasses."""
+
+    def while_running(self, item: PlannedGame, proc, watch: LaunchWatch, state: Observation,
+                      fails: list[str], warns: list[str]) -> tuple[Observation, bool]:
+        """What to do with a game that has run ``game_seconds`` without trouble,
+        before it is judged and closed.  Returns ``(state, stop requested)``.
+        For subclasses (:mod:`spindoctor.gamecapture` records it here)."""
+        return state, False
+
     def launch(self, item: PlannedGame) -> Optional[LaunchResult]:
         """Launch, judge and close *item*.  None when a stop was requested
         mid-launch: the game was closed and gets no result, so ``--resume``
@@ -787,6 +810,7 @@ class Runner:
                     else:
                         fails.append(f"Game didn't start: nothing opened within {s.launch_timeout} seconds")
                         break
+            self.on_poll(proc, state, opened_at if started else None)
             if started and now >= judge_at:
                 break
 
@@ -798,7 +822,10 @@ class Runner:
             else:
                 fails.append(f"Game didn't start: RocketLauncher closed after {elapsed} seconds")
         elif not stopped:
-            self._judge_running(item, proc, state, started, fails, warns, result)
+            if started and not fails and state is not None and state.game_windows:
+                state, stopped = self.while_running(item, proc, watch, state, fails, warns)
+            if not stopped:
+                self._judge_running(item, proc, state, started, fails, warns, result)
 
         how = self._close(proc, watch, state, item.system)
         if how == "forced":
@@ -1030,12 +1057,15 @@ def write_results_json(run_dir: Path) -> None:
     write_report(run_dir, data)
 
 
-def list_runs(root: Path) -> list[tuple[Path, dict]]:
-    """``(run folder, run.json)`` for every run under *root*, newest first."""
+def list_runs(root: Path, kind: str = "test") -> list[tuple[Path, dict]]:
+    """``(run folder, run.json)`` for every run of *kind* under *root*, newest
+    first.  ``generate-media record`` keeps its runs (kind "capture") in the
+    same place, so one pointer and one recovery serve both."""
     if not root.is_dir():
         return []
     runs = [(d, read_run(d)) for d in root.iterdir() if (d / "run.json").is_file()]
-    return sorted(runs, key=lambda r: r[0].name, reverse=True)
+    return sorted((r for r in runs if r[1].get("kind", "test") == kind),
+                  key=lambda r: r[0].name, reverse=True)
 
 
 def plan_rows(plan: Plan) -> list[dict]:
@@ -1106,6 +1136,9 @@ def run_plan(
     leave_hyperspin_open: bool = False,
     on_hyperspin: Optional[Callable[[dict], None]] = None,
     cleanup: Optional[str] = None,
+    runner_class: Callable[..., Runner] = Runner,
+    kind: str = "test",
+    run_info: Optional[dict] = None,
 ) -> RunSummary:
     """Launch every game of *plan* that can launch; a new run folder unless
     *run_dir* (``--resume``) is given.  The caller runs :func:`recover` first.
@@ -1120,7 +1153,11 @@ def run_plan(
 
     *cleanup* (``report`` / ``remove`` / ``off``, default ``test_cleanup``)
     decides what happens to files the games create
-    (:mod:`spindoctor.gametest_cleanup`)."""
+    (:mod:`spindoctor.gametest_cleanup`).
+
+    *runner_class* launches the games, and *kind* and *run_info* go into
+    ``run.json``, for runs that do more than judge them
+    (:mod:`spindoctor.gamecapture`)."""
     from . import gametest_cleanup, gametest_hyperspin
     rl_dir = Path(config.rocketlauncher_dir)
     resumed = run_dir is not None
@@ -1129,7 +1166,7 @@ def run_plan(
         _save_run(run_dir, {
             "started": datetime.now().isoformat(timespec="seconds"), "ended": "",
             "finished": False, "interrupted": False, "seconds": settings.game_seconds,
-            "selection": selection or {},
+            "selection": selection or {}, "kind": kind, **(run_info or {}),
         })
         _write_csv(run_dir / "plan.csv", PLAN_FIELDS, plan_rows(plan))
         skipped = [{"System": g.system, "Game": g.game, "Status": SKIPPED, "Reason": g.reason,
@@ -1172,7 +1209,7 @@ def run_plan(
             journal.data["cleanup"] = {"mode": mode, "roots": roots, "skip": skip, "since": cleaner.since}
             journal.save()
             cleaner.start()
-        runner = Runner(config, settings, platform, run_dir, journal, stop_requested=stop_file.exists)
+        runner = runner_class(config, settings, platform, run_dir, journal, stop_requested=stop_file.exists)
         if with_hyperspin:
             hs = gametest_hyperspin.start_and_check(config, settings, platform, run_dir, journal,
                                                    play_intro=play_intro)

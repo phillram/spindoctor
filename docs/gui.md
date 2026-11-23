@@ -6,7 +6,7 @@ The binary embeds its workers; no separate CLI EXE is needed.
 
 ## Layout and safety
 
-The sidebar groups **15 pages** and shares a **System** selector. Use its refresh
+The sidebar groups **16 pages** and shares a **System** selector. Use its refresh
 button after changing paths or adding systems. The bottom Output panel shows
 commands, progress and errors; History retains this session's runs.
 
@@ -118,26 +118,36 @@ an interrupted run. Leave the cabinet alone while tests run.
 
 ![Test games](screenshots/11-test-games.png)
 
+### Generate Media
+
+Show what a wheel is missing; draw wheel pictures, record videos or screenshots
+from the games, and make "No video found" placeholders; then look at the batch,
+put it in, or undo the last one. With Apply on, **Record games** asks first and
+takes over the screen. Works without internet.
+[Guide](generate-media.md).
+
+![Generate Media](screenshots/12-generate-media.png)
+
 ### Backup & Restore
 
 Select components and destination, create/list/inspect snapshots, or preview a
 restore. Changed drive letters require the current-paths option and careful review.
 
-![Backup and Restore](screenshots/12-backup-restore.png)
+![Backup and Restore](screenshots/13-backup-restore.png)
 
 ### Migration
 
 Move or copy selected components, optionally verify, update configuration and
 inspect/undo prior runs. Emulator-internal paths still need manual checking.
 
-![Migration](screenshots/13-migration.png)
+![Migration](screenshots/14-migration.png)
 
 ### History
 
 Review session commands, output and exit status. For durable recovery records use
 **File → View logs & manifests**, not session History.
 
-![History](screenshots/14-history.png)
+![History](screenshots/15-history.png)
 
 ### Console
 
@@ -145,7 +155,7 @@ Choose an editable categorized preset or enter CLI arguments, without the
 `spindoctor` prefix. Replace placeholders before running. Explicit flags govern
 Console operations; inspect the command before executing.
 
-![Console](screenshots/15-console.png)
+![Console](screenshots/16-console.png)
 
 ## Menus, shortcuts and stopping
 
@@ -159,7 +169,7 @@ releases; disable with `SPINDOCTOR_NO_UPDATE_CHECK=1`.
 - Right-click text fields/output for editing/copy actions.
 
 **Stop** can terminate an ordinary worker before its cleanup completes.
-For launch tests it first requests orderly closure and statistics restoration;
+For launch tests and recordings it first requests orderly closure and statistics restoration;
 **Stop after this game** is gentler. If interrupted, use **Recover now** or
 `spindoctor test --recover` before rebuilding ranked wheels.
 

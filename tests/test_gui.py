@@ -19,7 +19,7 @@ from spindoctor import gui
 
 _PAGE_ORDER = (
     "Setup", "Diagnostics", "Systems", "Games", "Metadata & Media", "Maintenance",
-    "Custom Wheels", "Intro Video", "LEDBlinky", "Lightgun", "Test games",
+    "Custom Wheels", "Intro Video", "LEDBlinky", "Lightgun", "Test games", "Generate Media",
     "Backup & Restore", "Migration", "History", "Console",
 )
 
@@ -957,8 +957,8 @@ def test_gui_constructs_against_real_tk(monkeypatch):
         app.root.update_idletasks()
         # Sanity: every tab builder ran without exception, including the
         # Maintenance tab (foreground TclError) and the Systems tab
-        # (_output AttributeError). 15 = the documented tab count.
-        assert len(app._tab_base_names) == 15
+        # (_output AttributeError). 16 = the documented tab count.
+        assert len(app._tab_base_names) == 16
         # Pin the workflow-oriented order so a drive-by reorder doesn't
         # regress UX without anyone noticing. See `_build_layout` for
         # the rationale behind the sequencing.
@@ -1039,7 +1039,7 @@ def test_pages_build_lazily_on_first_selection(monkeypatch):
 
     app = gui._SpinDoctorGUI(tk, ttk, filedialog, messagebox, scrolledtext)
     try:
-        assert len(app._tab_base_names) == 15
+        assert len(app._tab_base_names) == 16
         opening = app._tab_base_names[int(app._nb.index("current"))]
         # History fills its own space so it stays eager; everything else
         # except the opening page is deferred.
@@ -1299,7 +1299,7 @@ def test_gui_survives_missing_keysym_in_bind_all(monkeypatch):
             app.root.update_idletasks()
             # Every tab built despite the missing keysyms. The exact tab
             # order is pinned once, in the construction smoke above.
-            assert len(app._tab_base_names) == 15
+            assert len(app._tab_base_names) == 16
         finally:
             app.root.destroy()
     finally:
@@ -4095,10 +4095,11 @@ def _test_page_app(monkeypatch, tmp_path, **cfg_values):
 
 
 def test_test_games_sidebar_group_and_writing_summary():
-    # The construction smoke already pins the actual 15-page order.
-    assert gui._PAGES_BEFORE_TEST_GAMES == tuple(page for page in _PAGE_ORDER if page != "Test games")
+    # The construction smoke already pins the actual 16-page order.
+    assert gui._PAGES_BEFORE_TEST_GAMES == tuple(
+        page for page in _PAGE_ORDER if page not in ("Test games", "Generate Media"))
     assert ("Wheels & cabinet", ("Custom Wheels", "Intro Video", "LEDBlinky", "Lightgun",
-                                 "Test games")) in gui._SIDEBAR_GROUPS
+                                 "Test games", "Generate Media")) in gui._SIDEBAR_GROUPS
     assert "Nothing on this page changes files" not in gui._PAGE_SUMMARIES["Test games"]
 
 
@@ -4258,6 +4259,168 @@ def test_last_page_is_saved_by_name_and_old_indexes_still_work(monkeypatch, tmp_
         assert cfg.gui_last_active_page == "Migration" and cfg.gui_last_active_tab == 11
     finally:
         app.root.destroy()
+
+
+# ─── Generate Media page (spindoctor generate-media) ─────────────────────────
+
+def _genmedia_logic_app(monkeypatch, apply=False):
+    """Generate Media handlers, without Tk traces or background workers."""
+    app = _process_gui(monkeypatch)
+    values = {"system": "NES", "all": False, "games": "", "details": False, "style": "chrome",
+              "copy": True, "hidden": False, "count": "5", "seconds": "35", "wait": "20", "minutes": "30",
+              "sound": True, "still": False, "crop": "auto", "kind": "clip", "background": "blue",
+              "stage": ""}
+    for name, value in values.items():
+        setattr(app, "_gm_" + name + "_var", _Value(value))
+    app._gm_stage_names = []
+    app._global_apply_var = _Value(apply)
+    app._flash_validation = Mock()
+    app._run_cli = Mock(return_value=True)
+    app.messagebox = Mock()
+    app._test_run_active = False
+    return app
+
+
+def _genmedia_args(app):
+    (program, args), kwargs = app._run_cli.call_args
+    assert program == "spindoctor" and args[0] == "generate-media" and kwargs == {"on_complete": app._gm_done}
+    return args[1:]
+
+
+def test_generate_media_pictures_and_list(monkeypatch):
+    app = _genmedia_logic_app(monkeypatch, apply=True)
+    app._gm_list()
+    assert _genmedia_args(app) == ["list", "--system", "NES"]  # never --apply
+    app._gm_wheel_pictures()
+    assert _genmedia_args(app) == ["wheel-pictures", "--system", "NES", "--style", "chrome", "--apply"]
+    app._gm_all_var.set(True)
+    app._gm_games_var.set("Alpha | Br*")
+    app._gm_copy_var.set(False)
+    app._gm_hidden_var.set(True)
+    app._gm_details_var.set(True)
+    app._global_apply_var.set(False)
+    app._gm_wheel_pictures()
+    assert _genmedia_args(app) == ["wheel-pictures", "--all", "--game", "Alpha", "--game", "Br*",
+                                   "--style", "chrome", "--no-copy", "--show-hidden"]
+    app._gm_list()
+    assert _genmedia_args(app)[-1] == "--details"
+    assert not app._test_run_active
+
+
+def test_generate_media_needs_a_system(monkeypatch):
+    app = _genmedia_logic_app(monkeypatch)
+    app._gm_system_var.set("")
+    for action in (app._gm_list, app._gm_wheel_pictures, app._gm_record, app._gm_placeholders, app._gm_remove):
+        action()
+    app._gm_all_var.set(True)
+    app._gm_record()  # one wheel at a time
+    assert app._flash_validation.call_count == 6
+    app._run_cli.assert_not_called()
+
+
+def test_generate_media_recording_asks_first_and_stops_like_a_test_run(monkeypatch):
+    app = _genmedia_logic_app(monkeypatch)
+    app._gm_record()
+    assert _genmedia_args(app) == ["record", "--system", "NES", "--count", "5", "--seconds", "35",
+                                   "--wait", "20", "--minutes", "30", "--crop", "auto"]
+    app.messagebox.askyesno.assert_not_called()
+    assert not app._test_run_active
+    app._global_apply_var.set(True)
+    app.messagebox.askyesno.return_value = False
+    calls = app._run_cli.call_count
+    app._gm_record()
+    app._gm_resume()
+    assert app._run_cli.call_count == calls
+    app.messagebox.askyesno.return_value = True
+    app._gm_sound_var.set(False)
+    app._gm_still_var.set(True)
+    app._gm_record()
+    assert _genmedia_args(app)[-6:] == ["--no-sound", "--screenshots", "--crop", "auto", "--yes", "--apply"]
+    assert app._test_run_active  # so Stop closes the game first
+    app._gm_refresh_stages = Mock()
+    app._gm_done(0)
+    assert not app._test_run_active
+    app._gm_refresh_stages.assert_called_once()
+    app._gm_resume()
+    assert _genmedia_args(app) == ["record", "--resume", "--yes", "--apply"]
+
+
+@pytest.mark.parametrize("name, bad", [("count", "0"), ("seconds", "4"), ("wait", "x"), ("minutes", "-1")])
+def test_generate_media_recording_numbers_are_checked(monkeypatch, name, bad):
+    app = _genmedia_logic_app(monkeypatch)
+    getattr(app, f"_gm_{name}_var").set(bad)
+    app._gm_record()
+    app._flash_validation.assert_called_once()
+    app._run_cli.assert_not_called()
+
+
+def test_generate_media_placeholders(monkeypatch):
+    app = _genmedia_logic_app(monkeypatch, apply=True)
+    app._gm_kind_var.set("picture")
+    app._gm_background_var.set("snow")
+    app._gm_placeholders()
+    assert _genmedia_args(app) == ["placeholders", "--system", "NES", "--kind", "picture",
+                                   "--background", "snow", "--apply"]
+    app._gm_frontend()
+    assert _genmedia_args(app) == ["placeholders", "--no-video-clip", "--background", "snow", "--apply"]
+    app.messagebox.askyesno.return_value = False
+    calls = app._run_cli.call_count
+    app._gm_remove()
+    assert app._run_cli.call_count == calls
+    app.messagebox.askyesno.return_value = True
+    app._gm_remove()
+    assert _genmedia_args(app) == ["remove", "--system", "NES", "--apply"]
+    app._gm_undo()
+    assert _genmedia_args(app) == ["undo", "--apply"]
+
+
+def test_generate_media_batches_waiting_come_first(monkeypatch, tmp_path):
+    from spindoctor import genmedia
+    from spindoctor.config import Config
+
+    cfg = Config(output_dir=str(tmp_path / "out"))
+    monkeypatch.setattr(gui, "load_config", lambda: cfg)
+    app = _genmedia_logic_app(monkeypatch, apply=True)
+    app._gm_stage_combo = Mock()
+    app._gm_refresh_stages()
+    assert app._gm_stage_var.get() == ""
+    app._gm_put_in()
+    app._flash_validation.assert_called_once()
+    root = genmedia.stage_root(cfg)
+    for what, put_in in (("wheel pictures", ""), ("placeholders", "2026-11-22T12:00:00")):
+        stage = genmedia.Stage.create(root, what)
+        stage.add(stage.new_item("NES", "Alpha", "Alpha", "wheel", "drawn", "Alpha", ".png"), data=b"x")
+        stage.data["put_in"] = put_in
+        stage.save()
+    app._gm_refresh_stages()
+    shown = app._gm_stage_combo.configure.call_args.kwargs["values"]
+    assert shown[0].endswith("wheel pictures") and shown[1].endswith("placeholders (put in)")
+    app._gm_put_in()
+    assert _genmedia_args(app) == ["put-in", shown[0], "--apply"]
+    app._gm_stage_var.set(shown[1])
+    app._open_path = Mock()
+    app._gm_review()
+    assert app._open_path.call_args.args[0] == root / shown[1].replace(" (put in)", "") / "review.html"
+
+
+def test_generate_media_page_buttons_follow_the_apply_switch(monkeypatch, tmp_path):
+    app, _cfg = _test_page_app(monkeypatch, tmp_path, output_dir=str(tmp_path / "out"))
+    try:
+        app._select_page("Generate Media")
+        assert app._gm_record_btn.cget("text") == "Show games to record"
+        app._global_apply_var.set(True)
+        assert app._gm_record_btn.cget("text") == "Record games"
+        assert app._gm_put_btn.cget("text") == "Put in"
+        assert app._gm_stage_var.get() == ""
+    finally:
+        app.root.destroy()
+
+
+def test_generate_media_read_only_forms():
+    assert gui._is_read_only_invocation(("generate-media", "list", "--all"))
+    assert gui._is_read_only_invocation(("generate-media", "stages"))
+    for command in ("wheel-pictures", "record", "placeholders", "remove", "put-in", "undo"):
+        assert not gui._is_read_only_invocation(("generate-media", command))
 
 
 def test_test_command_read_only_forms():

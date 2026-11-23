@@ -41,7 +41,8 @@ statistics, not an independent SpinDoctor play tracker.
    verification as needed. `doctor --apply` repairs only supported safe cases.
 3. Preview `curate --system MAME --action archive`; inspect chosen variants
    before applying. `--action delete` is permanent.
-4. Fetch missing metadata/media for source systems, not generated wheels.
+4. Fetch missing metadata/media for source systems, not generated wheels;
+   [generate](generate-media.md) what can't be fetched.
 5. Refresh custom wheels and test representative games.
 
 ## Backup & restore
@@ -157,6 +158,7 @@ command-specific, not universal guarantees.
 | Migration | `migrate --undo latest` or a manifest path, with `--apply` to commit |
 | Curation archive | `curate --undo --apply` (latest supported archive run) |
 | Media import | `media-scan --undo --apply` |
+| Generated media | `generate-media undo --apply` (the last batch put in) |
 | Batch edit / rename / clone | Owning command's `--undo <manifest>` and Apply gate |
 | Misplaced / restructure | Owning command's undo; manifests live in the ROM tree |
 | Theme swap | `theme-apply --undo latest` |

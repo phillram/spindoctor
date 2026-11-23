@@ -123,6 +123,7 @@ def _capture(output: Path) -> None:
         app = gui._SpinDoctorGUI(tk, ttk, filedialog, messagebox, scrolledtext)
         try:
             _pump(app.root, 0.4)
+            app._build_all_pages()  # pages build on first visit; the calls below need theirs now
             app._mm_refresh()
             app._on_games_system_change()
             app._gwm_load()
