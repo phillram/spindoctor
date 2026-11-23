@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed
+
+- **CHANGELOG.md entries must each be on one line.** A release's section becomes its GitHub Release notes, which show every line break, so a wrapped entry was published with ragged lines. `scripts/check_changelog_unreleased.py` (the pre-commit hook) now also fails on hard-wrapped paragraphs and list items, naming the lines, and new `tests/test_changelog.py` runs it in CI. Two notes after nested lists in 2.7.5 get the blank line that keeps them out of the last bullet.
+
 ## [3.4.0] - 2026-11-23
 
 Offline media generation release. Make missing wheel art, game videos, screenshots and Main Menu videos locally, with a live title designer in the GUI, staged installs and undo. Also adds cabinet diagnostics, speeds up GUI startup and repeated library work, and refreshes the guides. No breaking CLI or configuration changes.
@@ -821,6 +825,7 @@ Offline media generation release. Make missing wheel art, game videos, screensho
   - `cleanup audit --report PATH` — one row per category with file count, total bytes, human-readable size, oldest/newest timestamps, and storage location.
   - `ledblinky audit --report PATH` — one row per ROM with `in_listxml`, `has_input`, `in_controls_ini`, `in_colors_ini`, and `status` (covered / would-synth / no-input / missing).
   - `fetch-media --report PATH` — post-fetch ROM+media audit CSV identical to `audit --report`, with additional before/after download-result columns per media slot.
+
   Commands that already had `--report` (`audit`, `media-scan`) are unchanged. `fetch-media`'s existing auto-export via `auto_audit_export_dir` is also unchanged and now supports writing to *both* the auto path and an explicit `--report` path in the same run.
 
 - **`game` CLI command group — list, remove, and reorder individual games within a system's wheel database.**
@@ -830,6 +835,7 @@ Offline media generation release. Make missing wheel art, game videos, screensho
   - `spindoctor game move-up --system <System> <game_name> [--apply] [--verbose]` — moves a game up one position.
   - `spindoctor game move-down --system <System> <game_name> [--apply] [--verbose]` — moves a game down one position.
   - `spindoctor game sort --system <System> [--by description|name] [--apply] [--verbose]` — sorts all games alphabetically, ignoring leading articles (The, A, An) to match HyperSpin's own wheel convention. Default sort key is display title (`description`); `--by name` sorts by ROM filename instead.
+
   All write commands are dry-run until `--apply` is passed; `--output-dir` writes the result alongside the live HyperSpin tree.
 
 - **GUI: "Manage games in a system wheel" panel in the Systems tab.** Mirrors the Main Menu carousel UX — pick a system, click Load Games to populate the table, then Move Up / Move Down (or Alt+↑ / Alt+↓), Move to # (jump directly to a position number), Sort A→Z by display title or ROM name, or Remove Game. Save Order writes the new order; dry-run unless Apply is ticked. Remove Game shells out to `game remove --apply` for auditability; Save Order uses the shared database module the same way the Main Menu carousel uses `mainmenu.save_main_menu`.

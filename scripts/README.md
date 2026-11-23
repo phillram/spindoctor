@@ -11,7 +11,7 @@ Run from a checkout with dependencies installed.
 | `capture_gui_screenshots.py` | Actual GUI pages using isolated synthetic data |
 | `generate_command_reference.py` | Compact Click-derived command index; `--check` detects drift |
 | `generate_lwax_patterns.py` | Generate the unsigned LED animation library |
-| `check_changelog_unreleased.py` | Validate the unreleased changelog section |
+| `check_changelog_unreleased.py` | One unreleased changelog section, no hard-wrapped entries |
 | `gen_theme_zips.py`, `make_icon.py` | Developer asset generation |
 
 Windows binaries embed wheel workers rather than shipping separate helper EXEs.

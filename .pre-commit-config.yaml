@@ -45,8 +45,10 @@ repos:
       # from the release notes (the extractor script only reads the
       # first matching block) and caused PR conflict churn during the
       # 2.0 cycle. One block per "Unreleased" — that's the contract.
+      # Also blocks hard-wrapped entries: GitHub Release notes show every
+      # line break. tests/test_changelog.py runs the same check in CI.
       - id: changelog-single-unreleased
-        name: CHANGELOG.md has exactly one [Unreleased] block
+        name: CHANGELOG.md has one [Unreleased] block and no wrapped entries
         entry: python scripts/check_changelog_unreleased.py
         language: system
         files: ^CHANGELOG\.md$
