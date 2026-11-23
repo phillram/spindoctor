@@ -571,6 +571,21 @@ def test_list_command(cabinet, tmp_path):
     assert _run("list").exit_code == 1 and _run("list", "-s", "Nowhere").exit_code == 1
 
 
+def test_list_says_what_waits_in_staging(cabinet):
+    assert "waiting in staging" not in _run("list", "-s", "NES").output
+    _run("wheel-pictures", "-s", "NES", "--no-copy", "--apply")
+    out = " ".join(_run("list", "-s", "NES", "--details").output.split())    # the console may wrap
+    assert "Made and waiting in staging, not put in yet: 3 wheel picture(s) and 0 video(s)" in out
+    assert "in 1 batch(es)" in out and "put-in --all --apply" in out
+    assert "wheel picture: none; video: none; waiting in staging: wheel picture" in out     # Charlie
+    data = json.loads(_run("list", "-s", "NES", "--json").output)
+    games = {g["name"]: g["waiting"] for g in data[0]["games"]}
+    assert games["Charlie"]["wheel"].endswith("wheel pictures") and games["Charlie"]["video"] == ""
+    assert games["Alpha"] == {"wheel": "", "video": ""}      # has both
+    _run("put-in", "--apply")
+    assert "waiting in staging" not in _run("list", "-s", "NES", "--details").output
+
+
 def test_pictures_from_dry_run_to_undo(cabinet):
     dry = _run("wheel-pictures", "-s", "NES")
     assert "3 wheel picture(s) to make: 2 drawn, 1 already on this PC." in dry.output
