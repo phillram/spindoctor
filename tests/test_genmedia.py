@@ -695,6 +695,17 @@ def test_pictures_and_placeholders_can_go_in_when_made(cabinet, monkeypatch):
     assert "DRY RUN" in _run("wheel-pictures", "-s", "NES", "--redraw", "--put-in").output
 
 
+def test_a_run_says_how_many_drawn_titles_it_leaves(cabinet):
+    _run("wheel-pictures", "-s", "NES", "--no-copy", "--put-in", "--apply")
+    out = _run("wheel-pictures", "-s", "NES").output
+    assert "0 wheel picture(s) to make" in out
+    assert "3 game(s) keep the title SpinDoctor drew before: --redraw draws them again" in out
+    assert "1 game(s) keep" in _run("wheel-pictures", "-s", "NES", "-g", "Bravo").output
+    out = _run("wheel-pictures", "-s", "NES", "--redraw").output
+    assert "3 wheel picture(s) to make" in out and "keep the title" not in out
+    assert "keep the title" not in _run("wheel-pictures", "-s", "NES", "--overwrite").output  # draws them all
+
+
 def _videos(cfg, *names, system="NES"):
     for name in names:
         _file(cfg.media_dir / system / "Video" / f"{name}.mp4", b"a recorded clip of " + name.encode())
