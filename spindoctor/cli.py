@@ -7103,6 +7103,8 @@ def media_scan_cmd(
 
 # ─── generate-media ───────────────────────────────────────────────────────────
 
+# The title styles (titleart.STYLES), written out so the CLI loads without it.
+TITLE_STYLES = ("chrome", "gold", "white", "lcd", "led", "vfd", "neon")
 _GEN_WHEELS_HELP = "Wheel (repeatable)."
 _GEN_GAMES_HELP = "Only these games, by name or title (* and ? wildcards). Repeatable."
 _GEN_STAGE_HELP = ("Staging folder (default: <output_dir>/generated-media, else "
@@ -7306,10 +7308,11 @@ def _parse_size(_ctx, _param, value):
 
 @generate_media_group.command("wheel-pictures")
 @_gen_wheel_options
-@click.option("--style", type=click.Choice(["chrome", "gold", "white"]), default="chrome", show_default=True,
-              help="Letter colours.")
-@click.option("--font", type=click.Path(exists=True, dir_okay=False), default=None,
-              help="A .ttf or .otf file (default: a bold font from this PC).")
+@click.option("--style", type=click.Choice(TITLE_STYLES), default="chrome", show_default=True,
+              help="Letter colours. lcd, led, vfd and neon look like a lit display; led, vfd and neon glow.")
+@click.option("--font", default=None,
+              help="A .ttf or .otf file, or the name of one installed on this PC, like bahnschrift or impact "
+                   "(default: a bold font from this PC).")
 @click.option("--size", callback=_parse_size, default=None, metavar="WIDTHxHEIGHT",
               help="Picture size (default: the usual size of that wheel's pictures, else 400x175).")
 @click.option("--show-hidden", is_flag=True,
@@ -7336,6 +7339,14 @@ def generate_media_wheel(systems, all_systems, games, style, font, size, show_hi
     """
     from . import genmedia, titleart
 
+    if font:
+        try:
+            font_path = titleart.find_font(font)
+        except titleart.TitleArtError as exc:
+            err_console.print(f"[red]{escape(str(exc))}[/red]")
+            sys.exit(2)
+    else:
+        font_path = None
     config = _gen_config()
     states = _gen_states(config, systems, all_systems)
     local = None if no_copy else genmedia.LocalPictures(config)
@@ -7366,7 +7377,7 @@ def generate_media_wheel(systems, all_systems, games, style, font, size, show_hi
     with _make_progress(count=True) as prog:
         task = prog.add_task("Drawing…", total=len(jobs))
         errors = genmedia.make_wheel_pictures(
-            stage, jobs, style=style, size=size, font=Path(font) if font else None, config=config,
+            stage, jobs, style=style, size=size, font=font_path, config=config,
             progress=lambda n, _total, title: prog.update(task, completed=n, description=escape(title[:40])))
     stage.finish()
     _gen_staged(stage, errors, config=config, put_in=put_in_after)

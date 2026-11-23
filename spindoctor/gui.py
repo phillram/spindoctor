@@ -12919,7 +12919,7 @@ class _SpinDoctorGUI:
         self.ttk.Label(row, text="Letters").pack(side="left")
         self._gm_style_var = self.tk.StringVar(value="chrome")
         self.ttk.Combobox(row, textvariable=self._gm_style_var, state="readonly", width=8,
-                          values=("chrome", "gold", "white")).pack(side="left", padx=6)
+                          values=("chrome", "gold", "white", "lcd", "led", "vfd", "neon")).pack(side="left", padx=6)
         self._gm_copy_var = self.tk.BooleanVar(value=True)
         self.ttk.Checkbutton(row, text="Reuse pictures already on this PC",
                              variable=self._gm_copy_var).pack(side="left", padx=6)
