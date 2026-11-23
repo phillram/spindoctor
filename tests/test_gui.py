@@ -4301,7 +4301,7 @@ def _genmedia_logic_app(monkeypatch, apply=False):
     values = {"system": "NES", "all": False, "games": "", "details": False, "style": "chrome",
               "copy": True, "hidden": False, "count": "5", "seconds": "35", "wait": "20", "settle": "40", "minutes": "30",
               "sound": True, "still": False, "crop": "auto", "kind": "clip", "background": "blue",
-              "stage": "", "press": "", "play": "", "target": "games", "font": "(heavy default)",
+              "stage": "", "press": "", "play": "", "keys_file": "", "target": "games", "font": "(heavy default)",
               "effect": "shadow", "glow_color": "#00ffe2", "preview_text": "",
               "background_choice": "Dark and light"}
     for name, value in values.items():
@@ -4518,6 +4518,10 @@ def test_every_generate_media_button_runs_without_an_error(monkeypatch, tmp_path
         app.messagebox = Mock()
         app.messagebox.askyesno.return_value = True
         app._flash_validation = Mock()
+        keys = tmp_path / "keys.txt"
+        keys.write_text("bmsoccer --press 2:B\n", encoding="utf-8")
+        app.filedialog = Mock()                          # Browse… would open a real file dialog
+        app.filedialog.askopenfilename.return_value = str(keys)
         pressed = 0
         page = app._gm_preview_label.master.master      # box 2's frame: the page with all five boxes
         for button in _buttons(page):
@@ -4529,6 +4533,8 @@ def test_every_generate_media_button_runs_without_an_error(monkeypatch, tmp_path
         assert pressed >= 15 and not errors, errors
         assert any(args[:2] == ["generate-media", "wheel-pictures"] for args in ran)
         assert any(args[:2] == ["generate-media", "record"] for args in ran)
+        assert app._gm_keys_file_var.get() == str(keys)
+        assert any("--keys-file" in args for args in ran if args[:2] == ["generate-media", "record"])
     finally:
         app.root.destroy()
 
@@ -4578,6 +4584,19 @@ def test_generate_media_recording_passes_keys_for_games_that_wait_to_be_played(m
     app._gm_record()
     args = _genmedia_args(app)
     assert args[-8:] == ["--press", "2:5", "--press", "3:1", "--play", "Up Down A", "--crop", "auto"]
+
+
+def test_generate_media_recording_passes_the_games_own_keys_file(monkeypatch, tmp_path):
+    app = _genmedia_logic_app(monkeypatch)
+    app._gm_keys_file_var.set(str(tmp_path / "missing.txt"))
+    app._gm_record()
+    app._flash_validation.assert_called_once()
+    app._run_cli.assert_not_called()
+    keys = tmp_path / "handheld keys.txt"
+    keys.write_text("bmsoccer --press 2:B --press 3:B\n", encoding="utf-8")
+    app._gm_keys_file_var.set(f' "{keys}" ')
+    app._gm_record()
+    assert _genmedia_args(app)[-4:] == ["--keys-file", str(keys), "--crop", "auto"]
 
 
 @pytest.mark.parametrize("name, bad", [("count", "0"), ("seconds", "4"), ("wait", "x"), ("settle", "601"),
