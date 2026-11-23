@@ -18,17 +18,24 @@ would be wrong art. Import or fetch those.
 spindoctor generate-media list --all
 spindoctor generate-media wheel-pictures --system "Sega Naomi" --apply
 spindoctor generate-media record --system "Sega Naomi" --count 5 --apply
-spindoctor generate-media put-in
-spindoctor generate-media put-in --apply
 spindoctor generate-media undo --apply
 ```
 
-Everything made waits in a staging folder of its own, with a `review.html` to
-look at. `put-in` then copies it into HyperSpin's media, only where a place is
-still empty or holds a placeholder; a drawn title or placeholder replaces only
-an older one. Delete a file from the staging folder to leave it out. `undo`
-takes the last batch out again and brings back what it replaced; so does
-`media-scan --undo`.
+`wheel-pictures`, `record`, `placeholders` and `menu-video` always make what
+they make into a staging folder of its own, with a `review.html` to look at.
+With `--apply` it also goes into HyperSpin's media at the end of the run, only
+where a place is still empty or holds a placeholder; a drawn title or
+placeholder replaces only an older one. Without `--apply` nothing in HyperSpin
+changes: look at the batch first, then `put-in "<batch>" --apply` copies it.
+`--plan` only lists what would be made, and makes nothing. `undo` takes the
+last batch put in out again and brings back what it replaced; so does
+`media-scan --undo`. Delete a file from the staging folder to leave it out.
+
+```text
+spindoctor generate-media wheel-pictures --system "Sega Naomi" --plan
+spindoctor generate-media wheel-pictures --system "Sega Naomi"
+spindoctor generate-media put-in --apply
+```
 
 After several runs (a re-run of the games that came out badly, a redraw), put
 them all in at once with `put-in --all` (GUI: **Put in all waiting**). Each
@@ -36,10 +43,8 @@ place gets the best file of all the waiting batches: real media over a drawn
 title or placeholder, a video over a still, then the newest. So it doesn't
 matter which batch was made first, and one `undo` takes them all out again.
 
-To skip the look first, `--put-in` on `wheel-pictures`, `record` or
-`placeholders` puts the batch in as soon as it is made, the same way (GUI: tick
-**Put each new batch in when it's made**). A long recording then ends with the
-videos on the wheel. The batch stays in staging, and `undo` takes it out.
+In the GUI, **Apply changes** works the same way: off, the buttons make into
+staging; on, they make and put in ("Make + put in wheel pictures").
 
 Staging is `<output_dir>\generated-media`, or `~/.spindoctor/generated-media`
 without an `output_dir`; `--stage-dir` names another. Batches stay there after
@@ -105,7 +110,9 @@ game.
 
 Before it starts:
 
-- It launches nothing without `--apply`, and asks first (`--yes` skips that).
+- It asks first (`--yes` skips that), with or without `--apply`: both launch
+  the games; without it the recordings only go to staging. `--plan` lists the
+  games and launches nothing.
   The plan says how many games and how long: the wait, half the settle time and
   the recording, plus about 18 seconds per game (launch, close, cleanup and the
   pause before the next) and 90 for the run.
@@ -166,8 +173,7 @@ parents' videos, so put the recordings in first. A wheel that has a Main Menu
 video is left alone.
 
 ```text
-spindoctor generate-media menu-video --system "Handheld Electronic Games" --apply
-spindoctor generate-media put-in --apply
+spindoctor generate-media menu-video --system "Handheld Electronic" --apply
 ```
 
 Its Main Menu logo is a wheel picture like any other:
@@ -180,7 +186,6 @@ no video. One new clip there covers the whole cabinet, with nothing to clean up:
 
 ```text
 spindoctor generate-media placeholders --no-video-clip --apply
-spindoctor generate-media put-in --apply
 ```
 
 Placeholders per game carry its title: a "No video found" clip

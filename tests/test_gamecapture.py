@@ -526,12 +526,12 @@ def _cli(*args, input=None):
     return CliRunner().invoke(cli, ["generate-media", "record", *args], input=input)
 
 
-def test_the_dry_run_lists_and_launches_nothing(tmp_path, home):
+def test_the_plan_lists_and_launches_nothing(tmp_path, home):
     cfg, _fake, _tools = _setup(tmp_path)
     save_config(cfg)
-    out = _cli("-s", "NES", "--minutes", "1").output
+    out = _cli("-s", "NES", "--minutes", "1", "--plan").output
     assert "3 game(s) to record, 1 can't be launched" in out and "takes over the screen" in out
-    assert "It stops after 1 minutes" in out and "DRY RUN" in out
+    assert "It stops after 1 minutes" in out and "--plan: nothing was made" in out
     assert not genmedia.stage_root(cfg).exists()
     for args, why in ((("--resume",), "no unfinished recording"),
                       ((), "Name the wheel"),
@@ -573,14 +573,23 @@ def test_the_whole_command(desktop):
     assert "2 file(s) made" in result.output and len(fake.launches) == 2
 
 
-def test_the_command_can_put_the_batch_in_when_done(desktop):
+def test_with_apply_the_batch_goes_in_when_done(desktop):
     cfg, _fake = desktop
-    result = _cli("-s", "NES", "--count", "2", "--wait", "5", "--seconds", "20", "--put-in", "--apply", "--yes")
+    result = _cli("-s", "NES", "--count", "2", "--wait", "5", "--seconds", "20", "--apply", "--yes")
     assert result.exit_code == 0, result.output
     assert "2 file(s) made" in result.output and "2 file(s) put in" in result.output
     assert len([p for p in (cfg.media_dir / "NES" / "Video").iterdir() if p.suffix == ".mp4"]) == 2
     assert genmedia.find_stage(genmedia.stage_root(cfg), genmedia.list_stages(genmedia.stage_root(cfg))[0].name).put_in_at
     assert "2 file(s) undone" in CliRunner().invoke(cli, ["generate-media", "undo", "--apply"]).output
+
+
+def test_without_apply_it_records_into_staging_only(desktop):
+    cfg, fake = desktop
+    assert "Nothing was started" in _cli("-s", "NES", "--count", "1", input="n\n").output   # it still asks
+    result = _cli("-s", "NES", "--count", "1", "--wait", "5", "--seconds", "20", "--yes")
+    assert result.exit_code == 0, result.output
+    assert "1 file(s) made" in result.output and "Not put in (no --apply)" in result.output
+    assert len(fake.launches) == 1 and not (cfg.media_dir / "NES" / "Video").exists()
 
 
 def test_the_command_refuses_when_hyperspin_is_open_or_ffmpeg_missing(desktop, monkeypatch):

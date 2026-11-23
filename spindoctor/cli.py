@@ -7153,7 +7153,8 @@ def _gen_staged(stage, errors: list, *, config: Optional[Config] = None, put_in:
     console.print(f"\n[green]{len(stage.items)} file(s) made[/green], {where} {escape(str(stage.folder))}")
     console.print(f"Look at them: {escape(str(stage.folder / 'review.html'))}")
     if not (put_in and config is not None):
-        console.print(f"Then: [cyan]spindoctor generate-media put-in \"{escape(stage.name)}\" --apply[/cyan]")
+        console.print("[yellow]Not put in (no --apply): nothing in HyperSpin changed.[/yellow] Put it in: "
+                      f"[cyan]spindoctor generate-media put-in \"{escape(stage.name)}\" --apply[/cyan]")
         return
     from . import genmedia
 
@@ -7178,9 +7179,10 @@ def generate_media_group():
     """Make the wheel pictures, videos and screenshots a wheel is missing.
 
     Works without internet: titles are drawn with a font on this PC, and
-    videos are recorded from the games themselves. Nothing goes into
-    HyperSpin's media before `put-in`, which fills only empty places and can
-    be undone.
+    videos are recorded from the games themselves. Without --apply what is
+    made waits in a staging folder to look at; with --apply it also goes into
+    HyperSpin's media, filling only empty places, and `undo` takes it out.
+    --plan only lists what would be made.
 
     \b
     1. list             what each wheel is missing
@@ -7323,13 +7325,12 @@ def _parse_size(_ctx, _param, value):
 @click.option("--count", type=click.IntRange(1), default=None, help="At most this many pictures.")
 @click.option("--stage-dir", type=click.Path(file_okay=False), default=None, help=_GEN_STAGE_HELP)
 @click.option("--verbose", "-v", is_flag=True, help="List every game.")
-@click.option("--put-in", "put_in_after", is_flag=True,
-              help="Put the batch into HyperSpin's media when it is made, as put-in --apply: only empty "
-                   "places (or stand-ins), and generate-media undo takes it out.")
+@click.option("--plan", "plan_only", is_flag=True, help="Only list what would be made, and make nothing.")
 @click.option("--apply", "apply_changes", is_flag=True,
-              help="Make the pictures, in a staging folder. Without it, only list them.")
+              help="Also put them into HyperSpin's media (only empty places; undo takes them out). Without it they are "
+                   "made into a staging folder to look at first.")
 def generate_media_wheel(systems, all_systems, games, style, font, size, show_hidden, redraw, no_copy,
-                         count, stage_dir, verbose, put_in_after, apply_changes):
+                         count, stage_dir, verbose, plan_only, apply_changes):
     """Make wheel pictures for games that have none.
 
     A picture already on the PC is reused when it is clearly the game's: its
@@ -7365,13 +7366,13 @@ def generate_media_wheel(systems, all_systems, games, style, font, size, show_hi
     if hidden:
         console.print(f"[dim]{hidden} game(s) stay hidden: their wheel lists only games with a picture. "
                       "--show-hidden makes theirs too, which puts them on the wheel.[/dim]")
-    for job in jobs if verbose or (len(jobs) <= 20 and not apply_changes) else ():
+    for job in jobs if verbose or (len(jobs) <= 20 and plan_only) else ():
         note = f"  [dim]{escape(job.note)}[/dim]" if job.note else ""
         console.print(f"  {escape(job.game.system)} > {escape(job.game.title)}{note}")
     if not jobs:
         return
-    if not apply_changes:
-        _print_dry_run(False, "No pictures were made.")
+    if plan_only:
+        console.print("[dim]--plan: nothing was made. Without --plan it is made into staging; with --apply it is put in too.[/dim]")
         return
     stage = genmedia.Stage.create(genmedia.stage_root(config, stage_dir or ""), "wheel pictures")
     with _make_progress(count=True) as prog:
@@ -7380,7 +7381,7 @@ def generate_media_wheel(systems, all_systems, games, style, font, size, show_hi
             stage, jobs, style=style, size=size, font=font_path, config=config,
             progress=lambda n, _total, title: prog.update(task, completed=n, description=escape(title[:40])))
     stage.finish()
-    _gen_staged(stage, errors, config=config, put_in=put_in_after)
+    _gen_staged(stage, errors, config=config, put_in=apply_changes)
     if errors and not stage.items and not titleart.pillow_available():
         sys.exit(1)
 
@@ -7413,13 +7414,12 @@ def generate_media_wheel(systems, all_systems, games, style, font, size, show_hi
 @click.option("--stage-dir", type=click.Path(file_okay=False), default=None, help=_GEN_STAGE_HELP)
 @click.option("--verbose", "-v", is_flag=True, help="List every picked game.")
 @click.option("--yes", "-y", is_flag=True, help="Don't ask before starting.")
-@click.option("--put-in", "put_in_after", is_flag=True,
-              help="Put the batch into HyperSpin's media when it is made, as put-in --apply: only empty "
-                   "places (or stand-ins), and generate-media undo takes it out.")
+@click.option("--plan", "plan_only", is_flag=True, help="Only list what would be made, and make nothing.")
 @click.option("--apply", "apply_changes", is_flag=True,
-              help="Launch the games and record them. Without it, only list them.")
+              help="Also put the recordings into HyperSpin's media (only empty places; undo takes them out). Without "
+                   "it they are recorded into a staging folder to look at first.")
 def generate_media_record(systems, games, count, seconds, wait, settle, minutes, screenshots, no_sound, crop,
-                          presses, play, show_hidden, cleanup_mode, resume, stage_dir, verbose, yes, put_in_after,
+                          presses, play, show_hidden, cleanup_mode, resume, stage_dir, verbose, yes, plan_only,
                           apply_changes):
     """Launch games and record the videos (or stills) a wheel is missing.
 
@@ -7494,8 +7494,8 @@ def generate_media_record(systems, games, count, seconds, wait, settle, minutes,
     limit = (f" It stops after {capture.minutes} minutes; --resume carries on."
              if capture.minutes and left * capture.per_game() > capture.minutes * 60 else "")
     console.print(f"That takes over the screen for about {need}.{limit}")
-    if not apply_changes:
-        _print_dry_run(False, "Nothing was launched.")
+    if plan_only:
+        console.print("[dim]--plan: nothing was made. Without --plan it is made into staging; with --apply it is put in too.[/dim]")
         return
     if sys.platform != "win32":
         err_console.print("[red]Recording needs Windows: RocketLauncher only runs there.[/red]")
@@ -7540,7 +7540,7 @@ def generate_media_record(systems, games, count, seconds, wait, settle, minutes,
     if not done.run.finished:
         console.print(f"Stopped early: {escape(done.halted or 'not every game was recorded')}. "
                       "[cyan]spindoctor generate-media record --resume --apply[/cyan] carries on.")
-    _gen_staged(stage, [], config=config, put_in=put_in_after)
+    _gen_staged(stage, [], config=config, put_in=apply_changes)
 
 
 @generate_media_group.command("placeholders")
@@ -7556,13 +7556,12 @@ def generate_media_record(systems, games, count, seconds, wait, settle, minutes,
 @click.option("--redo", is_flag=True, help="Make placeholders again that are there already.")
 @click.option("--stage-dir", type=click.Path(file_okay=False), default=None, help=_GEN_STAGE_HELP)
 @click.option("--verbose", "-v", is_flag=True, help="List every game.")
-@click.option("--put-in", "put_in_after", is_flag=True,
-              help="Put the batch into HyperSpin's media when it is made, as put-in --apply: only empty "
-                   "places (or stand-ins), and generate-media undo takes it out.")
+@click.option("--plan", "plan_only", is_flag=True, help="Only list what would be made, and make nothing.")
 @click.option("--apply", "apply_changes", is_flag=True,
-              help="Make them, in a staging folder. Without it, only list them.")
+              help="Also put them into HyperSpin's media (only empty places; undo takes them out). Without it they are "
+                   "made into a staging folder to look at first.")
 def generate_media_placeholders(systems, all_systems, games, frontend, kind, background, text, show_hidden,
-                                redo, stage_dir, verbose, put_in_after, apply_changes):
+                                redo, stage_dir, verbose, plan_only, apply_changes):
     """Make "No video found" placeholders for games with no video and no still.
 
     They carry the game's title and are marked: reports still count those
@@ -7579,14 +7578,14 @@ def generate_media_placeholders(systems, all_systems, games, frontend, kind, bac
                 console.print(f"[yellow]{escape(s.system)}:[/yellow] {escape(why)}")
             picked += genmedia.plan_placeholders(s, games=games, show_hidden=show_hidden, redo=redo)
         console.print(f"{len(picked)} game(s) have neither a video nor a still picture.")
-        for g in picked if verbose or (len(picked) <= 20 and not apply_changes) else ():
+        for g in picked if verbose or (len(picked) <= 20 and plan_only) else ():
             console.print(f"  {escape(g.system)} > {escape(g.title)}")
         if not picked:
             return
     else:
         console.print("A new clip for HyperSpin's own No Video.flv, which plays for every game without a video.")
-    if not apply_changes:
-        _print_dry_run(False, "No placeholders were made.")
+    if plan_only:
+        console.print("[dim]--plan: nothing was made. Without --plan it is made into staging; with --apply it is put in too.[/dim]")
         return
     try:
         tools = clips.find_tools(config) if frontend or kind == "clip" else None
@@ -7605,7 +7604,7 @@ def generate_media_placeholders(systems, all_systems, games, frontend, kind, bac
         err_console.print(f"[red]{escape(str(exc))}[/red]")
         sys.exit(1)
     stage.finish()
-    _gen_staged(stage, errors, config=config, put_in=put_in_after)
+    _gen_staged(stage, errors, config=config, put_in=apply_changes)
 
 
 @generate_media_group.command("menu-video")
@@ -7618,12 +7617,11 @@ def generate_media_placeholders(systems, all_systems, games, frontend, kind, bac
 @click.option("--seconds", type=click.FloatRange(2, 30), default=7.5, show_default=True,
               help="Seconds of each clip.")
 @click.option("--stage-dir", type=click.Path(file_okay=False), default=None, help=_GEN_STAGE_HELP)
-@click.option("--put-in", "put_in_after", is_flag=True,
-              help="Put the batch into HyperSpin's media when it is made, as put-in --apply: only empty "
-                   "places (or stand-ins), and generate-media undo takes it out.")
+@click.option("--plan", "plan_only", is_flag=True, help="Only list what would be made, and make nothing.")
 @click.option("--apply", "apply_changes", is_flag=True,
-              help="Make them, in a staging folder. Without it, only list the clips.")
-def generate_media_menu_video(systems, all_systems, games, count, seconds, stage_dir, put_in_after, apply_changes):
+              help="Also put them into HyperSpin's media (only empty places; undo takes them out). Without it they are "
+                   "made into a staging folder to look at first.")
+def generate_media_menu_video(systems, all_systems, games, count, seconds, stage_dir, plan_only, apply_changes):
     """Make a wheel's Main Menu video from its own game videos.
 
     HyperSpin plays Media\\Main Menu\\Video\\<wheel>.mp4 while that wheel is
@@ -7648,8 +7646,8 @@ def generate_media_menu_video(systems, all_systems, games, count, seconds, stage
     console.print(f"{len(ready)} Main Menu video(s) to make, {seconds:g} s of each clip.")
     if not ready:
         return
-    if not apply_changes:
-        _print_dry_run(False, "No videos were made.")
+    if plan_only:
+        console.print("[dim]--plan: nothing was made. Without --plan it is made into staging; with --apply it is put in too.[/dim]")
         return
     try:
         tools = clips.find_tools(config)
@@ -7664,7 +7662,7 @@ def generate_media_menu_video(systems, all_systems, games, count, seconds, stage
         except (clips.ClipError, OSError) as exc:
             errors.append(f"{job.system}: {exc}")
     stage.finish()
-    _gen_staged(stage, errors, config=config, put_in=put_in_after)
+    _gen_staged(stage, errors, config=config, put_in=apply_changes)
 
 
 @generate_media_group.command("remove")

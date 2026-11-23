@@ -584,7 +584,7 @@ def test_wheel_pictures_take_the_new_styles_and_font_names(cabinet):
 
 def test_list_says_what_waits_in_staging(cabinet):
     assert "waiting in staging" not in _run("list", "-s", "NES").output
-    _run("wheel-pictures", "-s", "NES", "--no-copy", "--apply")
+    _run("wheel-pictures", "-s", "NES", "--no-copy")          # no --apply: made, not put in
     out = " ".join(_run("list", "-s", "NES", "--details").output.split())    # the console may wrap
     assert "Made and waiting in staging, not put in yet: 3 wheel picture(s) and 0 video(s)" in out
     assert "in 1 batch(es)" in out and "put-in --all --apply" in out
@@ -598,11 +598,12 @@ def test_list_says_what_waits_in_staging(cabinet):
 
 
 def test_pictures_from_dry_run_to_undo(cabinet):
-    dry = _run("wheel-pictures", "-s", "NES")
-    assert "3 wheel picture(s) to make: 2 drawn, 1 already on this PC." in dry.output
-    assert "DRY RUN" in dry.output and not genmedia.stage_root(cabinet).exists()
-    made = _run("wheel-pictures", "-s", "NES", "--style", "gold", "--size", "320x100", "--no-copy", "--apply")
-    assert "3 file(s) made" in made.output
+    plan = _run("wheel-pictures", "-s", "NES", "--plan")
+    assert "3 wheel picture(s) to make: 2 drawn, 1 already on this PC." in plan.output
+    assert "--plan: nothing was made" in plan.output and not genmedia.stage_root(cabinet).exists()
+    # Without --apply they are made, into staging only.
+    made = _run("wheel-pictures", "-s", "NES", "--style", "gold", "--size", "320x100", "--no-copy")
+    assert "3 file(s) made" in made.output and "Not put in (no --apply)" in made.output
     stage = genmedia.find_stage(genmedia.stage_root(cabinet))
     assert Image.open(io.BytesIO(stage.target(stage.items[0]).read_bytes())).size == (320, 100)
     folder = cabinet.media_dir / "NES" / "Images" / "Wheel"
@@ -624,17 +625,17 @@ def test_media_scan_undo_also_takes_a_batch_out(cabinet):
     assert not (folder / "Bravo.png").exists()
 
 
-def test_pictures_and_placeholders_can_go_in_when_made(cabinet, monkeypatch):
+def test_with_apply_pictures_and_placeholders_go_in_when_made(cabinet, monkeypatch):
     folder = cabinet.media_dir / "NES" / "Images" / "Wheel"
-    out = _run("wheel-pictures", "-s", "NES", "--no-copy", "--put-in", "--apply").output
+    out = _run("wheel-pictures", "-s", "NES", "--no-copy", "--apply").output
     assert "3 file(s) made" in out and "3 file(s) put in" in out and (folder / "Bravo.png").exists()
     assert "Then:" not in out and "undo --apply" in out
     assert "Nothing is waiting" in _run("put-in", "--all").output
     monkeypatch.setattr(clips, "find_tools", lambda config: FakeTools())
-    out = _run("placeholders", "-s", "NES", "--put-in", "--apply").output
+    out = _run("placeholders", "-s", "NES", "--apply").output
     assert "1 file(s) put in" in out and (cabinet.media_dir / "NES" / "Video" / "Charlie.mp4").exists()
-    # Without --apply nothing is made, so nothing goes in.
-    assert "DRY RUN" in _run("wheel-pictures", "-s", "NES", "--redraw", "--put-in").output
+    # --plan makes nothing, so nothing goes in.
+    assert "--plan: nothing was made" in _run("wheel-pictures", "-s", "NES", "--redraw", "--plan").output
 
 
 def _videos(cfg, *names, system="NES"):
@@ -671,9 +672,10 @@ def test_menu_video_command(cabinet, monkeypatch):
     tools = FakeTools()
     monkeypatch.setattr(clips, "find_tools", lambda config: tools)
     _videos(cabinet, "Charlie")
-    dry = _run("menu-video", "-s", "NES").output
-    assert "NES: 2 clips (Alpha, Charlie)" in dry and "1 Main Menu video(s) to make" in dry and "DRY RUN" in dry
-    out = _run("menu-video", "-s", "NES", "--seconds", "5", "--put-in", "--apply").output
+    plan = _run("menu-video", "-s", "NES", "--plan").output
+    assert "NES: 2 clips (Alpha, Charlie)" in plan and "1 Main Menu video(s) to make" in plan
+    assert "--plan: nothing was made" in plan and not getattr(tools, "montages", [])
+    out = _run("menu-video", "-s", "NES", "--seconds", "5", "--apply").output
     assert "1 file(s) made" in out and "1 file(s) put in" in out and tools.montages == [(["Alpha.mp4", "Charlie.mp4"], 5.0)]
     video = cabinet.media_dir / "Main Menu" / "Video" / "NES.mp4"
     assert video.read_bytes() == b"montage of Alpha, Charlie"
@@ -683,18 +685,36 @@ def test_menu_video_command(cabinet, monkeypatch):
     assert "1 file(s) undone" in _run("undo", "--apply").output and not video.exists()
 
 
+def _snapshot(folder):
+    return sorted((str(p.relative_to(folder)), p.stat().st_size, p.stat().st_mtime_ns)
+                  for p in folder.rglob("*") if p.is_file())
+
+
+def test_without_apply_everything_is_made_but_hyperspin_is_untouched(cabinet, monkeypatch):
+    tools = FakeTools()
+    monkeypatch.setattr(clips, "find_tools", lambda config: tools)
+    _videos(cabinet, "Delta")          # a second clip for the Main Menu video; Charlie still needs a placeholder
+    hs = Path(cabinet.hyperspin_dir)
+    before = _snapshot(hs)
+    for args in (("wheel-pictures", "-s", "NES", "--no-copy"), ("placeholders", "-s", "NES"),
+                 ("menu-video", "-s", "NES"), ("placeholders", "--no-video-clip")):
+        out = _run(*args).output
+        assert "file(s) made" in out and "Not put in (no --apply)" in out, args
+    assert _snapshot(hs) == before
+    assert len([s for s in genmedia.list_stages(genmedia.stage_root(cabinet)) if not s.put_in_at]) == 4
+
+
 def test_placeholder_commands(cabinet, monkeypatch):
     monkeypatch.setattr(clips, "find_tools", lambda config: FakeTools())
-    assert "1 game(s) have neither" in _run("placeholders", "-s", "NES").output
-    _run("placeholders", "-s", "NES", "--apply")
-    _run("put-in", "--apply")
+    assert "1 game(s) have neither" in _run("placeholders", "-s", "NES", "--plan").output
+    _run("placeholders", "-s", "NES", "--apply")             # made and put in
     video = cabinet.media_dir / "NES" / "Video" / "Charlie.mp4"
     assert video.exists()
     assert "DRY RUN" in _run("remove", "--all").output and video.exists()
     assert "No placeholders to remove" in _run("remove", "-s", "NES", "-g", "bravo", "--apply").output
     assert "1 removed" in _run("remove", "-s", "NES", "-g", "charlie", "--apply").output and not video.exists()
     assert "No placeholders to remove" in _run("remove", "--all", "--apply").output
-    out = _run("placeholders", "--no-video-clip", "--apply").output
+    out = _run("placeholders", "--no-video-clip").output       # no --apply: staged, not put in
     assert "1 file(s) made" in out
     assert "Frontend" in _run("put-in").output
 
