@@ -4511,6 +4511,24 @@ def test_generate_media_title_designer_previews_and_lists_fonts(monkeypatch, tmp
         app.root.destroy()
 
 
+def test_add_pc_system_help_text_has_a_line_of_its_own(monkeypatch, tmp_path):
+    """Packed beside the Add buttons, in a row that doesn't fill, the wrapping help
+    label got about one character's width and its text never showed."""
+    app, _cfg = _test_page_app(monkeypatch, tmp_path)
+    try:
+        app._select_page("Systems")
+        app._show_help_var.set(True)
+        app._apply_help_visibility()
+        button = next(b for b in _buttons(app.root) if str(b.cget("text")) == "Add PC system")
+        note = next(w for w in _widgets(app.root) if w.winfo_class() == "TLabel"
+                    and str(w.cget("text")).startswith("PC System accepts the best game title"))
+        add_frame = button.master.master
+        assert note.master.master is add_frame          # under the buttons, not in their row
+        assert note.master.pack_info()["fill"] == "x" and note.master.pack_info()["side"] == "top"
+    finally:
+        app.root.destroy()
+
+
 def _widgets(widget):
     """Every widget under *widget*."""
     for child in widget.winfo_children():

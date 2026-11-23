@@ -17,6 +17,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **CHANGELOG.md entries must each be on one line.** A release's section becomes its GitHub Release notes, which show every line break, so a wrapped entry was published with ragged lines. `scripts/check_changelog_unreleased.py` (the pre-commit hook) now also fails on hard-wrapped paragraphs and list items, naming the lines, and new `tests/test_changelog.py` runs it in CI. Two notes after nested lists in 2.7.5 get the blank line that keeps them out of the last bullet.
 - **GUI tests no longer depend on a `spindoctor` program on PATH.** Since 3.4.0 the GUI asks a PATH binary for its `--version` (once per session) before using it, through `subprocess.run`. With a release's folder on PATH, as a cabinet keeps for its ffmpeg, whichever GUI test resolved a command first ran that program, and tests that stand in for `Popen` (`test_run_cli_reports_whether_it_started`, `test_stop_ends_a_chained_workflow` and five more) failed, depending on test order and xdist workers. `tests/test_gui.py` now hides SpinDoctor's own programs from PATH by default; the tests about PATH binaries still set their own.
 
+### Fixed
+
+- **The Systems page's "Add PC system" help text shows again.** It was packed beside the Add buttons, in a row that doesn't fill, so the wrapping help label got about one character's width: with help text on it was a 10-pixel-wide column 1,339 pixels tall instead of a line under the buttons. It now has a line of its own under them (800x19 on a 1280-wide window). Covered by `tests/test_gui.py`.
+
 ## [3.4.0] - 2026-11-23
 
 Offline media generation release. Make missing wheel art, game videos, screenshots and Main Menu videos locally, with a live title designer in the GUI, staged installs and undo. Also adds cabinet diagnostics, speeds up GUI startup and repeated library work, and refreshes the guides. No breaking CLI or configuration changes.
