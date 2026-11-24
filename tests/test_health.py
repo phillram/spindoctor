@@ -364,6 +364,10 @@ def test_check_api_creds_reports_configured_credentials(tmp_path):
     cfg = _mk_cabinet(tmp_path)
     cfg.screenscraper_user = "u"
     cfg.screenscraper_pass = "p"
+    # An issued developer pair: the bundled placeholder is a WARN
+    # (tests/test_screenscraper_devid_help.py).
+    cfg.screenscraper_devid = "issued-dev-id"
+    cfg.screenscraper_devpassword = "issued-dev-password"
     cfg.thegamesdb_key = "abc"
     parent = health.check_api_creds(cfg)
     statuses = {c.name: c.status for c in parent.children}

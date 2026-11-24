@@ -82,8 +82,11 @@ hidden at low priority. Task Scheduler permissions depend on local policy.
 The intro-video task is separate.
 
 After moving the EXE or upgrading from older releases, regenerate installed
-helpers and re-enable both tasks to refresh absolute paths. `doctor` flags
-missing helper executables. Installing the app alone schedules nothing.
+helpers. Both tasks run the EXE by absolute path: opening the GUI points them
+at itself when the EXE they ran is gone, and a task whose EXE is missing ends
+quietly instead of showing "Windows cannot find". To move them to another copy
+that still exists, re-enable them. `doctor` flags missing helper executables.
+Installing the app alone schedules nothing.
 
 The [idle tour](idle-tour.md) instead joins HyperSpin's Startup Script list;
 it exits when HyperSpin closes and must not have a broad EXE-kill Exit entry.
