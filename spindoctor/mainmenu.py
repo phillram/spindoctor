@@ -134,28 +134,35 @@ def save_main_menu(
     target = _main_menu_path(config, output_dir)
     db = menu._db
 
-    # If we have a tree (file existed), rewrite its <game> children in the
-    # exact order requested.  This preserves the <header> and any unknown
+    # If we have a tree (file existed), put its <game> children in the exact
+    # order requested.  This preserves the <header> and any unknown
     # attributes/elements lxml saw during load; comments are stripped (see below).
     if db is not None and db._tree is not None and db._root is not None:
-        # Sync the in-memory game map to match the menu order.
-        db._games.clear()
-        db._game_elements.clear()
-        # Drop existing <game> children from the tree; re-append in order.
-        for child in list(db._root.findall("game")):
-            db._root.remove(child)
-        # Strip any XML comment nodes — interleaved comments become orphaned
-        # when game elements are removed and would otherwise float to the top.
-        # HyperSpin-native Main Menu files never contain comments.
+        # Keep each loaded <game> element and only move it, so its child
+        # elements (<year>, <manufacturer>, anything unknown) survive; save()
+        # updates the kept ones in place.
+        # A name listed twice keeps one element, as load() does.
+        for el in db._shadowed_elements:
+            if el in db._root:
+                db._root.remove(el)
+        db._shadowed_elements.clear()
+        db._duplicate_names.clear()
+        db._games = {}
+        for entry in menu.entries:
+            game = _entry_to_game(entry)
+            db._games[game.name] = game
+        # Materialize additions before reordering, including a new system
+        # moved between existing entries rather than left at the end.
+        db._merge_into_tree()
+        db.reorder_games(list(db._games))
+        # Strip any XML comment nodes: interleaved comments would end up
+        # beside the wrong entries once those move.  HyperSpin-native Main
+        # Menu files never contain comments.
         LET = _lxml_etree()
         if LET is not None:
             for child in list(db._root):
                 if callable(child.tag):  # lxml comment / PI nodes have callable tags
                     db._root.remove(child)
-        for entry in menu.entries:
-            game = _entry_to_game(entry)
-            db._games[game.name] = game
-        # save() will rebuild <game> elements in dict-iteration order.
     else:
         # Fresh file path: build from scratch.
         db = HyperspinDatabase(MAIN_MENU_FOLDER, target, enabled_as_attribute=True)
