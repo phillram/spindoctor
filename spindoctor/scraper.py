@@ -51,9 +51,17 @@ _SECRET_QUERY_RE = re.compile(
 # Historical placeholder devid values shipped by SpinDoctor that were
 # never registered with ScreenScraper. ``verify_screenscraper`` uses
 # this set to recognise a 403 caused by missing dev credentials so the
-# error message can point users at the registration page rather than
-# leave them suspecting their own user/password.
+# error message can say where developer credentials come from rather than
+# leave them suspecting their own user/password. ScreenScraper refuses
+# them even on calls that need no user login (``systemesListe.php``
+# answers "Erreur de login : Verifier vos identifiants developpeur !").
 _SCREENSCRAPER_PLACEHOLDER_DEVIDS = frozenset({"SpinDoctor", ""})
+
+# Where ScreenScraper's API page sends developers for their devid /
+# devpassword ("contactez-nous via le forum pour présenter votre logiciel
+# et obtenir vos identifiants"). A member account from the sign-up page
+# (membreinscription.php) is only the user login, never a developer pair.
+SCREENSCRAPER_DEVELOPER_REQUEST_URL = "https://www.screenscraper.fr/forumsujets.php?frub=12&numpage=0"
 
 
 def _install_scraper_log_handler() -> None:
@@ -1603,9 +1611,11 @@ def verify_screenscraper(
             msg += (
                 ". The bundled developer credentials (devid='SpinDoctor') "
                 "are not registered with ScreenScraper and will never "
-                "authenticate. Register a developer account at "
-                "https://www.screenscraper.fr/membreinscription.php and "
-                "set the values via Setup → ScreenScraper devid / devpassword "
+                "authenticate. ScreenScraper gives a program's developer a "
+                "devid and devpassword on request, through its forum: "
+                f"{SCREENSCRAPER_DEVELOPER_REQUEST_URL} (a member account "
+                "from the sign-up page is only the user login). Set them via "
+                "Setup → ScreenScraper devid / devpassword "
                 "(or `spindoctor config set screenscraper_devid <value>` "
                 "and `screenscraper_devpassword`)."
             )

@@ -53,7 +53,12 @@ Logs redact some secrets, not all identifying data.
 
 - **403/login failure:** test credentials in Setup or `config verify-credentials`.
   ScreenScraper account and developer credentials are different; change the
-  latter only if you have an issued pair.
+  latter only if you have an issued pair. ScreenScraper refuses the bundled
+  `devid=SpinDoctor` on every request ("Erreur de login : Vérifier vos
+  identifiants développeur !"), whatever the user login, and `doctor` warns while
+  it is set. A developer pair comes from ScreenScraper on request, through its
+  [forum](https://www.screenscraper.fr/forumsujets.php?frub=12&numpage=0); the
+  member sign-up page gives only the user login.
 - **Rate limit/closed API/non-JSON response:** inspect the provider message,
   wait or check current account limits. Quotas can change; repeated retries
   will not bypass them.
