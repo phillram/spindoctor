@@ -8487,6 +8487,7 @@ def mainmenu_group():
     Subcommands:
       show       Render the current order with visibility flags.
       reorder    Move a system to a 1-indexed position.
+      set-order  Put the whole menu in the order of a text file.
       up/down    Single-step a system.
       hide/show  Toggle the enabled flag (HyperSpin honours enabled="No").
       add/remove Add or remove a system entry.
@@ -8766,6 +8767,47 @@ def mainmenu_remove(system, apply, output_dir):
         console.print(f"[yellow]not on the menu:[/yellow] {system}")
         return
     _apply_or_preview(f"remove: {system}", menu, config, output_dir, apply)
+
+
+@mainmenu_group.command("set-order")
+@click.argument("order_file", type=click.Path(exists=True, dir_okay=False))
+@click.option("--rest", type=click.Choice(["error", "end"]), default="error",
+              show_default=True,
+              help="Systems on the menu that the file leaves out: stop and "
+                   "list them, or keep them, in their current order, after "
+                   "the listed ones.")
+@click.option("--apply", is_flag=True, help="Write changes (default: dry-run).")
+@click.option("--output-dir", type=click.Path(), default=None)
+def mainmenu_set_order(order_file, rest, apply, output_dir):
+    """Put the menu in the order of ORDER_FILE, one system per line.
+
+    \b
+    Blank lines and lines starting with # are skipped. Names match
+    case-insensitively; hidden systems stay hidden. Every name must be on
+    the menu, and every system on the menu must be in the file unless
+    --rest end.
+    """
+    from .mainmenu import read_order_file, set_order
+    config = _checked_cfg()
+    menu = _load_menu_or_exit(config)
+    try:
+        order = read_order_file(Path(order_file))
+    except OSError as exc:
+        err_console.print(f"[red]can't read {order_file}:[/red] {exc}")
+        sys.exit(1)
+    if not order:
+        err_console.print(f"[red]no system names in {order_file}[/red]")
+        sys.exit(1)
+    try:
+        at_end = set_order(menu, order, rest_at_end=(rest == "end"))
+    except ValueError as exc:
+        err_console.print(f"[red]{exc}[/red]")
+        sys.exit(1)
+    if at_end:
+        console.print(
+            f"[yellow]kept after the listed ones:[/yellow] {', '.join(at_end)}"
+        )
+    _apply_or_preview(f"set-order from {order_file}", menu, config, output_dir, apply)
 
 
 @mainmenu_group.command("sort")
