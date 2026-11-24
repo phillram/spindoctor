@@ -37,6 +37,8 @@ spindoctor add-system "Nintendo Entertainment System"
 spindoctor add-pc-system "PC Games"
 spindoctor mainmenu show
 spindoctor mainmenu sort alpha
+spindoctor mainmenu set-order "D:\Main Menu order.txt"
+spindoctor mainmenu set-order "D:\Main Menu order.txt" --apply
 spindoctor wheel-start
 spindoctor wheel-start --system MAME --set first
 spindoctor game list --system MAME
@@ -47,6 +49,11 @@ spindoctor clone --system MAME --game 1942 --to "1942 (variant)"
 spindoctor batch-edit --system MAME --filter "genre=*Shooter*" --set "genre=Shooter"
 spindoctor curate --system MAME --action archive
 ```
+
+`mainmenu set-order` reads one system per line (`#` lines are comments) and
+keeps hidden wheels hidden. It stops if a name isn't on the menu or a wheel is
+left out (`--rest end` keeps those at the end). A wheel added later goes last;
+move it into place with `mainmenu reorder`.
 
 `game remove` removes a database entry, not the ROM. For PC entries add
 `--remove-pclauncher` to remove the launcher too. Close HyperSpin before
