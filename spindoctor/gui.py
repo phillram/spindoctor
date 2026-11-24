@@ -1534,6 +1534,10 @@ class _SpinDoctorGUI:
         # so a slow / unreachable GitHub doesn't delay the first paint.
         # Result lands in the status bar via _on_update_check_done.
         self._start_update_check()
+        # After an upgrade that renamed or moved the EXE, point the logon
+        # tasks at this one before the next log on shows "Windows cannot
+        # find ..." for each command they run.
+        self._repair_logon_tasks()
         # First-run wizard is opt-in via the Setup-tab button and the
         # Help menu — no longer auto-fires at launch. Cabinet owners who
         # already approved the upgrade by launching the binary don't
@@ -14204,12 +14208,18 @@ class _SpinDoctorGUI:
         Tracks a FAILED flag across all three steps (rather than just the
         last command's errorlevel) and exits with it, so Task Scheduler's
         Last Result reflects a failure in *any* step, not only the last.
+        On a frozen install it first quits quietly if the EXE is gone:
+        otherwise each ``start`` makes Windows show "Windows cannot find
+        ..." on the cabinet screen at every log on (three of them).
         """
+        from ._runtime import missing_exe_guard
+
         bat_dir = Path.home() / ".spindoctor"
         bat_dir.mkdir(parents=True, exist_ok=True)
         fav, recent, stats = self._refresh_exe_refs()
         lines = (
             "@echo off\r\n"
+            f"{missing_exe_guard()}"
             "set FAILED=0\r\n"
             f'start /LOW /B /WAIT "" {fav} rebuild --apply\r\n'
             "if errorlevel 1 set FAILED=1\r\n"
@@ -14273,6 +14283,67 @@ class _SpinDoctorGUI:
         # accidentally trigger; the VBS itself uses ws.Run(..., 0, True)
         # so no console window ever appears on the cabinet screen.
         return f'wscript.exe //B "{vbs_path}"'
+
+    def _repair_refresh_task(self) -> bool:
+        """Point the wheel-refresh logon task at this EXE when the one it runs is gone.
+
+        Same rule as :func:`spindoctor.introvideo.repair_autorun`: frozen
+        installs only, and only when the program the ``.bat`` runs no longer
+        exists, so two installs side by side never take the task from each
+        other. Rewrites the ``.bat`` and ``.vbs`` in place; the task still
+        runs the same ``.vbs``, so Task Scheduler and its delay are left
+        alone. Returns True when it rewrote them.
+        """
+        from . import autostart
+
+        if not getattr(sys, "frozen", False):
+            return False
+        if not autostart.runs_missing_exe(self._refresh_bat_path()):
+            return False
+        if not autostart.task_exists():
+            return False
+        self._write_vbs_shim(self._write_refresh_bat())
+        return True
+
+    def _repair_logon_tasks(self) -> None:
+        """At launch, point the wheel-refresh and intro-video logon tasks at
+        this EXE when the program they run is gone, and say so in Output and
+        the status bar. Runs off the Tk thread: each check may start
+        ``schtasks.exe``. Without it, an upgrade that renamed or moved the EXE
+        (3.4.0 renamed ``spindoctor-gui.exe``) left Windows showing "Windows
+        cannot find ..." at every log on, once per command the tasks run,
+        until the owner found and re-clicked Enable auto-run."""
+        if not getattr(sys, "frozen", False):
+            return
+
+        def work():
+            from . import introvideo
+
+            fixed = []
+            for name, repair in (
+                ("wheel refresh", self._repair_refresh_task),
+                ("intro video", introvideo.repair_autorun),
+            ):
+                try:
+                    if repair():
+                        fixed.append(name)
+                except Exception:  # noqa: BLE001 - one task must not stop the other
+                    pass
+            return fixed
+
+        def done(fixed):
+            if not fixed:
+                return
+            message = (
+                f"Updated the {' and '.join(fixed)} logon task(s) to run "
+                f"{sys.executable}: the program they ran no longer exists."
+            )
+            self._append_output(message + "\n")
+            self._set_status(message)
+            self._refresh_autorefresh_status()
+            self._refresh_introvideo_autorun_status()
+
+        self._run_background(work, done, lambda _exc: None)
 
     def _refresh_autorefresh_status(self, *, op_failed: bool = False) -> None:
         """Update the always-visible status label without requiring a click —

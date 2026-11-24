@@ -493,10 +493,15 @@ def _write_swap_bat() -> Path:
     """Write the .bat the logon task runs — `introvideo swap --apply`, then
     an explicit ``exit /b`` so the bat's own process exit code reliably
     reflects whether the swap succeeded (cmd.exe does not propagate a
-    batch's last errorlevel as its own exit code unless told to)."""
+    batch's last errorlevel as its own exit code unless told to). On a
+    frozen install it first quits quietly if the EXE is gone, instead of
+    letting ``start`` show "Windows cannot find ..." at every log on."""
+    from ._runtime import missing_exe_guard
+
     exe = _sibling_spindoctor_exe()
     lines = (
         "@echo off\r\n"
+        f"{missing_exe_guard()}"
         f'start /LOW /B /WAIT "" {exe} introvideo swap --apply\r\n'
         "exit /b %errorlevel%\r\n"
     )
@@ -636,3 +641,25 @@ def autorun_status() -> AutorunStatus:
             bat_text = bat_path.read_text(encoding="utf-8", errors="replace")
             stale = current_exe not in bat_text
     return AutorunStatus(registered=True, stale=stale)
+
+
+def repair_autorun() -> bool:
+    """Point a registered logon task at this EXE when the one it runs is gone.
+
+    After a portable upgrade that renames or moves the EXE, the task's
+    `.bat` keeps running the old path, and Windows shows "Windows cannot
+    find ..." at every log on until someone re-runs `install_autorun`. The
+    GUI calls this at launch: a frozen install rewrites the `.bat` and `.vbs`
+    in place (the task itself still runs the same `.vbs`, so Task Scheduler
+    and its delay are left alone). Only when the program the `.bat` runs no
+    longer exists, so two installs side by side never take the task from
+    each other. Returns True when it rewrote them.
+    """
+    if not getattr(sys, "frozen", False):
+        return False
+    if not autostart.runs_missing_exe(_swap_bat_path()):
+        return False
+    if not autostart.task_exists(name=AUTORUN_TASK_NAME):
+        return False
+    _write_swap_vbs(_write_swap_bat())
+    return True

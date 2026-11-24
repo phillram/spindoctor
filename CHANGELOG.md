@@ -20,6 +20,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Fixed
 
 - **The Systems page's "Add PC system" help text shows again.** It was packed beside the Add buttons, in a row that doesn't fill, so the wrapping help label got about one character's width: with help text on it was a 10-pixel-wide column 1,339 pixels tall instead of a line under the buttons. It now has a line of its own under them (800x19 on a 1280-wide window). Covered by `tests/test_gui.py`.
+- **No more "Windows cannot find '...\spindoctor-gui.exe'" at log on after upgrading.** 3.4.0 renamed the GUI to `spindoctor.exe`, but the wheel-refresh and intro-video logon tasks run a `.bat` in `%USERPROFILE%\.spindoctor` that starts the EXE that wrote it by full path. On a cabinet that replaced the EXE without clicking Enable auto-run again, Windows showed that message at every log on, once per command: three times for the wheel refresh. The GUI now points both tasks at itself when it opens, if the program they run no longer exists, and says so in Output; a task that runs another SpinDoctor that is still there is left alone, and Task Scheduler and the delay are not touched. The `.bat` files it writes also check for the EXE first and end with exit code 2 when it's gone, so a later move or rename shows nothing on screen. Covered by `tests/test_logon_task_repair.py`.
 
 ## [3.4.0] - 2026-11-23
 
