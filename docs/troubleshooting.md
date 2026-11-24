@@ -97,6 +97,7 @@ Logs redact some secrets, not all identifying data.
 | Reports call a game's media missing though a file is there | Only a SpinDoctor placeholder or drawn title is (`inspect` says so); real media replaces it. `generate-media remove` takes placeholders out. |
 | `generate-media record` saves nothing | Its reason is in the output: black or frozen picture, another window in front, or the game closed. Try a longer `--wait`; close overlays; black on every game means the capture can't see that display mode. |
 | `generate-media record` stops at once | A key, control-panel button or mouse click stops it. Leave the PC alone, and check for a stuck button. |
+| `put-in` or `media-scan --apply` stopped with `[WinError 5] Access is denied: '...tmp' -> '...import-....json'` | Another program (a virus scanner, the search indexer) had the undo record open for a moment. Current builds wait for it and finish the run, with a warning if the record still couldn't be saved. On an older build, run the same `put-in --apply` again for the files it didn't reach. |
 | Game hidden or shown as text | Check exact media stem/case/spaces, `wheels_only`, `parents_only`, enabled status and wheel art. |
 | Hidden Main Menu wheels show again after `add-system` or `generate-config` | Older builds rewrote `Main Menu.xml` with names only. Hide them again with `mainmenu hide SYSTEM --apply`; both commands now keep `enabled="False"`. |
 | No letter-jump graphic | Supply `Images/Letters/<character>.png` for visible title initials; run `doctor`. |

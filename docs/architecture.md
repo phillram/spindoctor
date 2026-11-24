@@ -49,8 +49,10 @@ Anything that asks whether media exists must treat `placeholders` as missing.
 Apply is a command policy, not a property of every domain function.
 Settings/list commands and helper-file generation can write without it.
 Atomic writers replace individual files via same-filesystem temporary files,
-not whole operations transactionally. Collision checks are not concurrent
-reservations. Do not run competing writers against a cabinet.
+not whole operations transactionally; on Windows the rename is retried for
+about two seconds while another program (a virus scanner, the indexer) has the
+file open. Collision checks are not concurrent reservations. Do not run
+competing writers against a cabinet.
 
 Recovery differs by command: sidecars, manifests, unfinished-work journals or
 no undo for permanent deletion. Normal interrupts and forced process termination

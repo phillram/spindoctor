@@ -451,6 +451,41 @@ def test_put_in_all_command(cabinet):
     assert "waiting" in _run("stages").output
 
 
+def test_put_in_finishes_when_its_undo_record_stays_locked(cabinet, monkeypatch):
+    """A program holding the import record open (a virus scanner) stopped
+    put-in halfway: "[WinError 5] Access is denied: '...tmp' -> '...import-....json'".
+    Now every file goes in, the batch counts as put in, and it says what undo
+    can't take out."""
+    from spindoctor import _utils
+
+    stage = _batch(cabinet, "titles", "2026-11-22T10:00:00",
+                   [(game, "wheel", "drawn", ".png", game.encode()) for game in ("Bravo", "Charlie", "Delta")])
+    real, saves = os.replace, []
+
+    def replace(src, dst):
+        if Path(dst).name.startswith(media_scan.MANIFEST_PREFIX):
+            saves.append(dst)
+            if len(saves) > 1:      # locked from the second save on
+                exc = PermissionError(13, "Access is denied", str(src), 5, str(dst))
+                exc.winerror = 5
+                raise exc
+        return real(src, dst)
+
+    monkeypatch.setattr(_utils.os, "replace", replace)
+    monkeypatch.setattr(_utils, "_REPLACE_RETRY_SECONDS", 0)
+    result = _run("put-in", stage.name, "--apply")
+    assert result.exit_code == 0 and "3 file(s) put in" in result.output
+    assert "Warning: Couldn't save the undo record import-" in result.output
+    assert "[WinError 5] Access is denied" in result.output
+    assert "undo won't take out the last 2 file(s)" in result.output
+    folder = cabinet.media_dir / "NES" / "Images" / "Wheel"
+    assert all((folder / f"{game}.png").is_file() for game in ("Bravo", "Charlie", "Delta"))
+    assert genmedia.Stage.load(stage.folder).put_in_at
+    monkeypatch.setattr(_utils.os, "replace", real)
+    assert "1 file(s) undone" in _run("undo", "--apply").output
+    assert sum((folder / f"{game}.png").is_file() for game in ("Bravo", "Charlie", "Delta")) == 2
+
+
 def test_overwrite_replaces_real_media_and_undo_brings_it_back(cabinet):
     folder = cabinet.media_dir / "NES" / "Images" / "Wheel"
     real = (folder / "Alpha.png").read_bytes()
