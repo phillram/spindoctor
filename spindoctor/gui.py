@@ -5156,7 +5156,7 @@ class _SpinDoctorGUI:
         ).grid(row=cred_sep_row + 1, column=0, columnspan=3, sticky="w", pady=(0, 4))
         self._help_text(
             frame,
-            text="Optional credentials for metadata and media downloads. ScreenScraper also needs your developer ID and password from https://www.screenscraper.fr/membreinscription.php; bundled placeholders do not authenticate.",
+            text="Optional credentials for metadata and media downloads. ScreenScraper also needs a developer ID and password, which it gives a program's developer on request through its forum (https://www.screenscraper.fr/forumsujets.php?frub=12); a member account is only the user login, and the bundled placeholders do not authenticate.",
         ).grid(row=cred_sep_row + 2, column=0, columnspan=3, sticky="ew", pady=(0, 6))
 
         # Track credential entries so the eyeball toggle and the Test
