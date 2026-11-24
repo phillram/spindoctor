@@ -69,6 +69,13 @@ Logs redact some secrets, not all identifying data.
 - **Matched game, no media URL:** provider search results can be sparse.
   Use the current release, check the detailed provider lookup, try another
   configured source or import local media. Not every provider supplies videos/themes.
+- **A fetch uses up the monthly allowance:** every game looked up costs
+  provider requests (`config verify-credentials` shows what's left). `fetch-media`
+  looks up only games missing one of the `--types` you name, so name the ones you
+  need (`--types wheel`) instead of the default ten. With `--output-dir`, a file is
+  missing only when it is in neither HyperSpin's `Media` nor the output folder, so a
+  re-run skips what is already staged. A dry run makes the same lookups (cached for
+  the apply), so preview a few games with `--game` first.
 
 ## Media and wheels
 
