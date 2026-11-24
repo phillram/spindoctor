@@ -20,6 +20,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Fixed
 
 - **The Systems page's "Add PC system" help text shows again.** It was packed beside the Add buttons, in a row that doesn't fill, so the wrapping help label got about one character's width: with help text on it was a 10-pixel-wide column 1,339 pixels tall instead of a line under the buttons. It now has a line of its own under them (800x19 on a 1280-wide window). Covered by `tests/test_gui.py`.
+- **TheGamesDB lookups no longer send the same request twice, and find games under their own punctuation.** `fetch_with_search` asked `Games/ByGameName` once in `fetch()` and again, with the same name, in `search()` for every game with no match or a low score, and fetched the same `Games/Images` gallery twice: 40 requests for 22 games against the key's monthly allowance. Both now share one answer. The name sent had all its punctuation stripped, but TheGamesDB's name search matches it: `007 blood stone` found nothing on the DS where `007: Blood Stone` finds the game, and `Ready, Set, Grover!` needs its commas. The first name now keeps the title's punctuation without region tags, with the ROM set's ` - ` as `: ` and a trailing ", The" moved to the front; when it finds nothing, the title's parts are tried longest first, then the normalized name, at most three names. Covered by `tests/test_thegamesdb_lookups.py`.
 
 ## [3.4.0] - 2026-11-23
 
