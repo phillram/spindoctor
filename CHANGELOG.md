@@ -20,6 +20,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Fixed
 
 - **The Systems page's "Add PC system" help text shows again.** It was packed beside the Add buttons, in a row that doesn't fill, so the wrapping help label got about one character's width: with help text on it was a 10-pixel-wide column 1,339 pixels tall instead of a line under the buttons. It now has a line of its own under them (800x19 on a 1280-wide window). Covered by `tests/test_gui.py`.
+- **`add-system` and `generate-config` keep hidden Main Menu wheels hidden.** Both rewrote `Databases/Main Menu/Main Menu.xml` with each entry's `name` only, so adding one system brought back every wheel hidden with `enabled="False"`, and a Search entry lost `exe="true"`. They now write each kept entry's attributes back (a legacy `<enabled>No</enabled>` child becomes `enabled="False"`, the form HyperSpin reads) and, with lxml, HyperSpin's own `<game name="..."/>` spacing, so adding a system changes only its own line. The write is now atomic, like the `mainmenu` editor's. Covered by `tests/test_main_menu_keep_hidden.py`.
 
 ## [3.4.0] - 2026-11-23
 
