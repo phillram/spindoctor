@@ -135,3 +135,40 @@ def test_sort_alpha_is_unchanged(cabinet):
     )
     assert result.exit_code == 0, result.output
     assert _names(cabinet) == ["Atari 2600", "MAME", "Nintendo 3DS", "Sega Genesis"]
+
+
+# ─── edit: UTF-8 misread as cp1252, and input that ends early ────────────────
+
+def test_edit_reads_names_after_a_misread_bom_as_utf8(cabinet):
+    misread = "\ufeffadd Pokémon\nq\ny\n".encode("utf-8").decode("cp1252")
+    result = _edit(misread)
+    assert result.exit_code == 0, result.output
+    assert "Pokémon" in _names(cabinet) and "PokÃ©mon" not in _names(cabinet)
+
+
+def test_edit_refuses_input_that_cant_be_the_utf8_its_bom_says(cabinet):
+    before = cabinet.read_bytes()
+    result = _edit("\u00ef\u00bb\u00bfadd Pok\u00e9mon\nq\ny\n")    # é alone isn't UTF-8 read as cp1252
+    assert result.exit_code == 1
+    assert "not UTF-8" in result.output and "nothing was saved" in result.output
+    assert cabinet.read_bytes() == before
+
+
+def test_edit_fails_when_piped_input_ends_after_a_failed_command(cabinet):
+    before = cabinet.read_bytes()
+    result = _edit("move 2 to 1\nbogus\n")
+    assert result.exit_code == 1
+    assert "bogus" in result.output and "nothing was saved" in result.output
+    assert cabinet.read_bytes() == before
+
+
+def test_edit_fails_when_piped_changes_end_without_q(cabinet):
+    before = cabinet.read_bytes()
+    result = _edit("move 2 to 1\n")
+    assert result.exit_code == 1
+    assert "ended without q" in result.output
+    assert cabinet.read_bytes() == before
+
+
+def test_edit_piped_input_with_no_changes_can_just_end(cabinet):
+    assert _edit("list\n").exit_code == 0

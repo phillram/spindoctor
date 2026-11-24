@@ -8767,15 +8767,42 @@ def _sort_field_check(menu, field_name):
 
 
 # A UTF-8 byte-order mark at the start of piped input.  Windows PowerShell 5.1
-# sends one when $OutputEncoding is UTF-8; decoded as cp1252 it reads "ï»¿".
-_INPUT_BOMS = ("\ufeff", "\u00ef\u00bb\u00bf")
+# sends one when $OutputEncoding is UTF-8.  Python reads a pipe in the ANSI
+# code page, so the mark then arrives as "ï»¿" (cp1252), and every non-ASCII
+# letter after it is just as garbled ("Pokémon" as "PokÃ©mon").
+_PIPE_CODE_PAGES = ("cp1252",)
 
 
-def _strip_input_bom(line):
-    for bom in _INPUT_BOMS:
-        if line.startswith(bom):
-            return line[len(bom):]
-    return line
+def _input_bom(line):
+    """``(rest, code_page)`` for a first line that may start with a UTF-8 BOM.
+
+    *code_page* is the encoding the UTF-8 input was misread as (``None`` when
+    the mark was read correctly or there is none); the caller re-reads every
+    line through it with :func:`_recode_piped`.
+    """
+    if line.startswith("\ufeff"):
+        return line[1:], None
+    pages = [getattr(sys.stdin, "encoding", None) or ""] + list(_PIPE_CODE_PAGES)
+    for page in dict.fromkeys(p.lower() for p in pages if p):
+        try:
+            misread = "\ufeff".encode("utf-8").decode(page)
+        except (LookupError, UnicodeError):
+            continue
+        if misread != "\ufeff" and line.startswith(misread):
+            return line[len(misread):], page
+    return line, None
+
+
+def _recode_piped(line, code_page):
+    """*line* as the UTF-8 it was before being misread as *code_page*.
+
+    Raises :class:`ValueError` when it can't have been UTF-8, rather than
+    letting a garbled name be saved.
+    """
+    try:
+        return line.encode(code_page).decode("utf-8")
+    except UnicodeError:
+        raise ValueError(f"not UTF-8, as the byte-order mark said: {line}") from None
 
 
 @mainmenu_group.command("edit")
@@ -8821,14 +8848,32 @@ def mainmenu_edit(output_dir):
         "add NAME | remove N | sort alpha|manufacturer|year | list | q[/dim]"
     )
 
+    def piped_failure(why):
+        err_console.print(f"[red]{why}, so nothing was saved[/red]")
+        sys.exit(1)
+
+    first, code_page = True, None
     while True:
         try:
-            line = _strip_input_bom(
-                click.prompt("mainmenu>", default="", show_default=False)
-            ).strip()
+            line = click.prompt("mainmenu>", default="", show_default=False)
         except click.exceptions.Abort:
+            if scripted and failed:
+                piped_failure(f"{len(failed)} piped command(s) failed: {'; '.join(failed)}")
+            if scripted and dirty:
+                piped_failure("The piped commands ended without q")
             console.print("\n[yellow]Aborted.[/yellow]")
             return
+        if first:
+            line, code_page = _input_bom(line)
+            first = False
+        if code_page:
+            try:
+                line = _recode_piped(line, code_page)
+            except ValueError as e:
+                console.print(f"[red]{e}[/red]")
+                failed.append(line.strip())
+                continue
+        line = line.strip()
         if not line:
             continue
         parts = line.split()
@@ -8897,11 +8942,7 @@ def mainmenu_edit(output_dir):
             failed.append(line)
 
     if scripted and failed:
-        err_console.print(
-            f"[red]{len(failed)} piped command(s) failed, so nothing was "
-            f"saved:[/red] {'; '.join(failed)}"
-        )
-        sys.exit(1)
+        piped_failure(f"{len(failed)} piped command(s) failed: {'; '.join(failed)}")
     if not dirty:
         console.print("[dim]No changes.[/dim]")
         return
