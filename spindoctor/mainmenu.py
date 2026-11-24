@@ -260,6 +260,72 @@ def sort_by_field(menu: MainMenu, field_name: str) -> None:
     )
 
 
+def read_order_file(path: Path) -> list[str]:
+    """Read a Main Menu order file: one system name per line.
+
+    Blank lines and lines starting with ``#`` are skipped, and surrounding
+    spaces and a BOM are stripped.  UTF-8, UTF-16 (what Windows PowerShell
+    5.1's ``Out-File`` writes) and cp1252 files all read.
+    """
+    from ._text import read_windows_text
+
+    names: list[str] = []
+    for line in read_windows_text(path).splitlines():
+        name = line.strip()
+        if name and not name.startswith("#"):
+            names.append(name)
+    return names
+
+
+def set_order(menu: MainMenu, order: list[str], rest_at_end: bool = False) -> list[str]:
+    """Put *menu* in the order of *order*, a list of its system names.
+
+    Names match case-insensitively; each entry keeps its own spelling,
+    visibility and attributes.  Raises ``ValueError`` for a name that isn't
+    on the menu or is listed twice, and for systems on the menu that *order*
+    leaves out, unless *rest_at_end*: then those keep their current order
+    after the listed ones.  Returns the systems that went to the end.
+    """
+    by_key: dict[str, MainMenuEntry] = {}
+    for entry in menu.entries:
+        by_key.setdefault(entry.system.strip().lower(), entry)
+
+    placed: list[MainMenuEntry] = []
+    seen: set[str] = set()
+    unknown: list[str] = []
+    twice: list[str] = []
+    for name in order:
+        key = name.strip().lower()
+        if key in seen:
+            twice.append(name)
+            continue
+        entry = by_key.get(key)
+        if entry is None:
+            unknown.append(name)
+            continue
+        seen.add(key)
+        placed.append(entry)
+
+    placed_ids = {id(e) for e in placed}
+    left_out = [e for e in menu.entries if id(e) not in placed_ids]
+
+    problems: list[str] = []
+    if unknown:
+        problems.append("not on the Main Menu: " + ", ".join(unknown))
+    if twice:
+        problems.append("listed twice: " + ", ".join(twice))
+    if left_out and not rest_at_end:
+        problems.append(
+            "on the Main Menu but not in the list (add them, or keep them "
+            "at the end with --rest end): " + ", ".join(e.system for e in left_out)
+        )
+    if problems:
+        raise ValueError("; ".join(problems))
+
+    menu.entries[:] = placed + left_out
+    return [e.system for e in left_out]
+
+
 # ─── discovery ────────────────────────────────────────────────────────────────
 
 def discover_systems(config: Config) -> list[str]:
