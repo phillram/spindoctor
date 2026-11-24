@@ -117,6 +117,7 @@ These are manual integration checks, not promises that migration rewrites them.
 |---|---|
 | MAME/HBMAME | Effective `mame.ini`/`hbmame.ini` controls `cfg_directory`, `ctrlr`, `ctrlrpath`. Empty/crash-truncated `default.cfg` can silently reset the panel. Preserve a working map. |
 | Cxbx-Reloaded | `settings.ini` beside `cxbx.exe` (else the user's AppData) holds the core setting, pads and profiles; the module can set them per game. A second build needs its own emulator entry. [Xbox games](xbox.md). |
+| Azahar (3DS) | Portable when `user\` sits beside `azahar.exe`; `user\config\qt-config.ini` ignores any value whose `\default` line says `true`. Hidden helper windows: wait for the game window's title. Decrypted dumps only. [3DS games](nintendo-3ds.md). |
 | Casual Games | `gamePath` override or `<Rom_Path>/<game>.exe` / `<game>/<game>.exe` must resolve. A placeholder alone is insufficient; stray text files can match the wrong title. |
 | Daphne | `.txt` framefile contains real timing data; first line is the video directory. Chip ROMs live under `<homedir>/roms`. A framefile is not an empty placeholder. |
 | Daphne Singe | Module expects matching `.singe` and `.txt`; script-relative assets depend on the emulator working directory. Action Max and ALG layouts differ. |
