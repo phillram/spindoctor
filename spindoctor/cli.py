@@ -8732,8 +8732,50 @@ def mainmenu_sort(strategy, apply, output_dir):
     if strategy == "alpha":
         sort_alphabetical(menu)
     else:
+        problem, missing = _sort_field_check(menu, strategy)
+        if problem:
+            err_console.print(f"[red]{problem}[/red]")
+            sys.exit(1)
+        if missing:
+            console.print(
+                f"[yellow]{len(missing)} system(s) have no {strategy} and "
+                f"sort first:[/yellow] {', '.join(missing)}"
+            )
         sort_by_field(menu, strategy)
     _apply_or_preview(f"sort: {strategy}", menu, config, output_dir, apply)
+
+
+def _sort_field_check(menu, field_name):
+    """Return ``(problem, missing)`` for sorting *menu* by *field_name*.
+
+    HyperSpin's own Main Menu.xml lists names only, so on most cabinets no
+    entry has a manufacturer or year, and sorting by one would quietly sort
+    A-Z.  *problem* says so when no entry has the field; *missing* names
+    the entries without it otherwise.
+    """
+    missing = [
+        e.system for e in menu.entries if not (getattr(e, field_name) or "").strip()
+    ]
+    if menu.entries and len(missing) == len(menu.entries):
+        return (
+            f"No Main Menu entry has a {field_name}: HyperSpin's own Main Menu.xml "
+            "lists names only, so this would just sort A-Z. Use 'sort alpha' for "
+            "that, or 'reorder' to move wheels.",
+            missing,
+        )
+    return None, missing
+
+
+# A UTF-8 byte-order mark at the start of piped input.  Windows PowerShell 5.1
+# sends one when $OutputEncoding is UTF-8; decoded as cp1252 it reads "ï»¿".
+_INPUT_BOMS = ("\ufeff", "\u00ef\u00bb\u00bf")
+
+
+def _strip_input_bom(line):
+    for bom in _INPUT_BOMS:
+        if line.startswith(bom):
+            return line[len(bom):]
+    return line
 
 
 @mainmenu_group.command("edit")
@@ -8752,6 +8794,9 @@ def mainmenu_edit(output_dir):
       sort alpha|manufacturer|year
       list            re-render the table
       q | quit        exit (prompts to save if dirty)
+
+    Commands can also be piped in, one per line. If a piped command
+    fails, nothing is saved.
     """
     from .mainmenu import (
         add_system, hide, move_down, move_up, remove_system, reorder,
@@ -8760,6 +8805,11 @@ def mainmenu_edit(output_dir):
     config = _checked_cfg()
     menu = _load_menu_or_exit(config)
     dirty = False
+    # Piped commands come from a script, not a person watching the table:
+    # one that fails (a dropped "move N to M" shifts every later index) means
+    # nothing is saved.
+    scripted = not (sys.stdin is not None and sys.stdin.isatty())
+    failed = []
 
     def render():
         console.print(_render_menu_table(menu, config))
@@ -8773,7 +8823,9 @@ def mainmenu_edit(output_dir):
 
     while True:
         try:
-            line = click.prompt("mainmenu>", default="", show_default=False).strip()
+            line = _strip_input_bom(
+                click.prompt("mainmenu>", default="", show_default=False)
+            ).strip()
         except click.exceptions.Abort:
             console.print("\n[yellow]Aborted.[/yellow]")
             return
@@ -8825,17 +8877,31 @@ def mainmenu_edit(output_dir):
                 if strat == "alpha":
                     sort_alphabetical(menu)
                 elif strat in {"manufacturer", "year", "genre"}:
+                    problem, _missing = _sort_field_check(menu, strat)
+                    if problem:
+                        console.print(f"[red]{problem}[/red]")
+                        failed.append(line)
+                        continue
                     sort_by_field(menu, strat)
                 else:
                     console.print(f"[red]unknown sort:[/red] {strat}")
+                    failed.append(line)
                     continue
                 dirty = True
                 render()
             else:
                 console.print(f"[red]unrecognised command:[/red] {line}")
+                failed.append(line)
         except (KeyError, ValueError, click.UsageError) as e:
             console.print(f"[red]{e}[/red]")
+            failed.append(line)
 
+    if scripted and failed:
+        err_console.print(
+            f"[red]{len(failed)} piped command(s) failed, so nothing was "
+            f"saved:[/red] {'; '.join(failed)}"
+        )
+        sys.exit(1)
     if not dirty:
         console.print("[dim]No changes.[/dim]")
         return

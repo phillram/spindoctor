@@ -19,6 +19,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **`mainmenu edit` reads piped commands from Windows PowerShell 5.1, and saves nothing if one fails; `mainmenu sort manufacturer|year` says when no entry has one.** With `$OutputEncoding` (or the console's input encoding) set to UTF-8, PowerShell 5.1 pipes a byte-order mark in front of the first line, so `edit` called the first command unrecognised, ran every later `move N to M` one step off, and still saved with exit code 0. It now drops a leading mark (as `\ufeff`, or `ï»¿` when read as cp1252), and when its commands come from a pipe or file and any of them fails, it saves nothing, names them and exits 1; typed sessions are unchanged. HyperSpin's own `Main Menu.xml` lists names only, so on most cabinets no entry has a manufacturer or year and those sorts quietly sorted A–Z: `sort` (and `edit`'s `sort`) now stops and says so, and when only some entries lack the field it names those, which sort first. Covered by `tests/test_mainmenu_edit_sort.py`.
 - **The Systems page's "Add PC system" help text shows again.** It was packed beside the Add buttons, in a row that doesn't fill, so the wrapping help label got about one character's width: with help text on it was a 10-pixel-wide column 1,339 pixels tall instead of a line under the buttons. It now has a line of its own under them (800x19 on a 1280-wide window). Covered by `tests/test_gui.py`.
 
 ## [3.4.0] - 2026-11-23
