@@ -33,6 +33,21 @@ def tool_command_text(name: str) -> str:
     return name
 
 
+def missing_exe_guard() -> str:
+    """First command of a generated logon-task ``.bat``: quit when this EXE is gone.
+
+    ``start`` of a program that no longer exists makes Windows show
+    "Windows cannot find ..." once per ``start`` line, on the cabinet screen
+    at every log on, after an upgrade renames or moves the EXE. This line
+    ends the ``.bat`` first with exit code 2 (file not found), which Task
+    Scheduler shows as its Last Run Result. Empty on a source install, whose
+    ``.bat`` runs commands from PATH.
+    """
+    if getattr(sys, "frozen", False):
+        return f'if not exist "{sys.executable}" exit /b 2\r\n'
+    return ""
+
+
 def _windows_stream(handle_id: int, mode: str):
     """Open a private fd for an inherited Windows pipe/redirected handle.
 

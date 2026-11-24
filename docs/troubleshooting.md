@@ -20,6 +20,7 @@ command-specific; do not delete manifests to silence errors.
 | Cramped screen | Hide Output/help text or reduce View UI scale; pages scroll. |
 | Unwanted GitHub update checks | Set `SPINDOCTOR_NO_UPDATE_CHECK=1` before launch. |
 | Startup task access denied | Inspect Task Scheduler permissions/policy and the exact error; elevate only if your policy requires it. |
+| “Windows cannot find '…\spindoctor-gui.exe'” at log on, once per command | A logon task still runs the EXE from before an upgrade. Open the current SpinDoctor once: it points the wheel refresh and intro video tasks at itself and says so in Output. |
 
 ## Library and launch routing
 
