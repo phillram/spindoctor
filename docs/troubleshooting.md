@@ -66,9 +66,21 @@ Logs redact some secrets, not all identifying data.
   `config game-override` ID, then refetch deliberately. Clearing a cache
   does not undo already-written XML.
 - **Region tags:** matching normalizes common variant tags; review ambiguity.
+- **TheGamesDB finds nothing for a game it has:** its name search matches the
+  title's punctuation (`007: Blood Stone`, not `007 blood stone`). SpinDoctor sends
+  the ROM name without its region tags and with ` - ` as `: `, then the title's
+  parts, longest first (at most three names, each one request). If it still misses,
+  look the game up on thegamesdb.net and pin its ID with `config game-override`.
 - **Matched game, no media URL:** provider search results can be sparse.
   Use the current release, check the detailed provider lookup, try another
   configured source or import local media. Not every provider supplies videos/themes.
+- **A fetch uses up the monthly allowance:** every game looked up costs
+  provider requests (`config verify-credentials` shows what's left). `fetch-media`
+  looks up only games missing one of the `--types` you name, so name the ones you
+  need (`--types wheel`) instead of the default ten. With `--output-dir`, a file is
+  missing only when it is in neither HyperSpin's `Media` nor the output folder, so a
+  re-run skips what is already staged. A dry run makes the same lookups (cached for
+  the apply), so preview a few games with `--game` first.
 
 ## Media and wheels
 

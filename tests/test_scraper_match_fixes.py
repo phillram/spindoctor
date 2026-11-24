@@ -28,25 +28,28 @@ class _FakeResp:
 # ─── TheGamesDBClient.fetch() name normalization ──────────────────────────────
 
 def test_thegamesdb_fetch_normalizes_region_tag_and_punctuation():
-    """fetch()'s direct lookup must normalize the same way search() does.
+    """fetch()'s direct lookup must send the name the way search() does.
 
-    TheGamesDB's own titles never carry No-Intro region tags or romset
-    punctuation, so sending "Golden Sun - Dark Dawn (USA)" verbatim made
-    the direct lookup miss matches that the (already-normalizing)
-    search() found just fine.
+    TheGamesDB's own titles never carry No-Intro region tags, and they
+    write the romset's " - " subtitle separator as ": " ("Golden Sun:
+    Dark Dawn"), so sending "Golden Sun - Dark Dawn (USA)" verbatim made
+    the direct lookup miss. Its name search does match punctuation, so the
+    first name sent keeps it (tests/test_thegamesdb_lookups.py).
     """
     client = TheGamesDBClient("fake-key")
-    captured: dict = {}
+    sent: list = []
 
     def fake_get(url, params=None, timeout=None):  # noqa: ARG001
-        captured["params"] = params
+        sent.append(params["name"])
         return _FakeResp({"data": {"games": []}})
 
     import types
     client._session = types.SimpleNamespace(get=fake_get)
+    client._limiter = types.SimpleNamespace(wait=lambda: None)
 
     client.fetch("Golden Sun - Dark Dawn (USA)", "Nintendo DS")
-    assert captured["params"]["name"] == "golden sun dark dawn"
+    assert sent[0] == "Golden Sun: Dark Dawn"
+    assert not any("(USA)" in name for name in sent)
 
 
 # ─── ScreenScraperClient.search() media backfill ──────────────────────────────
