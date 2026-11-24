@@ -19,6 +19,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **`fetch-media` looks up only the games that miss a type you asked for.** It looked up every game missing any of the ten media types, so `--types wheel` on a 1,287-game wheel with 146 missing wheel pictures resolved all 1,287 (almost every game lacks a sound or trailer it was never asked for), which can use up a provider's monthly allowance in one run. Only the requested types a game is missing are downloaded. With `--output-dir`, a file counts as missing only when it is in neither HyperSpin's `Media` nor the output folder: before, the empty output folder made every game look missing, and a re-run fetched again what was already staged. A dry run now says "Would download" instead of "Downloaded", and writes the `auto_audit_export_dir` CSV only on `--apply` (an explicit `--report` is still written). Covered by `tests/test_fetch_media_needed_games.py`.
 - **The Systems page's "Add PC system" help text shows again.** It was packed beside the Add buttons, in a row that doesn't fill, so the wrapping help label got about one character's width: with help text on it was a 10-pixel-wide column 1,339 pixels tall instead of a line under the buttons. It now has a line of its own under them (800x19 on a 1280-wide window). Covered by `tests/test_gui.py`.
 
 ## [3.4.0] - 2026-11-23
