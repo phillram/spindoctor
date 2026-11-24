@@ -175,6 +175,7 @@ Task registration is Windows-only and separate from startup wheel refresh.
 | A hotkey in an AHK key profile does nothing | RocketLauncher's menu navigation keys replace a plain `key::` in an Internal profile. `doctor` lists them; write `*key::` or a remap (`key::other`). |
 | One panel button does two things in a game | The game read the key before RocketLauncher's keymapper could block it: see [games that read the keyboard first](controller-input.md#games-that-read-the-keyboard-first). |
 | Future Pinball tables ignore coin, start and flippers | The table's script never started. `doctor` warns when the library is missing: [register it](#register-future-pinballs-type-library). |
+| An emulator hotkey on Coin + another button does nothing from the panel | Coin may be the encoder's shift button, which changes what the other buttons send: [hotkeys and the shift button](controller-input.md#emulator-hotkeys-and-the-encoders-shift-button). |
 
 [Light-gun setup and reversion](lightgun.md). Changing SpinDoctor tracking alone
 does not remove hooks.
