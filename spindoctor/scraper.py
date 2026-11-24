@@ -1323,6 +1323,52 @@ class ScreenScraperClient(_FetchWithSearchMixin):
 
 # ─── TheGamesDB ───────────────────────────────────────────────────────────────
 
+_TGDB_TAGS = re.compile(r"\s*(\([^)]*\)|\[[^\]]*\])")
+_TGDB_PART_SEPARATOR = re.compile(r"\s+-\s+")
+_TGDB_TRAILING_ARTICLE = re.compile(r"^(?P<rest>.+?),\s*(?P<article>The|A|An)$", re.IGNORECASE)
+# Names tried per game before giving up; each one is a request against the
+# key's monthly allowance, so the ladder stays short.
+_TGDB_MAX_NAME_QUERIES = 3
+
+
+def _tgdb_front_article(part: str) -> str:
+    """``Legend of Zelda, The`` → ``The Legend of Zelda`` (ROM sets file
+    titles by name; TheGamesDB keeps the article in front)."""
+    m = _TGDB_TRAILING_ARTICLE.match(part)
+    return f"{m.group('article')} {m.group('rest')}" if m else part
+
+
+def _tgdb_name_queries(game_name: str) -> list[str]:
+    """Names to send TheGamesDB's ``Games/ByGameName``, best first.
+
+    Its name search matches the stored title's text, punctuation included:
+    ``007: Blood Stone`` finds the DS game, ``007 blood stone`` doesn't, and
+    ``Holy Invasion of Privacy, Badman!`` needs its comma. So the first name
+    keeps the punctuation and drops only region/version tags, with the ROM
+    set's `` - `` subtitle separator written as TheGamesDB's ``: ``. When
+    that finds nothing, the title's own parts are tried, longest first
+    (``123 Sesame Street - Ready, Set, Grover! - …`` → ``Ready, Set,
+    Grover!``), then the plain normalized name. At most
+    ``_TGDB_MAX_NAME_QUERIES`` names, no repeats.
+    """
+    title = _TGDB_TAGS.sub("", game_name).strip()
+    title = re.sub(r"\s+", " ", title) or game_name.strip()
+    parts = [_tgdb_front_article(p.strip()) for p in _TGDB_PART_SEPARATOR.split(title)]
+    parts = [p for p in parts if p]
+    names = [": ".join(parts) if parts else title]
+    if len(parts) > 1:
+        names.extend(sorted(parts, key=len, reverse=True))
+    names.append(normalize(game_name))
+    queries: list[str] = []
+    seen: set[str] = set()
+    for name in names:
+        key = name.casefold()
+        if name and key not in seen:
+            seen.add(key)
+            queries.append(name)
+    return queries[:_TGDB_MAX_NAME_QUERIES]
+
+
 class TheGamesDBClient(_FetchWithSearchMixin):
     source_name = "thegamesdb"
 
@@ -1336,6 +1382,58 @@ class TheGamesDBClient(_FetchWithSearchMixin):
         self._limiter = RateLimiter(rate_limit)
         self._session = make_session()
         self._cache = cache
+        # fetch_with_search() calls fetch() and then, on a miss or a low
+        # score, search() for the same game. Both start from the same
+        # Games/ByGameName answer and the same Games/Images galleries, so
+        # they're kept for the last game instead of asked for twice.
+        self._last_by_name: Optional[tuple] = None
+        self._images_memo: dict[str, list[dict]] = {}
+
+    def _by_name(self, game_name: str, system_name: str, label: str) -> tuple[list, dict]:
+        """``Games/ByGameName`` games and payload for *game_name*.
+
+        Tries :func:`_tgdb_name_queries` in turn until one returns games.
+        The answer for the last game is reused, so ``search()`` right after
+        ``fetch()`` sends nothing.
+        """
+        key = (game_name, system_name)
+        last = getattr(self, "_last_by_name", None)
+        if last is not None and last[0] == key:
+            return last[1]
+        pid = self._platform_id(system_name)
+        url = f"{THEGAMESDB_API}/Games/ByGameName"
+        games: list = []
+        data: dict = {}
+        for query in _tgdb_name_queries(game_name):
+            self._limiter.wait()
+            params = {
+                "apikey": self.api_key,
+                "name": query,
+                "fields": "overview,genres,developers,publishers,rating,players",
+                "include": "boxart",
+            }
+            if pid:
+                params["filter[platform]"] = pid
+            try:
+                resp = self._session.get(url, params=params, timeout=15)
+            except requests.RequestException as e:
+                _log_http(f"thegamesdb.{label}", "GET", url, params, None, "", error=e)
+                raise MetadataError(f"TheGamesDB {label} failed: {e}") from e
+            _log_http(f"thegamesdb.{label}", "GET", url, params,
+                      resp.status_code, resp.text or "")
+            try:
+                resp.raise_for_status()
+                data = resp.json()
+            except (requests.RequestException, ValueError) as e:
+                raise MetadataError(
+                    _api_failure(f"TheGamesDB {label} failed", e, resp, params)
+                ) from e
+            _raise_if_tgdb_error(data)
+            games = _as_dict(data.get("data")).get("games") or []
+            if games:
+                break
+        self._last_by_name = (key, (games, data))
+        return games, data
 
     def _platform_id(self, system_name: str) -> Optional[int]:
         ovr = get_system_overrides().get(system_name, {})
@@ -1350,6 +1448,9 @@ class TheGamesDBClient(_FetchWithSearchMixin):
         Never raises — returns [] on any network or parse failure so callers
         don't need to wrap this in try/except.
         """
+        memo = getattr(self, "_images_memo", None)
+        if memo is not None and str(game_id) in memo:
+            return memo[str(game_id)]
         url = f"{THEGAMESDB_API}/Games/Images"
         params = {"apikey": self.api_key, "games_id": game_id}
         try:
@@ -1359,10 +1460,15 @@ class TheGamesDBClient(_FetchWithSearchMixin):
             resp.raise_for_status()
             data = resp.json()
             images = _as_dict(_as_dict(data.get("data")).get("images"))
-            return images.get(str(game_id)) or []
+            found = images.get(str(game_id)) or []
         except Exception as e:
             _log_http("thegamesdb.images", "GET", url, params, None, "", error=e)
             return []
+        if memo is not None:
+            if len(memo) >= 32:   # galleries of the last few games only
+                memo.clear()
+            memo[str(game_id)] = found
+        return found
 
     def fetch(self, game_name: str, system_name: str) -> Optional[GameMetadata]:
         # Checks config game-override first — see ScreenScraperClient.fetch
@@ -1381,40 +1487,9 @@ class TheGamesDBClient(_FetchWithSearchMixin):
                 )
             return forced
 
-        self._limiter.wait()
-        params = {
-            "apikey": self.api_key,
-            # Normalized the same way `search()` does — TheGamesDB's titles
-            # never carry No-Intro/Redump region tags or romset punctuation
-            # ("Golden Sun - Dark Dawn (USA)" vs. their "Golden Sun: Dark
-            # Dawn"), so sending the raw ROM name here made the direct
-            # lookup miss matches that `search()` found just fine.
-            "name": normalize(game_name),
-            "fields": "overview,genres,developers,publishers,rating,players",
-            "include": "boxart",
-        }
-        pid = self._platform_id(system_name)
-        if pid:
-            params["filter[platform]"] = pid
-
-        url = f"{THEGAMESDB_API}/Games/ByGameName"
-        try:
-            resp = self._session.get(url, params=params, timeout=15)
-        except requests.RequestException as e:
-            _log_http("thegamesdb.fetch", "GET", url, params, None, "", error=e)
-            raise MetadataError(f"TheGamesDB fetch failed: {e}") from e
-        _log_http("thegamesdb.fetch", "GET", url, params,
-                  resp.status_code, resp.text or "")
-        try:
-            resp.raise_for_status()
-            data = resp.json()
-        except (requests.RequestException, ValueError) as e:
-            raise MetadataError(
-                _api_failure("TheGamesDB fetch failed", e, resp, params)
-            ) from e
-
-        _raise_if_tgdb_error(data)
-        games = _as_dict(data.get("data")).get("games") or []
+        # The same names `search()` sends (see _tgdb_name_queries): region
+        # tags dropped, the title's punctuation kept, shorter parts on a miss.
+        games, data = self._by_name(game_name, system_name, "fetch")
         if not games:
             return None
         with _parse_guard("TheGamesDB", game_name):
@@ -1480,35 +1555,10 @@ class TheGamesDBClient(_FetchWithSearchMixin):
         return meta
 
     def search(self, game_name: str, system_name: str, max_results: int = 8) -> list[GameMetadata]:
-        self._limiter.wait()
-        params = {
-            "apikey": self.api_key,
-            "name": normalize(game_name),
-            "fields": "overview,genres,developers,publishers,rating,players",
-            "include": "boxart",
-        }
-        pid = self._platform_id(system_name)
-        if pid:
-            params["filter[platform]"] = pid
-
-        url = f"{THEGAMESDB_API}/Games/ByGameName"
-        try:
-            resp = self._session.get(url, params=params, timeout=15)
-        except requests.RequestException as e:
-            _log_http("thegamesdb.search", "GET", url, params, None, "", error=e)
-            raise MetadataError(f"TheGamesDB search failed: {e}") from e
-        _log_http("thegamesdb.search", "GET", url, params,
-                  resp.status_code, resp.text or "")
-        try:
-            resp.raise_for_status()
-            data = resp.json()
-        except (requests.RequestException, ValueError) as e:
-            raise MetadataError(
-                _api_failure("TheGamesDB search failed", e, resp, params)
-            ) from e
-
-        _raise_if_tgdb_error(data)
-        games = (_as_dict(data.get("data")).get("games") or [])[:max_results]
+        # After fetch() for the same game this reuses its answer: same
+        # endpoint, same names, so a second request would only cost quota.
+        games, data = self._by_name(game_name, system_name, "search")
+        games = games[:max_results]
         results = []
         with _parse_guard("TheGamesDB", game_name):
             for g in games:

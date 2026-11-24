@@ -61,6 +61,11 @@ Logs redact some secrets, not all identifying data.
   `config game-override` ID, then refetch deliberately. Clearing a cache
   does not undo already-written XML.
 - **Region tags:** matching normalizes common variant tags; review ambiguity.
+- **TheGamesDB finds nothing for a game it has:** its name search matches the
+  title's punctuation (`007: Blood Stone`, not `007 blood stone`). SpinDoctor sends
+  the ROM name without its region tags and with ` - ` as `: `, then the title's
+  parts, longest first (at most three names, each one request). If it still misses,
+  look the game up on thegamesdb.net and pin its ID with `config game-override`.
 - **Matched game, no media URL:** provider search results can be sparse.
   Use the current release, check the detailed provider lookup, try another
   configured source or import local media. Not every provider supplies videos/themes.
