@@ -42,6 +42,7 @@ command-specific; do not delete manifests to silence errors.
 | Toolkit “exe/FadeTitle/SteamID” error | Reinstall the helper using `install-tools`; module routing and placeholders must agree. |
 | Synthetic wheel missing INI/stuck fade | Rebuild with the current version; do not substitute ordinary PC-game INIs for recursive launch routing. |
 | Newly added wheel won't open | Check HyperSpin `Settings/<System>.ini` as well as database/media and RL settings. |
+| Vectrex games show white vectors, no colour overlay (or another game's) | MESS reads overlays only from `artwork\vectrex\vectrex.lay`, not old `.art` files, and RocketLauncher's MESS module asks for a game's view only when `artwork\Vectrex\<game>.png` is there. Each game needs a view named exactly as its ROM, above any longer name it starts with. `doctor` (Vectrex overlays) says what's missing: [Vectrex overlays](vectrex-overlays.md). |
 | “Cannot find” `\Databases\<System>\<System>.xml` | RocketLauncher wants that game list even for a system that isn't on the Main Menu: [an empty one is enough](pinball.md#rocketlauncher-says-it-cant-find-the-systems-database). |
 | Visual Pinball X won't start, or ignores its settings file | The stock module is for versions 8 and 9, and 10.8.0 reads an INI beside the program only with `-Ini`: [Visual Pinball X](pinball.md#visual-pinball-x). |
 | Panel buttons move BAM's camera or open its menu in Future Pinball | Its default keys are letters: [change them in `bam.cfg`](pinball.md#future-pinball-with-bam). |

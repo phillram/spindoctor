@@ -19,6 +19,7 @@ CLI examples use `spindoctor` (pip); Windows binaries use `spindoctor-cli`.
 | Run Xbox games | [Cxbx-Reloaded](xbox.md) |
 | Configure guns or controllers | [Light guns](lightgun.md), [DS4Windows example](controller-input.md) |
 | Start pinball programs | [Future Pinball and Visual Pinball X](pinball.md) |
+| Show Vectrex games' colour overlays | [Vectrex overlays in MESS](vectrex-overlays.md) |
 | Diagnose failures | [Troubleshooting](troubleshooting.md), [files and storage](spindoctor-files.md) |
 | Share diagnostics safely | [Privacy](privacy.md) |
 | Understand cabinet formats | [Cabinet integration reference](cabinet-architecture-reference.md) |

@@ -3588,6 +3588,273 @@ def check_daphne_keys(config: Config) -> Check:
     return parent
 
 
+# Layout items that draw an element's artwork (MAME layout version 2).
+_LAYOUT_ART_ITEMS = ("backdrop", "overlay", "bezel", "cpanel", "marquee")
+
+
+def _layout_views(lay: Path) -> "tuple[list[tuple[str, Optional[list[str]]]], str]":
+    """The views of a MAME layout (``.lay``) file in file order, as ``(name,
+    image files its artwork items draw)``, the files None when an item names
+    an element the file doesn't define; and why MAME can't use the file
+    ("" when it can)."""
+    try:
+        root = ET.fromstring(lay.read_bytes())
+    except OSError as e:
+        return [], f"can't be read ({e.strerror or e})"
+    except ET.ParseError as e:
+        return [], f"isn't valid XML ({e})"
+    if root.tag != "mamelayout" or (root.get("version") or "").strip() != "2":
+        return [], 'isn\'t a <mamelayout version="2"> layout'
+    images = {
+        (el.get("name") or ""): [img.get("file") or "" for img in el.iter("image") if img.get("file")]
+        for el in root.findall("element")
+    }
+    views: list[tuple[str, Optional[list[str]]]] = []
+    for view in root.findall("view"):
+        files: Optional[list[str]] = []
+        for item in view:
+            if item.tag not in _LAYOUT_ART_ITEMS:
+                continue
+            ref = item.get("element") or ""
+            if ref not in images:
+                files = None
+                break
+            files += images[ref]
+        views.append((view.get("name") or "", files))
+    return views, ""
+
+
+def _layout_view_shown(name: str, views: "list[tuple[str, Optional[list[str]]]]") -> str:
+    """The view MAME shows for ``-view "<name>"``: the first whose name starts
+    with *name*, ignoring case, else the first one ("" when there is none)."""
+    low = name.lower()
+    return next((v for v, _f in views if v.lower().startswith(low)), views[0][0] if views else "")
+
+
+def _vectrex_artwork(look: _RomLookup, emu_dir: Path) -> "tuple[list[Check], str, bool]":
+    """The findings on one MESS folder's Vectrex artwork for
+    :func:`check_vectrex_overlays`: the rows, a detail for the wheel when no
+    row warns, and False when there's no overlay of any kind."""
+    import re
+    from pathlib import PureWindowsPath
+
+    def listing(folder: Optional[Path]) -> "tuple[dict[str, str], dict[str, str]]":
+        found = look.listing(folder) if folder is not None else None
+        return found if found is not None else ({}, {})
+
+    # Each folder listed once, names looked up ignoring case, as Windows does.
+    emu_dirs = listing(emu_dir)[1]
+    art_dir = emu_dir / emu_dirs["artwork"] if "artwork" in emu_dirs else None
+    art_files, art_dirs = listing(art_dir)
+    vec_dir = art_dir / art_dirs["vectrex"] if art_dir is not None and "vectrex" in art_dirs else None
+    vec_files = listing(vec_dir)[0]
+    where = vec_dir or (art_dir or emu_dir / "artwork") / "Vectrex"  # as the module spells it
+    lay = where / vec_files.get("vectrex.lay", "vectrex.lay")
+    has_lay = "vectrex.lay" in vec_files
+
+    def stems(files: "dict[str, str]", ext: str) -> "dict[str, str]":
+        return {low[:-len(ext)]: real[:-len(ext)] for low, real in files.items()
+                if low.endswith(ext) and len(low) > len(ext)}
+
+    arts = sorted({**stems(art_files, ".art"), **stems(vec_files, ".art")}.values(), key=str.lower)
+    pngs = stems(vec_files, ".png")
+    if not arts and not pngs and not has_lay:
+        return [], f"no overlays in {where}: every game shows plain white vectors", False
+
+    views, error = _layout_views(lay) if has_lay else ([], "")
+    if error:
+        return [Check(
+            name="vectrex.lay", status=Status.WARN,
+            detail=f"{lay} {error}, so MESS ignores it and no game shows its overlay",
+            fix=(f'Correct {lay}: valid XML in a <mamelayout version="2"> element (an & in a game\'s '
+                 "name is written &amp;)"),
+        )], "", True
+
+    names = {v.lower() for v, _f in views}
+    rows: list[Check] = []
+    # Overlays still in the pre-0.107 .art format.  "Game (USA) (A00ED3D6)"
+    # is one of two dumps' copies of the overlay of the game "Game (USA)".
+    crc = re.compile(r"\s\([0-9a-f]{8}\)$", re.IGNORECASE)
+    old = [a for a in arts if a.lower() not in names and crc.sub("", a).lower() not in names]
+    if old:
+        n = len(old)
+        rows.append(Check(
+            name="Old .art overlays", status=Status.WARN,
+            detail=(f"{n} .art overlay{'s' if n != 1 else ''} with no view in "
+                    f"{'vectrex.lay' if has_lay else 'a vectrex.lay (there is none)'} ({_some(old)}): "
+                    "MAME and MESS stopped reading .art files in 0.107, so "
+                    f"{'these games run' if n != 1 else 'this game runs'} without an overlay"),
+            fix=(f"Give each game a view in {lay}, named exactly as its ROM, that draws the .art file's "
+                 f"PNG saved as {where / '<game>.png'}"),
+        ))
+
+    # PNGs the module asks MESS for a view of, with no view of that name.
+    lost = [real for low, real in sorted(pngs.items()) if low not in names]
+    if lost and not has_lay:
+        rows.append(Check(
+            name="vectrex.lay", status=Status.WARN,
+            detail=(f"not in {where}: the module asks MESS for the view of each of the {len(lost)} "
+                    "games with an overlay PNG there, but MESS has only its own plain views"),
+            fix=f"Add {lay} with one view per PNG, named exactly as the PNG, drawing it as an overlay",
+        ))
+    elif lost:
+        n = len(lost)
+        if views:
+            got = [f"{p} gets {_layout_view_shown(p, views)}'s" for p in lost]
+            why = f"the module asks MESS for that view, and MESS shows another one ({_some(got)})"
+        else:
+            why = f"vectrex.lay has no views, so they show plain white vectors ({_some(lost)})"
+        rows.append(Check(
+            name="Overlay PNGs", status=Status.WARN,
+            detail=f"{n} overlay PNG{'s' if n != 1 else ''} with no view of the same name in vectrex.lay: {why}",
+            fix=f'Add a <view name="<game>"> drawing <game>.png to {lay} for each, named exactly as the PNG',
+        ))
+
+    # Views the module asks for that MESS doesn't reach, or that draw nothing.
+    late: list[str] = []
+    broken: list[str] = []
+    for i, (view, files) in enumerate(views):
+        low = view.lower()
+        if low not in pngs:
+            continue
+        first = next((v for v, _f in views[:i] if v.lower().startswith(low)), None)
+        if first is not None:
+            late.append(f"{view} gets {first}'s" if first.lower() != low else f"{view} (twice)")
+        elif files is None or not all(look.exists(where.joinpath(*PureWindowsPath(f).parts)) for f in files):
+            broken.append(view)
+    if late:
+        n = len(late)
+        rows.append(Check(
+            name="View order", status=Status.WARN,
+            detail=(f"{n} game{'s get' if n != 1 else ' gets'} an earlier view whose name starts with "
+                    f"{'theirs' if n != 1 else 'its own'} ({_some(late)}): MESS takes the first view whose "
+                    "name starts with the one asked for"),
+            fix=(f"In {lay}, put each game's view above every longer name it starts with (views sorted "
+                 "by name are in that order), and keep one view per name"),
+        ))
+    if broken:
+        n = len(broken)
+        rows.append(Check(
+            name="Overlay images", status=Status.WARN,
+            detail=(f"{n} game{'s' if n != 1 else ''}' view draws an image that isn't in {where}, or an "
+                    f"element vectrex.lay doesn't define ({_some(broken)}), so "
+                    f"{'they show' if n != 1 else 'it shows'} no overlay"),
+            fix=f"In {lay}, give each view's overlay an <element> whose <image file=\"...\"> is in {where}",
+        ))
+
+    # Views no game reaches: the module asks for -view standard without the PNG.
+    unasked = [v for v, _f in views if v.lower() not in pngs]
+    if unasked:
+        n = len(unasked)
+        rows.append(Check(
+            name="Views without a PNG", status=Status.INFO,
+            detail=(f"{n} view{'s' if n != 1 else ''} in vectrex.lay with no PNG of the same name "
+                    f"({_some(unasked)}): the module starts a game with -view standard (plain white "
+                    f"vectors) unless {where / '<game>.png'} is there"),
+            fix=f"For each such game on the wheel, save its overlay as {where / '<view name>.png'}",
+        ))
+
+    good = sum(1 for low in pngs if low in names)
+    detail = (f"{good} overlay{'s' if good != 1 else ''} in {where}, each with its own view in vectrex.lay"
+              if good else f"no overlay PNG in {where}")
+    if arts and not old:
+        detail += (f"; {len(arts)} old .art file{'s are' if len(arts) != 1 else ' is'} unused "
+                   "(MESS reads only vectrex.lay)")
+    return rows, detail, True
+
+
+def check_vectrex_overlays(config: Config) -> Check:
+    """Vectrex games that start without their colour overlay, or with another game's.
+
+    A Vectrex draws white vectors; each game came with a coloured plastic
+    overlay.  RocketLauncher's MESS module starts a Vectrex game with
+    ``-view "<romName>"`` when ``<emulator folder>\\artwork\\Vectrex\\<romName>.png``
+    exists, else ``-view standard`` (plain white).  MESS reads the views from
+    ``artwork\\vectrex\\vectrex.lay`` (a MAME layout file; MAME and MESS
+    stopped reading ``.art`` files in 0.107) and takes the first view whose
+    name starts with the name asked for, ignoring case; with none, the file's
+    first view: another game's overlay.
+
+    Per visible Main Menu wheel with "vectrex" in its name whose default
+    emulator uses the MESS module, in the ``artwork`` folder beside its
+    ``Emu_Path``:
+
+    * ``.art`` overlays (in ``artwork`` or ``artwork\\Vectrex``) whose game has
+      no view in ``vectrex.lay``: WARN, the game runs without its overlay.
+    * PNGs with no view of the same name (or no ``vectrex.lay`` at all): WARN,
+      MESS shows another view.
+    * A game whose view comes after a view whose name starts with the game's
+      ("Polar Rescue (USA) (Beta)" before "Polar Rescue (USA)"): WARN.
+    * A game's view drawing an image that isn't there, or an element the
+      file doesn't define: WARN.  A ``vectrex.lay`` MESS can't read: WARN.
+    * Views with no PNG of their name (the module never asks for them), and
+      ``Use_Overlays=false`` for the system in the module's INI: INFO.
+
+    Diagnosis only.
+    """
+    name = "Vectrex overlays"
+    if not config.hyperspin_dir or not Path(config.hyperspin_dir).is_dir():
+        return Check(name=name, status=Status.INFO, detail="hyperspin_dir not configured; skipping")
+    if not config.rocketlauncher_dir:
+        return Check(name=name, status=Status.INFO, detail="rocketlauncher_dir not configured; skipping")
+
+    mm_path = Path(config.hyperspin_dir) / "Databases" / "Main Menu" / "Main Menu.xml"
+    hidden = _hidden_main_menu_wheels(mm_path)
+    look = _RomLookup(Path(config.rocketlauncher_dir))
+    folders: dict[str, tuple[list[Check], str, bool]] = {}  # one reading per MESS folder
+    parent = Check(name=name, status=Status.OK)
+    for system in _main_menu_wheels(mm_path):
+        if "vectrex" not in system.lower() or system in hidden:
+            continue
+        src = look.source(system)
+        module = look.module_file(src) if src is not None and src.emu_where else None
+        if module is None or module.name.lower() != "mess.ahk":
+            continue
+        node = Check(name=system, status=Status.OK)
+        parent.children.append(node)
+        program = _resolve_rom_path(src.emu_path, look.rl_dir) if src.emu_path else None
+        if program is None:
+            node.status = Status.INFO
+            node.detail = (f"no Emu_Path in {src.emu_where}" if not src.emu_path
+                           else "Emu_Path uses a Windows drive letter; can't check it on this OS")
+            continue
+        emu_dir = _windows_case(program.parent)
+        if not emu_dir.is_dir():
+            node.status = Status.INFO
+            node.detail = f"emulator folder not found: {emu_dir} (see ROM paths)"
+            continue
+        key = os.path.normcase(str(emu_dir))
+        if key not in folders:
+            folders[key] = _vectrex_artwork(look, emu_dir)
+        rows, detail, found = folders[key]
+        node.children = list(rows)
+        # The module's own INI can switch overlays off for the whole system.
+        ini = module.parent / f"{module.stem}.ini"
+        if _read_rl_ini(ini).get(system.lower(), {}).get("use_overlays", "").strip().lower() == "false":
+            node.children.append(Check(
+                name="Use_Overlays", status=Status.INFO,
+                detail=(f"Use_Overlays=false under [{system}] in {ini}: the module starts MESS with "
+                        "-nouse_overlays, so no game shows its overlay"),
+                fix=f"Set Use_Overlays=true under [{system}] in {ini}",
+            ))
+        node.status = _worst(c.status for c in node.children) if found else Status.INFO
+        node.detail = detail if node.status != Status.WARN else f"MESS folder {emu_dir}"
+
+    if not parent.children:
+        return Check(name=name, status=Status.INFO,
+                     detail="no visible Vectrex wheel starts with RocketLauncher's MESS module")
+    total = len(parent.children)
+    warned = sum(1 for c in parent.children if c.status == Status.WARN)
+    plural = "s" if total != 1 else ""
+    if warned:
+        parent.detail = (f"{warned} of {total} Vectrex wheel{plural} on MESS start{'s' if warned == 1 else ''} "
+                         "some games without their overlay, or with another game's")
+    else:
+        parent.detail = f"{total} Vectrex wheel{plural} on MESS: no overlay problem found"
+    parent.status = _worst(c.status for c in parent.children)
+    return parent
+
+
 def check_led_coverage(config: Config) -> Check:
     """Report how many wheel games have LEDBlinky control/color entries.
 
@@ -4153,6 +4420,7 @@ def run_health_checks(config: Config, fix: bool = False) -> HealthReport:
     _safe("Lightguns", lambda: check_lightguns(config))
     _safe("Emulator ROM folders", lambda: check_emulator_rom_paths(config))
     _safe("Daphne keys", lambda: check_daphne_keys(config))
+    _safe("Vectrex overlays", lambda: check_vectrex_overlays(config))
     _safe("User Functions", lambda: check_user_functions(config))
     _safe("Coin/Start", lambda: check_coin_start(config))
     _safe("MAME key maps", lambda: check_mame_key_maps(config))
