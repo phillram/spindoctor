@@ -2504,6 +2504,194 @@ def check_letter_art(config: Config) -> Check:
     return parent
 
 
+# HyperSpin 1.5 lays a theme out on this canvas and stretches it to the screen.
+_THEME_CANVAS = (1024, 768)
+# Videos played this much too wide or too tall look plainly stretched.
+# 4:3 videos in a full-screen box on a 16:9 screen are 1.33x too wide.
+_THEME_STRETCH_LIMIT = 1.3
+# Videos read per wheel, spread through the folder, to learn their usual shape.
+_THEME_VIDEO_SAMPLE = 25
+_NAMED_SHAPES = ((16 / 9, "16:9"), (4 / 3, "4:3"), (3 / 2, "3:2"), (5 / 4, "5:4"), (10 / 9, "10:9"),
+                 (1.0, "1:1"), (5 / 6, "5:6"), (3 / 4, "3:4"), (2 / 3, "2:3"), (9 / 16, "9:16"))
+
+
+def _shape_text(ratio: float) -> str:
+    """*ratio* (width / height) as ``4:3`` when within 1% of a common shape,
+    else as ``1.85:1``."""
+    for value, text in _NAMED_SHAPES:
+        if abs(ratio / value - 1) <= 0.01:
+            return text
+    return f"{ratio:.2f}:1"
+
+
+def _default_theme_zip(folder: Path) -> Optional[Path]:
+    """``Default.zip`` in a wheel's ``Themes`` folder, any case; None if absent."""
+    try:
+        with os.scandir(folder) as it:
+            for entry in it:
+                if entry.name.lower() == "default.zip" and entry.is_file():
+                    return folder / entry.name
+    except OSError:
+        pass
+    return None
+
+
+def _theme_video_box(zip_path: Path) -> Optional[dict]:
+    """The ``<video>`` element's attributes (names lower-cased) in a theme
+    zip's ``Theme.xml``; None when there's no readable one.  Read with a
+    pattern, not an XML parser: hand-made themes aren't always valid XML."""
+    import re
+    import zipfile
+
+    try:
+        with zipfile.ZipFile(zip_path) as zf:
+            entry = next((n for n in zf.namelist()
+                          if n.replace("\\", "/").rsplit("/", 1)[-1].lower() == "theme.xml"), None)
+            if entry is None:
+                return None
+            text = zf.read(entry).decode("utf-8", errors="replace")
+    except (OSError, zipfile.BadZipFile, KeyError, RuntimeError, ValueError):
+        return None
+    m = re.search(r"<video\b([^>]*)>", text, re.IGNORECASE)
+    if not m:
+        return None
+    return {k.lower(): v for k, v in re.findall(r'([\w-]+)\s*=\s*"([^"]*)"', m.group(1))}
+
+
+def _hs_video_folder(config: Config, system: str) -> Path:
+    """The folder HyperSpin plays *system*'s game videos from: its
+    ``[video defaults] path=`` when that's a folder (absolute, or under
+    ``Media`` or the HyperSpin folder), else ``Media\\<system>\\Video``."""
+    from pathlib import PureWindowsPath
+
+    hs_dir = Path(config.hyperspin_dir)
+    raw = _hs_video_path(hs_dir, system)
+    if raw:
+        win = PureWindowsPath(raw)
+        if win.drive or win.is_absolute():
+            candidates = [Path(raw)]
+        else:
+            rel = Path(*[p for p in win.parts if p != "."]) if win.parts else Path()
+            candidates = [config.media_dir / rel, hs_dir / rel]
+        for folder in candidates:
+            if folder.is_dir():
+                return folder
+    return config.media_dir / system / "Video"
+
+
+def _usual_video_shape(folder: Path) -> Optional["tuple[float, int]"]:
+    """The median width / height of up to :data:`_THEME_VIDEO_SAMPLE` videos
+    spread through *folder* (A-Z), and how many were read; None if none can be."""
+    from .introvideo import video_frame_size
+
+    try:
+        with os.scandir(folder) as it:
+            names = sorted((e.name for e in it
+                            if e.name.lower().endswith(_HS_VIDEO_EXTS) and e.is_file()), key=str.lower)
+    except OSError:
+        return None
+    step = max(1, len(names) // _THEME_VIDEO_SAMPLE)
+    shapes = []
+    for file_name in names[::step][:_THEME_VIDEO_SAMPLE]:
+        size = video_frame_size(folder / file_name)
+        if size:
+            shapes.append(size[0] / size[1])
+    if not shapes:
+        return None
+    shapes.sort()
+    return shapes[len(shapes) // 2], len(shapes)
+
+
+def _theme_shape_node(config: Config, system: str, screen: "tuple[int, int]") -> Optional[Check]:
+    """One wheel for :func:`check_theme_video_shape` on a *screen* (width,
+    height): OK, or WARN when its theme stretches its videos; None when
+    there's nothing to compare (no ``Default.zip``, a ``forceaspect`` other
+    than ``both``, no usable box, or no readable video)."""
+    theme = _default_theme_zip(config.media_dir / system / "Themes")
+    box = _theme_video_box(theme) if theme else None
+    if not box or box.get("forceaspect", "").strip().lower() != "both":
+        return None
+    try:
+        w, h = float(box.get("w", "")), float(box.get("h", ""))
+    except ValueError:
+        return None
+    usual = _usual_video_shape(_hs_video_folder(config, system)) if w > 0 and h > 0 else None
+    if usual is None:
+        return None
+    clip, read = usual
+    sx, sy = screen[0] / _THEME_CANVAS[0], screen[1] / _THEME_CANVAS[1]
+    shown = (w * sx) / (h * sy)
+    stretch = shown / clip
+    said = (f"the theme's video box is {_shape_text(shown)} on the {screen[0]}x{screen[1]} screen, "
+            f"its videos are {_shape_text(clip)} (the usual shape of {read} read)")
+    if 1 / _THEME_STRETCH_LIMIT < stretch < _THEME_STRETCH_LIMIT:
+        return Check(name=system, status=Status.OK, detail=said)
+    way = f"{stretch:.1f}x too wide" if stretch > 1 else f"{1 / stretch:.1f}x too tall"
+    return Check(
+        name=system, status=Status.WARN,
+        detail=f"its videos play {way}: {said}",
+        fix=(f"In Theme.xml in {theme}, give <video> the videos' shape on screen, "
+             f"w x {sx:.4g} : h x {sy:.4g} = video width : height "
+             f'(now w="{box.get("w")}" h="{box.get("h")}"), or use a theme made for this system'),
+    )
+
+
+def check_theme_video_shape(config: Config) -> Check:
+    """Wheels whose game theme stretches their videos out of shape.
+
+    A HyperSpin 1.5 theme is laid out on a 1024x768 canvas that is stretched
+    to the screen (``[Resolution]`` in ``Settings\\Settings.ini``): on a
+    1920x1080 screen one unit is 1.875 pixels across and 1.406 down.  With
+    ``forceaspect="both"`` the video fills its ``<video>`` box, ``w`` by
+    ``h``, whatever the clip's own shape.  So a box that isn't the videos'
+    shape *on screen* pulls every clip wider or taller: a basic full-screen
+    theme turns 4:3 videos into 16:9 ones, and tall two-screen handheld clips
+    (DS, 3DS) into wide smears.
+
+    Per visible Main Menu wheel with a ``Media\\<System>\\Themes\\Default.zip``
+    whose ``Theme.xml`` video box uses ``forceaspect="both"``: the box's shape
+    on screen against the median shape of up to 25 of the wheel's videos
+    (MP4 / M4V / MOV track headers, FLV ``onMetaData``; no ffprobe).  A WARN
+    when they play 1.3x or more too wide or too tall.  Per-game themes
+    (``Themes\\<game>.zip``), other ``forceaspect`` values, and wheels with no
+    readable video are skipped.  Diagnosis only.
+    """
+    name = "Theme video shape"
+    views = _hs_wheel_views(config)
+    if views is None:
+        return Check(name=name, status=Status.INFO,
+                     detail="hyperspin_dir or its Main Menu not found; skipping")
+    from .display_mode import hyperspin_resolution
+
+    screen = hyperspin_resolution(config)
+    if screen is None:
+        return Check(name=name, status=Status.INFO,
+                     detail=("no [Resolution] Width / Height in HyperSpin's Settings\\Settings.ini, "
+                             "so how far themes are stretched isn't known; skipping"))
+    parent = Check(name=name, status=Status.OK)
+    checked = 0
+    for view in views:
+        if view.system == "Main Menu":
+            continue
+        node = _theme_shape_node(config, view.system, screen)
+        if node is None:
+            continue
+        checked += 1
+        if node.status != Status.OK:
+            parent.children.append(node)
+    n = len(parent.children)
+    if n:
+        parent.detail = (f"{n} of {checked} wheel theme{'s' if checked != 1 else ''} checked "
+                         f"stretch{'es' if n == 1 else ''} the videos out of shape")
+    elif checked:
+        parent.detail = (f"the video box of {checked} wheel theme{'s' if checked != 1 else ''} "
+                         f"{'matches' if checked == 1 else 'match'} the videos' shape")
+    else:
+        parent.detail = 'no wheel theme with forceaspect="both" and readable videos to check'
+    parent.status = _worst(c.status for c in parent.children)
+    return parent
+
+
 def check_lightguns(config: Config) -> Check:
     """Verify DemulShooter wiring for every system marked ``lightgun: true``.
 
@@ -4147,6 +4335,7 @@ def run_health_checks(config: Config, fix: bool = False) -> HealthReport:
     _safe("Spaces in game names", lambda: check_game_name_spaces(config))
     _safe("Wheel art", lambda: check_wheel_art(config))
     _safe("Letter art", lambda: check_letter_art(config))
+    _safe("Theme video shape", lambda: check_theme_video_shape(config))
     _safe("Match cache", lambda: check_match_cache(config, fix, report.fixes_applied))
     _safe("Global Emulators.ini", lambda: check_global_emulators(config, fix, report.fixes_applied))
     _safe("RocketLauncher settings", lambda: check_rocketlauncher_settings(config))
