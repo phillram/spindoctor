@@ -45,7 +45,7 @@ audio. Automatic repair copies video and re-encodes audio to AAC when needed.
 | Key | Default / meaning |
 |---|---|
 | `screenscraper_user`, `screenscraper_pass` | Optional ScreenScraper account |
-| `screenscraper_devid`, `screenscraper_devpassword` | App credentials; override only with an issued developer pair |
+| `screenscraper_devid`, `screenscraper_devpassword` | App credentials; override only with an issued developer pair (ScreenScraper issues them on request through its forum; it refuses the bundled `SpinDoctor` value) |
 | `thegamesdb_key` | Optional TheGamesDB API key |
 | `default_metadata_source` | `auto`: combine configured providers when both exist; or select `screenscraper`, `thegamesdb`, `both` |
 | `max_concurrent_downloads` | `4` |

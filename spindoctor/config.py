@@ -195,9 +195,11 @@ class Config:
     # a per-user pair (ssid/sspassword) and a per-app pair (devid/devpassword).
     # The literal "SpinDoctor" defaults below are historical placeholders —
     # they are NOT a registered developer account and ScreenScraper rejects
-    # every request that ships them with HTTP 403. Register your own dev
-    # account at https://www.screenscraper.fr/membreinscription.php and set
-    # the values via the Setup tab (ScreenScraper devid / devpassword) or
+    # every request that ships them with HTTP 403. ScreenScraper issues a
+    # developer pair on request through its forum (scraper.
+    # SCREENSCRAPER_DEVELOPER_REQUEST_URL); a member account from the sign-up
+    # page is only the user login. Set the values via the Setup tab
+    # (ScreenScraper devid / devpassword) or
     # `spindoctor config set screenscraper_devid <value>`.
     screenscraper_devid: str = "SpinDoctor"
     screenscraper_devpassword: str = "SpinDoctor"
