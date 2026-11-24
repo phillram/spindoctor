@@ -20,6 +20,7 @@ command-specific; do not delete manifests to silence errors.
 | Cramped screen | Hide Output/help text or reduce View UI scale; pages scroll. |
 | Unwanted GitHub update checks | Set `SPINDOCTOR_NO_UPDATE_CHECK=1` before launch. |
 | Startup task access denied | Inspect Task Scheduler permissions/policy and the exact error; elevate only if your policy requires it. |
+| “Windows cannot find '…\spindoctor-gui.exe'” at log on, once per command | A logon task still runs the EXE from before an upgrade. Open the current SpinDoctor once: it points the wheel refresh and intro video tasks at itself and says so in Output. |
 
 ## Library and launch routing
 
@@ -53,7 +54,12 @@ Logs redact some secrets, not all identifying data.
 
 - **403/login failure:** test credentials in Setup or `config verify-credentials`.
   ScreenScraper account and developer credentials are different; change the
-  latter only if you have an issued pair.
+  latter only if you have an issued pair. ScreenScraper refuses the bundled
+  `devid=SpinDoctor` on every request ("Erreur de login : Vérifier vos
+  identifiants développeur !"), whatever the user login, and `doctor` warns while
+  it is set. A developer pair comes from ScreenScraper on request, through its
+  [forum](https://www.screenscraper.fr/forumsujets.php?frub=12&numpage=0); the
+  member sign-up page gives only the user login.
 - **Rate limit/closed API/non-JSON response:** inspect the provider message,
   wait or check current account limits. Quotas can change; repeated retries
   will not bypass them.
@@ -61,9 +67,21 @@ Logs redact some secrets, not all identifying data.
   `config game-override` ID, then refetch deliberately. Clearing a cache
   does not undo already-written XML.
 - **Region tags:** matching normalizes common variant tags; review ambiguity.
+- **TheGamesDB finds nothing for a game it has:** its name search matches the
+  title's punctuation (`007: Blood Stone`, not `007 blood stone`). SpinDoctor sends
+  the ROM name without its region tags and with ` - ` as `: `, then the title's
+  parts, longest first (at most three names, each one request). If it still misses,
+  look the game up on thegamesdb.net and pin its ID with `config game-override`.
 - **Matched game, no media URL:** provider search results can be sparse.
   Use the current release, check the detailed provider lookup, try another
   configured source or import local media. Not every provider supplies videos/themes.
+- **A fetch uses up the monthly allowance:** every game looked up costs
+  provider requests (`config verify-credentials` shows what's left). `fetch-media`
+  looks up only games missing one of the `--types` you name, so name the ones you
+  need (`--types wheel`) instead of the default ten. With `--output-dir`, a file is
+  missing only when it is in neither HyperSpin's `Media` nor the output folder, so a
+  re-run skips what is already staged. A dry run makes the same lookups (cached for
+  the apply), so preview a few games with `--game` first.
 
 ## Media and wheels
 
@@ -80,6 +98,7 @@ Logs redact some secrets, not all identifying data.
 | `generate-media record` saves nothing | Its reason is in the output: black or frozen picture, another window in front, or the game closed. Try a longer `--wait`; close overlays; black on every game means the capture can't see that display mode. |
 | `generate-media record` stops at once | A key, control-panel button or mouse click stops it. Leave the PC alone, and check for a stuck button. |
 | Game hidden or shown as text | Check exact media stem/case/spaces, `wheels_only`, `parents_only`, enabled status and wheel art. |
+| Hidden Main Menu wheels show again after `add-system` or `generate-config` | Older builds rewrote `Main Menu.xml` with names only. Hide them again with `mainmenu hide SYSTEM --apply`; both commands now keep `enabled="False"`. |
 | No letter-jump graphic | Supply `Images/Letters/<character>.png` for visible title initials; run `doctor`. |
 | Starts on a different letter/game | Inspect `wheel-start`; set first/last/random with HyperSpin closed. |
 | Piped `mainmenu edit` commands left the Main Menu in the wrong order | Windows PowerShell 5.1 pipes a byte-order mark before the first line, and older builds called that line unrecognised and saved anyway. `edit` now ignores the mark and saves nothing if a piped command fails; put the menu's backup back. |

@@ -759,8 +759,22 @@ def check_ledblinky(config: Config) -> Check:
 
 
 def check_api_creds(config: Config) -> Check:
+    from .scraper import _SCREENSCRAPER_PLACEHOLDER_DEVIDS, SCREENSCRAPER_DEVELOPER_REQUEST_URL
+
     parent = Check(name="Metadata APIs", status=Status.OK)
-    if config.screenscraper_user and config.screenscraper_pass:
+    placeholder_devid = (config.screenscraper_devid or "") in _SCREENSCRAPER_PLACEHOLDER_DEVIDS
+    if config.screenscraper_user and config.screenscraper_pass and placeholder_devid:
+        # ScreenScraper refuses the bundled developer ID on every request,
+        # whatever the user login, so a set login alone isn't "OK".
+        parent.children.append(Check(
+            name="ScreenScraper", status=Status.WARN,
+            detail=(f"user: {config.screenscraper_user}; developer ID is the bundled "
+                    "placeholder, which ScreenScraper refuses (HTTP 403)"),
+            fix=(f"ask ScreenScraper for a developer ID on its forum ({SCREENSCRAPER_DEVELOPER_REQUEST_URL}), "
+                 "then: spindoctor config set screenscraper_devid <id> "
+                 "and screenscraper_devpassword <password>"),
+        ))
+    elif config.screenscraper_user and config.screenscraper_pass:
         parent.children.append(Check(
             name="ScreenScraper", status=Status.OK,
             detail=f"user: {config.screenscraper_user}",

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import configparser
+import io
 import re
 import shutil
 import xml.etree.ElementTree as ET
@@ -1415,8 +1416,15 @@ def fill_default_theme(
 
 # ─── HyperSpin Main Menu XML ──────────────────────────────────────────────────
 
-def _read_main_menu_systems(path: Path) -> list[str]:
-    """Return current <game name="..."/> entries from Main Menu.xml (or [])."""
+def _read_main_menu_entries(path: Path) -> list[tuple[str, dict]]:
+    """Return ``(name, attributes)`` for each <game> in Main Menu.xml (or []).
+
+    The attributes are everything but ``name`` (``enabled="False"`` on a
+    hidden wheel, ``exe="true"`` on a Search entry), so a rewrite can put
+    them back.  A legacy ``<enabled>No</enabled>`` child from older
+    SpinDoctor builds comes back as ``enabled="False"``, the form HyperSpin
+    reads on the Main Menu.
+    """
     if not path.exists():
         return []
     try:
@@ -1430,14 +1438,30 @@ def _read_main_menu_systems(path: Path) -> list[str]:
             file=sys.stderr,
         )
         return []
-    return [
-        (g.get("name") or "").strip()
-        for g in tree.getroot().findall("game")
-        if (g.get("name") or "").strip()
-    ]
+    entries: list[tuple[str, dict]] = []
+    for g in tree.getroot().findall("game"):
+        name = (g.get("name") or "").strip()
+        if not name:
+            continue
+        attrs = {k: v for k, v in g.attrib.items() if k != "name"}
+        legacy = g.find("enabled")
+        if ("enabled" not in attrs and legacy is not None
+                and (legacy.text or "").strip().lower() in ("no", "false", "0", "off")):
+            attrs["enabled"] = "False"
+        entries.append((name, attrs))
+    return entries
 
 
-def _write_main_menu(systems: list[str], out_path: Path) -> Path:
+def _read_main_menu_systems(path: Path) -> list[str]:
+    """Return current <game name="..."/> entries from Main Menu.xml (or [])."""
+    return [name for name, _attrs in _read_main_menu_entries(path)]
+
+
+def _write_main_menu(
+    systems: list[str],
+    out_path: Path,
+    attrs: Optional[dict] = None,
+) -> Path:
     """Write Main Menu.xml in HyperSpin's native minimal format.
 
     Native shape: a bare ``<menu>`` containing ``<game name="..."/>`` entries,
@@ -1445,16 +1469,34 @@ def _write_main_menu(systems: list[str], out_path: Path) -> Path:
     HyperSpin ships and what its parser expects; bloated formats (with empty
     ``<description>``/``<enabled>`` children) cause "Error creating main menu"
     on some HyperSpin builds.
-    """
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    root = ET.Element("menu")
-    for sys_name in systems:
-        ET.SubElement(root, "game", name=sys_name)
 
-    tree = ET.ElementTree(root)
-    et_indent(tree)
-    with open(out_path, "wb") as f:
-        tree.write(f, encoding="utf-8", xml_declaration=False)
+    *attrs* maps a system to the attributes its entry already had; they are
+    written back after ``name``, so a rewrite never shows a hidden wheel
+    again or loses ``exe="true"``.  With lxml the entries come out as
+    ``<game name="..."/>``, byte for byte what HyperSpin ships and what
+    ``mainmenu`` saves (ElementTree writes ``<game name="..." />``).
+    """
+    from .database import _lxml_etree
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    attrs = attrs or {}
+    LET = _lxml_etree()
+    backend = LET if LET is not None else ET
+    root = backend.Element("menu")
+    for sys_name in systems:
+        el = backend.SubElement(root, "game", name=sys_name)
+        for key, value in attrs.get(sys_name, {}).items():
+            el.set(key, value)
+
+    if LET is not None:
+        data = LET.tostring(root, pretty_print=True)
+    else:
+        tree = ET.ElementTree(root)
+        et_indent(tree)
+        buf = io.BytesIO()
+        tree.write(buf, encoding="utf-8", xml_declaration=False)
+        data = buf.getvalue()
+    atomic_write_bytes(out_path, data)
     return out_path
 
 
@@ -1488,14 +1530,18 @@ def generate_hs_main_menu(
     # own XML, so we exclude it from the preserve set.
     _preserve = SKIP_GENERATE_CONFIG - {"Main Menu"}
 
-    existing = _read_main_menu_systems(target)
-    ordered: list[str] = [s for s in existing if s in systems_set or s in _preserve]
+    existing = _read_main_menu_entries(target)
+    ordered: list[str] = [
+        s for s, _attrs in existing if s in systems_set or s in _preserve
+    ]
     already_listed = set(ordered)
     for s in systems:
         if s not in already_listed:
             ordered.append(s)
 
-    return _write_main_menu(ordered, target)
+    # Kept entries keep their attributes: a wheel hidden with
+    # enabled="False" must stay hidden after generate-config.
+    return _write_main_menu(ordered, target, dict(existing))
 
 
 def upsert_main_menu_system(
@@ -1506,14 +1552,16 @@ def upsert_main_menu_system(
     """Add *system_name* to Main Menu.xml without disturbing other entries.
 
     Returns ``(path, added)`` where ``added`` is False if the system was
-    already listed.
+    already listed.  The other entries keep their order and attributes
+    (a hidden wheel stays hidden); the new one goes last.
     """
     out_path = _main_menu_path(config, output_base)
-    existing = _read_main_menu_systems(out_path)
-    if system_name in existing:
+    existing = _read_main_menu_entries(out_path)
+    names = [name for name, _attrs in existing]
+    if system_name in names:
         return out_path, False
-    existing.append(system_name)
-    _write_main_menu(existing, out_path)
+    names.append(system_name)
+    _write_main_menu(names, out_path, dict(existing))
     return out_path, True
 
 

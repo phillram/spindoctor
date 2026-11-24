@@ -16,9 +16,11 @@ can surface a clear "Windows-only" message instead of failing mid-call.
 """
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Optional, Sequence
 
 
@@ -104,6 +106,25 @@ def _run_schtasks(args: Sequence[str]) -> subprocess.CompletedProcess:
         # and a flashing console is jarring when the GUI is open.
         creationflags=0x08000000,  # CREATE_NO_WINDOW
     )
+
+
+def runs_missing_exe(bat_path: Path) -> bool:
+    """True when *bat_path* runs an ``.exe`` by full path that no longer exists.
+
+    The logon tasks' ``.bat`` files run the SpinDoctor EXE that wrote them by
+    full path. A portable upgrade that renames or moves it (3.4.0 renamed the
+    GUI from ``spindoctor-gui.exe`` to ``spindoctor.exe``) leaves each
+    ``start`` line pointing at nothing. A missing ``.bat``, or one that runs
+    only commands from PATH (a source install), is False.
+    """
+    from .health import _bat_programs
+
+    for exe in _bat_programs(Path(bat_path)):
+        if "%" in exe or not os.path.isabs(exe):
+            continue  # an environment variable or a relative path: not ours
+        if not os.path.exists(exe):
+            return True
+    return False
 
 
 def task_exists(name: str = DEFAULT_LOGON_TASK) -> bool:

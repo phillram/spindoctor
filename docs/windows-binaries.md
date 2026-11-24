@@ -62,6 +62,8 @@ in `%USERPROFILE%\.spindoctor`, not beside the program.
 After moving the EXE or upgrading from v2, regenerate `install-tools` helpers
 with the same selections, re-enable startup wheel refresh, and reinstall intro
 autorun if used. These embed absolute EXE paths. `doctor` flags stale helpers.
+Opening the GUI points the wheel refresh and intro autorun tasks at itself when
+the EXE they ran is gone, as after the 3.4.0 rename of `spindoctor-gui.exe`.
 
 ## Troubleshooting
 

@@ -364,6 +364,7 @@ Options: `--help`.
 - `mainmenu hide SYSTEM`: Hide SYSTEM (sets enabled="No"). Options: `--apply`, `--output-dir`, `--help`.
 - `mainmenu remove SYSTEM`: Remove SYSTEM from the Main Menu. Options: `--apply`, `--output-dir`, `--help`.
 - `mainmenu reorder SYSTEM POSITION`: Move SYSTEM to POSITION (1-indexed). Options: `--apply`, `--output-dir`, `--help`.
+- `mainmenu set-order ORDER_FILE`: Put the menu in the order of ORDER_FILE, one system per line. Options: `--rest`, `--apply`, `--output-dir`, `--help`.
 - `mainmenu show SYSTEM`: Render the menu, or unhide SYSTEM if one is given. Options: `--apply`, `--output-dir`, `--help`.
 - `mainmenu sort STRATEGY`: Sort the menu: alpha, manufacturer, or year. Options: `--apply`, `--output-dir`, `--help`.
 - `mainmenu up SYSTEM`: Move SYSTEM up by one slot. Options: `--apply`, `--output-dir`, `--help`.

@@ -184,6 +184,7 @@ def _auto_export_audit(
     before_log: Optional[dict] = None,
     game_filter: Optional[str] = None,
     explicit_path: Optional[Path] = None,
+    auto: bool = True,
 ) -> None:
     """Write an audit CSV to an explicit path and/or the auto_audit_export_dir.
 
@@ -203,11 +204,14 @@ def _auto_export_audit(
 
     ``explicit_path``, when given, writes a second CSV to that exact path
     (in addition to any auto-export). Used by ``fetch-media --report``.
+
+    ``auto=False`` skips the auto_audit_export_dir copy (``fetch-media``'s
+    dry run, which writes nothing else); ``explicit_path`` is still written.
     """
     paths_to_write: list[Path] = []
     if explicit_path is not None:
         paths_to_write.append(explicit_path)
-    if config.auto_audit_export_dir:
+    if auto and config.auto_audit_export_dir:
         export_dir = Path(config.auto_audit_export_dir)
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         paths_to_write.append(export_dir / f"audit_{stamp}.csv")
@@ -6224,7 +6228,6 @@ def fetch_media(system, all_systems, game, types, source, overwrite, pick_media,
 
     from .audit import MediaIndex, check_media
     from .media import MediaDownloader
-    from .placeholders import taken
     from .scraper import MetadataError, build_client
 
     media_types = [t.strip() for t in types.split(",") if t.strip() in MEDIA_TYPES]
@@ -6275,17 +6278,43 @@ def fetch_media(system, all_systems, game, types, source, overwrite, pick_media,
                 )
                 continue
 
-        media_base = downloader._media_base()
-        media_index = MediaIndex(sys_name, media_base) if len(games) > 1 else None
-        before_status = {
-            g.name: (media_index.check(g.name) if media_index is not None
-                     else check_media(g.name, sys_name, media_base)) for g in games
-        }
-        if not overwrite:
-            games = [g for g in games if before_status[g.name].missing()]
+        def _media_status(base: Path) -> dict:
+            index = MediaIndex(sys_name, base) if len(games) > 1 else None
+            return {
+                g.name: (index.check(g.name) if index is not None
+                         else check_media(g.name, sys_name, base)) for g in games
+            }
+
+        # What's missing is judged by HyperSpin's own media folders. With
+        # --output-dir the downloads go elsewhere, so a file already
+        # staged there counts as present too, and re-runs skip it.
+        before_status = _media_status(config.media_dir)
+        staged_status = _media_status(out_path / "Media") if out_path is not None else {}
+
+        def _needed_types(name: str) -> list[str]:
+            if overwrite:
+                return list(media_types)
+            missing = set(before_status[name].missing())
+            if name in staged_status:
+                missing &= set(staged_status[name].missing())
+            return [mt for mt in media_types if mt in missing]
+
+        # Only games missing one of the requested types are looked up: every
+        # lookup costs scraper quota, and most games lack *some* optional
+        # type (sound, trailer, fade) they were never asked for.
+        needed = {g.name: _needed_types(g.name) for g in games}
+        games = [g for g in games if needed[g.name]]
         if not games:
             console.print("  [green]All media present.[/green]")
             continue
+        live_paths = MediaDownloader(config) if out_path is not None else downloader
+
+        def _have_path(gname: str, mt: str) -> Path:
+            """Where the game's existing *mt* is: staged copy, else the live one."""
+            staged = staged_status.get(gname)
+            if staged is not None and getattr(staged, mt, False):
+                return downloader.media_path(sys_name, gname, mt)
+            return live_paths.media_path(sys_name, gname, mt)
 
         for g in games:
             status = before_status[g.name]
@@ -6351,7 +6380,7 @@ def fetch_media(system, all_systems, game, types, source, overwrite, pick_media,
                                            ovr_note)
                     consecutive_net_errors = 0
                     if pick_media:
-                        for mt in media_types:
+                        for mt in needed[game.name]:
                             cands = chosen.media_candidates.get(mt, [])
                             if cands:
                                 pick_jobs.append((game.name, mt, cands))
@@ -6363,7 +6392,7 @@ def fetch_media(system, all_systems, game, types, source, overwrite, pick_media,
                     else:
                         all_jobs.extend(
                             downloader.jobs_for_metadata(
-                                game.name, chosen, media_types=media_types,
+                                game.name, chosen, media_types=needed[game.name],
                             )
                         )
                 except MetadataError as e:
@@ -6402,7 +6431,7 @@ def fetch_media(system, all_systems, game, types, source, overwrite, pick_media,
         SEP = "  " + "─" * 68
 
         # ── Phase 2: parallel downloads (auto path) + sequential picker ─────
-        total_ok = total_skip = 0
+        total_ok = total_skip = dry_no_url = 0
         all_results: list = []   # DownloadResult objects collected from this run
 
         if not apply_changes:
@@ -6419,10 +6448,11 @@ def fetch_media(system, all_systems, game, types, source, overwrite, pick_media,
                 for mt in media_types:
                     dest = downloader.media_path(sys_name, gname, mt)
                     url = jobs_url_map.get(gname, {}).get(mt, "")
-                    if taken(dest) and not overwrite:
+                    if mt not in needed[gname]:
                         console.print(
-                            f"    [dim]{mt:<12}[/dim]  existing      {dest}"
+                            f"    [dim]{mt:<12}[/dim]  existing      {_have_path(gname, mt)}"
                         )
+                        total_skip += 1
                     elif url:
                         console.print(
                             f"    [cyan]{mt:<12}[/cyan]  would download  {dest}"
@@ -6432,6 +6462,7 @@ def fetch_media(system, all_systems, game, types, source, overwrite, pick_media,
                         console.print(
                             f"    [yellow]{mt:<12}[/yellow]  no URL"
                         )
+                        dry_no_url += 1
         else:
             if all_jobs:
                 with _make_progress(count=True) as prog:
@@ -6522,8 +6553,13 @@ def fetch_media(system, all_systems, game, types, source, overwrite, pick_media,
 
                 for mt in media_types:
                     r = game_results.get(mt)
-                    dest = downloader.media_path(sys_name, gname, mt)
-                    if r is None:
+                    if r is None and mt not in needed[gname]:
+                        console.print(
+                            f"    [dim]{mt:<12}[/dim]  existing      {_have_path(gname, mt)}"
+                        )
+                        game_log[mt] = "existing"
+                        total_skip += 1
+                    elif r is None:
                         console.print(f"    [dim]{mt:<12}[/dim]  —")
                         game_log[mt] = ""
                     elif r.skipped:
@@ -6552,12 +6588,21 @@ def fetch_media(system, all_systems, game, types, source, overwrite, pick_media,
                 download_log_sys[gname] = game_log
 
         console.print(SEP)
-        console.print(
-            f"\n  Downloaded: [green]{total_ok}[/green]  "
-            f"Skipped (existing): [dim]{total_skip}[/dim]  "
-            f"No URL: [yellow]{sum(1 for r in all_results if not r.success and not r.skipped and 'No URL' in (r.error or ''))}[/yellow]  "
-            f"Failed: [red]{sum(1 for r in all_results if not r.success and not r.skipped and 'No URL' not in (r.error or ''))}[/red]"
-        )
+        if not apply_changes:
+            # A dry run downloads nothing, so it says what *would* happen.
+            console.print(
+                f"\n  Would download: [cyan]{total_ok}[/cyan]  "
+                f"Existing: [dim]{total_skip}[/dim]  "
+                f"No URL: [yellow]{dry_no_url}[/yellow]  "
+                f"No match: [yellow]{len(no_match)}[/yellow]"
+            )
+        else:
+            console.print(
+                f"\n  Downloaded: [green]{total_ok}[/green]  "
+                f"Skipped (existing): [dim]{total_skip}[/dim]  "
+                f"No URL: [yellow]{sum(1 for r in all_results if not r.success and not r.skipped and 'No URL' in (r.error or ''))}[/yellow]  "
+                f"Failed: [red]{sum(1 for r in all_results if not r.success and not r.skipped and 'No URL' not in (r.error or ''))}[/red]"
+            )
         download_log.update(download_log_sys)
 
     # Consolidated cross-system summary — listing every game that still
@@ -6584,6 +6629,9 @@ def fetch_media(system, all_systems, game, types, source, overwrite, pick_media,
         before_log=before_log or None,
         game_filter=game_filter or None,
         explicit_path=Path(report_csv) if report_csv else None,
+        # The automatic export is a post-write audit; a dry run writes
+        # nothing, so only an explicit --report is written then.
+        auto=apply_changes,
     )
 
 
@@ -8439,6 +8487,7 @@ def mainmenu_group():
     Subcommands:
       show       Render the current order with visibility flags.
       reorder    Move a system to a 1-indexed position.
+      set-order  Put the whole menu in the order of a text file.
       up/down    Single-step a system.
       hide/show  Toggle the enabled flag (HyperSpin honours enabled="No").
       add/remove Add or remove a system entry.
@@ -8718,6 +8767,47 @@ def mainmenu_remove(system, apply, output_dir):
         console.print(f"[yellow]not on the menu:[/yellow] {system}")
         return
     _apply_or_preview(f"remove: {system}", menu, config, output_dir, apply)
+
+
+@mainmenu_group.command("set-order")
+@click.argument("order_file", type=click.Path(exists=True, dir_okay=False))
+@click.option("--rest", type=click.Choice(["error", "end"]), default="error",
+              show_default=True,
+              help="Systems on the menu that the file leaves out: stop and "
+                   "list them, or keep them, in their current order, after "
+                   "the listed ones.")
+@click.option("--apply", is_flag=True, help="Write changes (default: dry-run).")
+@click.option("--output-dir", type=click.Path(), default=None)
+def mainmenu_set_order(order_file, rest, apply, output_dir):
+    """Put the menu in the order of ORDER_FILE, one system per line.
+
+    \b
+    Blank lines and lines starting with # are skipped. Names match
+    case-insensitively; hidden systems stay hidden. Every name must be on
+    the menu, and every system on the menu must be in the file unless
+    --rest end.
+    """
+    from .mainmenu import read_order_file, set_order
+    config = _checked_cfg()
+    menu = _load_menu_or_exit(config)
+    try:
+        order = read_order_file(Path(order_file))
+    except OSError as exc:
+        err_console.print(f"[red]can't read {order_file}:[/red] {exc}")
+        sys.exit(1)
+    if not order:
+        err_console.print(f"[red]no system names in {order_file}[/red]")
+        sys.exit(1)
+    try:
+        at_end = set_order(menu, order, rest_at_end=(rest == "end"))
+    except ValueError as exc:
+        err_console.print(f"[red]{exc}[/red]")
+        sys.exit(1)
+    if at_end:
+        console.print(
+            f"[yellow]kept after the listed ones:[/yellow] {', '.join(at_end)}"
+        )
+    _apply_or_preview(f"set-order from {order_file}", menu, config, output_dir, apply)
 
 
 @mainmenu_group.command("sort")
