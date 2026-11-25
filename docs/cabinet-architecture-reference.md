@@ -260,7 +260,9 @@ corrected by one-control-at-a-time calibration. Colors vary by game.
 | <a id="ctl-p2-button-8"></a>P2 Button 8 | `P2B8` | pin06 | `X` | 2 : 37-39 | — |
 
 P1 Coin is the example shift key: Coin+Up/Down controls Windows volume;
-Coin+Select sends Tab. Never infer a different cabinet's keys from this table.
+Coin+Select sends Tab. Other Coin combinations send nothing, so an emulator hotkey
+can't be a Coin chord: [hotkeys and the shift button](controller-input.md#emulator-hotkeys-and-the-encoders-shift-button).
+Never infer a different cabinet's keys from this table.
 The reference XML files in `docs/reference/` are examples, not auto-installed maps.
 
 ## HyperSpin startup/exit orchestration
