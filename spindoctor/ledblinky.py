@@ -16,19 +16,20 @@ This module covers two related concerns:
 
 **2. HyperSpin Search special-menu compatibility (:func:`scan` / :func:`apply_fix`).**
 
-   Two known conflicts when LedBlinky is installed alongside HyperSpin's
-   Search (and Genre/Favorites) special menus:
+   LedBlinky process hooks (``Start_Hyperspin_Process`` /
+   ``Exit_Hyperspin_Process`` lines that start or stop ``LEDBlinky.exe``)
+   in a Search, Genre or Favorites menu's ``Settings.ini`` fire when the
+   overlay opens or closes. :func:`scan` finds them read-only;
+   :func:`apply_fix` comments them out, honoring the standard
+   ``output_base`` / ``dry_run`` / ``backup`` conventions used elsewhere
+   in SpinDoctor.
 
-   - LedBlinky's process hooks (``Start_Hyperspin_Process`` /
-     ``Exit_Hyperspin_Process``) get injected into the Search menu's
-     ``Settings.ini`` and crash the overlay launcher when it tries to fire.
-   - ``LEDBlinkyControls.xml`` has no entry for the Search special menu,
-     so the menu-change lookup fails and LedBlinky errors out — sometimes
-     taking HyperSpin down with it.
-
-   :func:`scan` audits both conditions read-only; :func:`apply_fix` patches
-   them, honoring the standard ``output_base`` / ``dry_run`` / ``backup``
-   conventions used elsewhere in SpinDoctor.
+   Neither looks for, or adds, an entry for these menus in
+   ``LEDBlinkyControls.xml``. LedBlinky reads that file's
+   ``<emulator emuname>`` sections (games are their ``<controlGroup
+   groupName>``) and ``<frontEnd>`` sections, never a ``<game>`` element,
+   and HyperSpin doesn't call LedBlinky when these menus open, so no entry
+   is needed and a ``<game name="Search">`` stub changes nothing.
 """
 from __future__ import annotations
 
@@ -46,7 +47,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Iterable, Optional
 
-from ._compat import et_indent
 from ._text import read_editable_text as _read_editable_text, write_windows_text as _write_windows_text
 from .config import CONFIG_DIR, Config
 
@@ -946,8 +946,8 @@ def _safe(name: str) -> str:
 # ═══════════════════════════════════════════════════════════════════════════
 
 
-# Known problematic special menus. Search is the typical offender; Genre /
-# Favorites have the same root cause and are supported via --menus.
+# Special menus whose Settings.ini can carry LedBlinky process hooks. Search
+# is the default; Genre / Favorites are checked via --menus (doctor: all three).
 SEARCH_MENU_NAMES = ["Search", "Genre", "Favorites"]
 
 LEDBLINKY_HOOK_KEYS = ["Start_Hyperspin_Process", "Exit_Hyperspin_Process"]
@@ -1043,106 +1043,18 @@ def _comment_out_hooks(text: str) -> tuple[str, int]:
     return "".join(out_lines), changed
 
 
-# ─── controls XML scanning / patching ─────────────────────────────────────────
-
-def _controls_xml_menu_names(path: Path) -> set[str]:
-    """Return the set of menu names already declared in LEDBlinkyControls.xml.
-
-    LEDBlinkyControls.xml uses a ``<game name="...">`` element per entry,
-    where the name doubles as the system / menu identifier (this matches
-    LedBlinky's own emulator-list convention). We tolerate alternative
-    schemas by also inspecting any ``<menu>`` children.
-    """
-    if not path.exists():
-        return set()
-    try:
-        tree = ET.parse(path)
-    except ET.ParseError:
-        return set()
-    root = tree.getroot()
-    names: set[str] = set()
-    for tag in ("game", "menu", "system"):
-        for el in root.iter(tag):
-            n = el.get("name")
-            if n:
-                names.add(n)
-    return names
-
-
-def _ensure_controls_xml_entries(
-    src_path: Path,
-    dst_path: Path,
-    menus: list[str],
-) -> tuple[bool, list[str]]:
-    """Make sure ``dst_path`` contains a stub entry for each menu name.
-
-    Reads from ``src_path`` (which may equal ``dst_path``), mutates the tree
-    in memory, and writes to ``dst_path``. Returns ``(wrote, added_names)``.
-    If no changes were needed, returns ``(False, [])`` and writes nothing.
-
-    The stub entry is intentionally minimal — a ``<game>`` element with the
-    menu name and an explanatory comment. LedBlinky treats unknown profiles
-    as "use the default", which is exactly what we want for a static
-    placeholder during the Search overlay.
-    """
-    if src_path.exists():
-        try:
-            # Read-then-parse so the file handle releases before the
-            # in-place write below. ET.parse(path) keeps the file
-            # open on Windows until the tree is GC'd, which can
-            # collide with the subsequent ``open(dst_path, "wb")``
-            # when ``src_path == dst_path``.
-            with open(src_path, "rb") as fh:
-                tree = ET.parse(fh, parser=ET.XMLParser(
-                    target=ET.TreeBuilder(insert_comments=True, insert_pis=True)))
-            root = tree.getroot()
-        except ET.ParseError as e:
-            raise ValueError(f"Failed to parse {src_path}: {e}") from e
-    else:
-        # LEDBlinky hasn't created the file yet — start a fresh one with the
-        # element name LedBlinky's own controls editor uses.
-        root = ET.Element("EmulatorList")
-        tree = ET.ElementTree(root)
-
-    existing = {el.get("name") for el in root.iter() if el.get("name")}
-    added: list[str] = []
-    for menu in menus:
-        if menu in existing:
-            continue
-        entry = ET.SubElement(root, "game", name=menu)
-        # An inline comment helps users understand where the entry came from
-        # if they open the file in LedBlinky's editor.
-        entry.set("controlGroup", "default")
-        entry.set("spindoctor", "compat-stub")
-        added.append(menu)
-
-    if not added:
-        return False, []
-
-    dst_path.parent.mkdir(parents=True, exist_ok=True)
-    et_indent(tree)
-    declaration = '<?xml version="1.0"?>'
-    if src_path.exists():
-        match = re.match(r"<\?xml[^?]*\?>", _read_editable_text(src_path))
-        if match:
-            declaration = match.group(0)
-    _write_windows_text(dst_path, declaration + "\n" + ET.tostring(root, encoding="unicode"),
-                        source=src_path)
-    return True, added
-
-
 # ─── public API ───────────────────────────────────────────────────────────────
 
 def scan(config: Config, menus: Optional[list[str]] = None) -> dict:
-    """Audit the current setup for known LedBlinky × Search conflicts.
+    """Audit the current setup for LedBlinky hooks in HyperSpin's special menus.
 
-    Read-only. Always safe to run.
+    Read-only. Always safe to run. ``LEDBlinkyControls.xml`` is only checked
+    for being there: LedBlinky never looks these menus up in it.
     """
     menus = menus or [SEARCH_MENU_NAMES[0]]   # default: Search
 
     controls_xml = _controls_xml_path(config)
     controls_xml_exists = controls_xml is not None and controls_xml.exists()
-    declared = _controls_xml_menu_names(controls_xml) if controls_xml_exists else set()
 
     menu_inis: list[dict] = []
     for menu in menus:
@@ -1154,7 +1066,6 @@ def scan(config: Config, menus: Optional[list[str]] = None) -> dict:
             "path": p,
             "exists": p.exists(),
             "has_hooks": _ini_has_ledblinky_hook(p),
-            "has_controls_entry": menu in declared,
         })
 
     # Also surface hooks in the global Settings.ini — informational only,
@@ -1178,12 +1089,7 @@ def scan(config: Config, menus: Optional[list[str]] = None) -> dict:
         if info["has_hooks"]:
             issues.append(
                 f"{info['menu']} menu Settings.ini contains a LedBlinky process hook "
-                f"({info['path']}). This is the most common Search-crash trigger."
-            )
-        if controls_xml_exists and not info["has_controls_entry"]:
-            issues.append(
-                f"LEDBlinkyControls.xml has no entry for the '{info['menu']}' menu. "
-                "LedBlinky's lookup will fail when this menu activates."
+                f"({info['path']}). It starts or stops LEDBlinky.exe when the menu opens or closes."
             )
 
     return {
@@ -1206,7 +1112,10 @@ def apply_fix(
     backup: bool = True,
     menus: Optional[list[str]] = None,
 ) -> dict:
-    """Patch LEDBlinkyControls.xml and per-menu Settings.ini files.
+    """Comment out LedBlinky process hooks in per-menu Settings.ini files.
+
+    ``LEDBlinkyControls.xml`` is left alone: LedBlinky never looks these
+    menus up in it, so an entry for them would change nothing.
 
     - When ``output_base`` is set, mirror the source folder structure under
       it instead of writing in-place. Backups are skipped in this mode.
@@ -1221,47 +1130,11 @@ def apply_fix(
         "dry_run": dry_run,
         "backup": backup and output_base is None,
         "menus": menus,
-        "controls_xml": None,        # {"path": Path, "added": [...], "wrote": bool}
         "menu_inis": [],             # [{"menu":..., "path": Path, "lines_changed": int, "wrote": bool}]
         "errors": [],
     }
 
-    # ── 1. LEDBlinkyControls.xml ──────────────────────────────────────────────
-    src_xml = _controls_xml_path(config)
-    if src_xml is None:
-        results["errors"].append(
-            "ledblinky_dir is not set; skipping LEDBlinkyControls.xml patch."
-        )
-    else:
-        if output_base is not None:
-            dst_xml = output_base / "LEDBlinky" / CONTROLS_XML_NAME
-        else:
-            dst_xml = src_xml
-
-        # Figure out what would be added (without writing) so dry-run is honest.
-        existing = _controls_xml_menu_names(src_xml)
-        would_add = [m for m in menus if m not in existing]
-
-        entry: dict = {
-            "path": dst_xml,
-            "src": src_xml,
-            "added": would_add,
-            "wrote": False,
-        }
-
-        if would_add and not dry_run:
-            try:
-                if backup and output_base is None and src_xml.exists():
-                    _backup(src_xml, _config_backup_dir(config))
-                wrote, added = _ensure_controls_xml_entries(src_xml, dst_xml, menus)
-                entry["added"] = added
-                entry["wrote"] = wrote
-            except (OSError, ValueError) as e:
-                results["errors"].append(f"LEDBlinkyControls.xml: {e}")
-
-        results["controls_xml"] = entry
-
-    # ── 2. HyperSpin per-menu Settings.ini ────────────────────────────────────
+    # ── HyperSpin per-menu Settings.ini ───────────────────────────────────────
     for menu in menus:
         src_ini = _menu_ini_path(config, menu)
         if src_ini is None:

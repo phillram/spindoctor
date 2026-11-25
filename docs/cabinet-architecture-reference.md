@@ -117,13 +117,14 @@ These are manual integration checks, not promises that migration rewrites them.
 |---|---|
 | MAME/HBMAME | Effective `mame.ini`/`hbmame.ini` controls `cfg_directory`, `ctrlr`, `ctrlrpath`. Empty/crash-truncated `default.cfg` can silently reset the panel. Preserve a working map. |
 | Cxbx-Reloaded | `settings.ini` beside `cxbx.exe` (else the user's AppData) holds the core setting, pads and profiles; the module can set them per game. A second build needs its own emulator entry. [Xbox games](xbox.md). |
+| Azahar (3DS) | Portable when `user\` sits beside `azahar.exe`; `user\config\qt-config.ini` ignores any value whose `\default` line says `true`. Hidden helper windows: wait for the game window's title. Decrypted dumps only. [3DS games](nintendo-3ds.md). |
 | Casual Games | `gamePath` override or `<Rom_Path>/<game>.exe` / `<game>/<game>.exe` must resolve. A placeholder alone is insufficient; stray text files can match the wrong title. |
 | Daphne | `.txt` framefile contains real timing data; first line is the video directory. Chip ROMs live under `<homedir>/roms`. A framefile is not an empty placeholder. |
 | Daphne Singe | Module expects matching `.singe` and `.txt`; script-relative assets depend on the emulator working directory. Action Max and ALG layouts differ. |
 | ALG Singe | `SingePathUpdate`/`ForcePathUpdate` can perform a one-time path rewrite; inspect both loaded scripts and their `dofile` dependencies, then disable forced rewriting. Preserve writable game configs/high scores. |
 | Dolphin | Use a module compatible with the installed wx/Qt generation. Verify actual window title/class, fullscreen and focus. RVZ is already compressed and must be permitted in effective `Rom_Extension`. |
 | Phoenix Jaguar | The configured XML library's `<Dump>` paths and cartridge selection can remain stale even when RocketLauncher passes the new ROM path. BIOS paths are separate. |
-| ScummVM | Per-game paths inside `scummvm.ini` survive a ROM drive change; update deliberately. |
+| ScummVM | The module reads `scummvm.ini` from `CustomConfig` (module INI, relative to the RocketLauncher folder), else from `%APPDATA%\ScummVM\`; a list kept beside the exe (a portable setup) is read only through `CustomConfig`. Per-game `path=` values inside it survive a ROM drive change; update deliberately. `doctor` checks both. |
 | Virtual-drive systems | Reinstall the correct drive type and update `Virtual_Drive_Path`/drive letter; changing the ROM root alone is insufficient. |
 | Other emulators | Inspect internal ROM/save paths, module INIs, framefiles and per-game overrides after a move. |
 

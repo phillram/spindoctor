@@ -33,7 +33,9 @@ command-specific; do not delete manifests to silence errors.
 | Content dupes have different sizes/SHA1s | Recognized NES/FDS/SNES ROM headers are ignored for content pairing. Wrapper equality is not required. |
 | “Cannot find Rom” | Check actual stem, allowed extensions, per-game emulator and every effective ROM path. |
 | “You do not have a RocketLauncher module for …” | RocketLauncher looks in a module folder named after the emulator entry. An entry that shares a module needs `Module=..\<folder>\<module>.ahk`: [two builds side by side](xbox.md#two-builds-side-by-side). |
+| ScummVM: “Cannot find …\scummvm.ini”, or a game won't start | The ScummVM module reads ScummVM's game list from `CustomConfig` under `[Settings]` in its module INI (relative to the RocketLauncher folder), else from `%APPDATA%\ScummVM\scummvm.ini`. Each game's target (its `TargetName`, else its name) needs a section there whose `path=` is the game's folder; after a drive change those paths still name the old drive. `doctor`'s "ScummVM game list" check finds both. |
 | Casual Games cannot locate program | Check `gamePath`, executable naming/fallback folder and matching placeholder; unrelated `.txt` files can match accidentally. |
+| PCLauncher: “There was an error waiting for the window” for a game with a Japanese (or other non-English) window title | RocketLauncher matches `FadeTitle` byte for byte in the PC's ANSI code page, so the INI must keep the title's original bytes (Shift-JIS for most Japanese games; they look like `‚a‚`‚s` on a Western PC). An editor that saved the INI as UTF-8 replaced them with `�`, and `doctor`'s **PCLauncher INI text** check lists those values. Copy the line back from a backup or the module's original INI, or retype it in an editor saving in the ANSI code page. |
 | AHK cannot launch a program | Inspect effective User Functions for stale helper paths and working directories. |
 | DOSBox (eXoDOS module): a game stops with a CheckFile error naming `…\!dos\<folder>\dosbox.conf` | The module starts each game with its own config: `<Config_Folder>\<folder>\dosbox.conf`, by default the `!dos` folder beside the games (`!win3x` for a Windows system). `<folder>` is the game's name, or its short name under `[mapping]` in `Modules\DOSBox\ZipMapping\<System>.ini`. Add the config, or map the game to the folder its config is in. `doctor`'s "DOSBox game configs" check lists every game without one. |
 | DOS games lose their saves | They save inside their own folder, which RocketLauncher unpacks from the archive at each start. With `7z_Delete_Temp=true` it deletes that folder when the game closes; `7z_Games_to_Keep` (read only from `Settings\RocketLauncher.ini`, for every system) keeps only that many of the newest unpacked games, whatever `7z_Delete_Temp` says ([unpacked games](xbox.md#unpacked-games)). To keep every DOS game: `7z_Delete_Temp=false` and the wheel's own `7z_Extract_Path` in its `RocketLauncher.ini`, and, with `7z_Games_to_Keep` set, `sevenZGamesToKeep := ""` in the DOSBox module before it calls `7zCleanUp`. `doctor` notes it under "DOSBox game configs". |
@@ -44,9 +46,11 @@ command-specific; do not delete manifests to silence errors.
 | Toolkit “exe/FadeTitle/SteamID” error | Reinstall the helper using `install-tools`; module routing and placeholders must agree. |
 | Synthetic wheel missing INI/stuck fade | Rebuild with the current version; do not substitute ordinary PC-game INIs for recursive launch routing. |
 | Newly added wheel won't open | Check HyperSpin `Settings/<System>.ini` as well as database/media and RL settings. |
+| Vectrex games show white vectors, no colour overlay (or another game's) | MESS reads overlays only from `artwork\vectrex\vectrex.lay`, not old `.art` files, and RocketLauncher's MESS module asks for a game's view only when `artwork\Vectrex\<game>.png` is there. Each game needs a view named exactly as its ROM, above any longer name it starts with. `doctor` (Vectrex overlays) says what's missing: [Vectrex overlays](vectrex-overlays.md). |
 | “Cannot find” `\Databases\<System>\<System>.xml` | RocketLauncher wants that game list even for a system that isn't on the Main Menu: [an empty one is enough](pinball.md#rocketlauncher-says-it-cant-find-the-systems-database). |
 | Visual Pinball X won't start, or ignores its settings file | The stock module is for versions 8 and 9, and 10.8.0 reads an INI beside the program only with `-Ini`: [Visual Pinball X](pinball.md#visual-pinball-x). |
 | Panel buttons move BAM's camera or open its menu in Future Pinball | Its default keys are letters: [change them in `bam.cfg`](pinball.md#future-pinball-with-bam). |
+| A 3DS game stops at a message that it is encrypted | Azahar runs decrypted `.3ds` / `.cci` dumps only, and `.cia` files must be installed: [3DS games](nintendo-3ds.md#games). |
 
 ## Metadata and scraping
 
@@ -95,10 +99,12 @@ Logs redact some secrets, not all identifying data.
 | Zero-byte “present” media | Current audit treats it as missing; fetch-media can re-download. Check failed/partial downloads. |
 | Local videos never play | Inspect `[video defaults] path=`. A redirect replaces the wheel's own Video folder, with no per-game fallback. |
 | Empty wheel despite valid RL ROMs | HyperSpin `roms_only` uses its own path/extensions; RL validation alone does not satisfy that filter. |
+| Game videos look stretched (too wide or too tall) | HyperSpin stretches a theme's 1024×768 layout to the screen, and with `forceaspect="both"` the video fills its `<video>` box whatever its own shape. Give the box the videos' shape on screen: `w` × (screen width ÷ 1024) : `h` × (screen height ÷ 768) = video width : height (on 1920×1080, `w` × 1.875 : `h` × 1.406). A basic full-screen box plays 4:3 videos at 16:9, and tall two-screen DS or 3DS clips very wide. A game with its own `Themes/<game>.zip` plays its video in that theme, not the wheel's `Default.zip`. One box can't fit videos of two shapes: give the games of the other shape their own copy of the theme, with a box of their shape. `doctor` (Theme video shape) lists the wheel themes that do this, judged by the games that use them, and per wheel the games whose own theme does. |
 | TV snow or "No Video" plays for a game | HyperSpin plays `Media/Frontend/Video/No Video.flv` when a game has no video. `generate-media list` shows which; `placeholders --no-video-clip` makes a clearer clip. [Guide](generate-media.md). |
 | Reports call a game's media missing though a file is there | Only a SpinDoctor placeholder or drawn title is (`inspect` says so); real media replaces it. `generate-media remove` takes placeholders out. |
 | `generate-media record` saves nothing | Its reason is in the output: black or frozen picture, another window in front, or the game closed. Try a longer `--wait`; close overlays; black on every game means the capture can't see that display mode. |
 | `generate-media record` stops at once | A key, control-panel button or mouse click stops it. Leave the PC alone, and check for a stuck button. |
+| `put-in` or `media-scan --apply` stopped with `[WinError 5] Access is denied: '...tmp' -> '...import-....json'` | Another program (a virus scanner, the search indexer) had the undo record open for a moment. Current builds wait for it and finish the run, with a warning if the record still couldn't be saved. On an older build, run the same `put-in --apply` again for the files it didn't reach. |
 | Game hidden or shown as text | Check exact media stem/case/spaces, `wheels_only`, `parents_only`, enabled status and wheel art. |
 | Hidden Main Menu wheels show again after `add-system` or `generate-config` | Older builds rewrote `Main Menu.xml` with names only. Hide them again with `mainmenu hide SYSTEM --apply`; both commands now keep `enabled="False"`. |
 | No letter-jump graphic | Supply `Images/Letters/<character>.png` for visible title initials; run `doctor`. |
@@ -167,10 +173,12 @@ Task registration is Windows-only and separate from startup wheel refresh.
 | Symptom | Check / action |
 |---|---|
 | Coin/Start fails in one game | Check game-specific device-only binds and effective AHK remap; bind to the key the emulator actually receives. |
+| A MAME driving game won't brake from the panel, or one button does two things in it | Its cfg may keep only a steering wheel's axis for a pedal (increment `NONE`), or put two inputs on one key. `doctor`'s **MAME driving keys** check lists both; set the key in the game's Tab > Input (this Machine). Keys a driver gives its own inputs (often player 2's) never reach a cfg: check that menu too. |
 | Panel stops working while a controller is on | Some emulators read one input source: [panel and controller together](controller-input.md#panel-and-controller-together). |
 | Every game in one MAME loses panel keys | Inspect `default.cfg` for 0-byte/empty maps and a preserved controller/backup map. `doctor` warns about vulnerable old MAME pad codes; repair from a known-good map while closed. |
 | Daphne volume key pauses/quits | A zero key slot in `dapinput.ini` can match unmapped media keys. Assign valid deliberate SDL keys; back up first. |
 | PS4 pads do nothing in Xbox games | Cxbx-R misses a virtual Xbox pad that appears as it starts: [bind the real pads](xbox.md#ps4-pads). |
+| Panel or pad does nothing in 3DS games | Azahar binds each button to one source, so its profile is the panel or the pad; the module can pick per start: [3DS panel and pads](nintendo-3ds.md#panel-and-pads). |
 | DemulShooter not found | Set its explicit path, verify the installation and run detection. |
 | Gun fails after configure | Check target, per-game ROM requirements, native RL gun settings and duplicate User Functions startup. |
 | Gun audit says partial coverage | Only some games/emulators have recognized direct startup. Indirect scripts may work but are not proof for the inspector. |
@@ -215,7 +223,8 @@ public static class FpTypeLib {
 
 | Symptom | Check / action |
 |---|---|
-| Search overlay crashes | Preview `ledblinky check` / `fix`; apply the supported hook repair. |
+| Search overlay crashes | `ledblinky check --menus Search,Genre,Favorites` finds LEDBlinky process hooks in a menu's `Settings.ini`; preview `ledblinky fix --menus …`, then `--apply`. An entry for the menu in `LEDBlinkyControls.xml` doesn't help: LEDBlinky never looks menus up there. |
+| `doctor` warned "crash risk on: Genre, Favorites" | A false alarm from older versions, which wanted a `<game>` entry per menu in `LEDBlinkyControls.xml`. LEDBlinky reads only its `<emulator>` and `<frontEnd>` sections, and HyperSpin doesn't call it when these menus open. `<game name="Search" … spindoctor="compat-stub" />` lines an older `ledblinky fix` added are ignored; leave or delete them. |
 | Unused game buttons animate | Inspect `[GameOptions] GamePlayLWAFile`, not just per-ROM colors. |
 | Random frontend animation | Inspect `[FEOptions] FELWAFile`. |
 | Generated LWAX has invalid signature | Open in Animation Editor, then Animation → Save As. |
@@ -234,7 +243,7 @@ Run `doctor` and archive checks, then test a game directly and through RL.
 Check internal emulator paths, not only `Rom_Path`.
 
 - **Virtual discs:** correct DAEMON Tools path, drive letter and drive type.
-- **ScummVM blank/quit:** game paths in `scummvm.ini`; focus/fullscreen problems
+- **ScummVM blank/quit:** game paths in `scummvm.ini` (`doctor` checks them); focus/fullscreen problems
   are separate from missing game data.
 - **Dolphin fade timeout:** module must match installed Qt/wx generation and
   actual game title/class. Verify focus/fullscreen, not merely process existence.
@@ -252,6 +261,8 @@ Check internal emulator paths, not only `Rom_Path`.
   while their size still matches: [unpacked games](xbox.md#unpacked-games).
 - **Xbox games crawl:** one full CPU core and an idle GPU point to Cxbx-R's
   [core setting or build](xbox.md#one-cpu-core-is-full-and-the-game-crawls).
+- **An Azahar setting doesn't take:** its `\default` line still says `true`, so Azahar
+  ignores the value: [set both lines](nintendo-3ds.md#a-setting-that-doesnt-take).
 - **Restoring to new drive letters:** preview `backup restore --use-current-paths`.
 
 SpinDoctor cannot universally rewrite third-party emulator internals.
