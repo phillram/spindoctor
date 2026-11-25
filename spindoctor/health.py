@@ -2579,7 +2579,9 @@ def _hs_video_folder(config: Config, system: str) -> Path:
     raw = _hs_video_path(hs_dir, system)
     if raw:
         win = PureWindowsPath(raw)
-        if win.drive or win.is_absolute():
+        # A cabinet writes Windows paths; Path(raw) also covers a native
+        # absolute path, which PureWindowsPath doesn't count as absolute off Windows.
+        if win.drive or win.is_absolute() or Path(raw).is_absolute():
             candidates = [Path(raw)]
         else:
             rel = Path(*[p for p in win.parts if p != "."]) if win.parts else Path()
