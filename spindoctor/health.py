@@ -729,29 +729,26 @@ def check_ledblinky(config: Config) -> Check:
             fix="Add a named palette with: spindoctor ledblinky colors add ...",
         ))
 
-    # Search/Genre/Favorites crash scan — a LedBlinky process hook in a menu's
-    # Settings.ini (or a missing LEDBlinkyControls.xml entry) is the documented
-    # cause of HyperSpin crashing when you open those menus.
+    # Search/Genre/Favorites hook scan — a LedBlinky process hook in a menu's
+    # Settings.ini starts or stops LEDBlinky.exe as that menu opens or closes.
+    # LEDBlinkyControls.xml isn't consulted: LedBlinky never looks these menus
+    # up there, so a missing entry for them is no risk.
     try:
         scan_res = scan(config, menus=SEARCH_MENU_NAMES)
     except Exception:  # noqa: BLE001 — a scan failure must not sink doctor
         scan_res = None
     if scan_res is not None:
-        risky = [
-            mi["menu"] for mi in scan_res["menu_inis"]
-            if mi["has_hooks"]
-            or (scan_res["controls_xml_exists"] and not mi["has_controls_entry"])
-        ]
-        if risky:
+        hooked = [mi["menu"] for mi in scan_res["menu_inis"] if mi["has_hooks"]]
+        if hooked:
             parent.children.append(Check(
                 name="Search/Genre/Favorites", status=Status.WARN,
-                detail=f"crash risk on: {', '.join(risky)} (LedBlinky hook or missing controls entry)",
-                fix="spindoctor ledblinky fix --apply",
+                detail=f"LedBlinky process hook in the {', '.join(hooked)} menu Settings.ini",
+                fix=f"spindoctor ledblinky fix --apply --menus {','.join(hooked)}",
             ))
         else:
             parent.children.append(Check(
                 name="Search/Genre/Favorites", status=Status.OK,
-                detail="no LedBlinky menu-crash conflicts",
+                detail="no LedBlinky hooks in the menus' Settings.ini",
             ))
 
     parent.status = _worst(c.status for c in parent.children)

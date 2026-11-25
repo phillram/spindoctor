@@ -210,7 +210,8 @@ public static class FpTypeLib {
 
 | Symptom | Check / action |
 |---|---|
-| Search overlay crashes | Preview `ledblinky check` / `fix`; apply the supported hook repair. |
+| Search overlay crashes | `ledblinky check --menus Search,Genre,Favorites` finds LEDBlinky process hooks in a menu's `Settings.ini`; preview `ledblinky fix --menus …`, then `--apply`. An entry for the menu in `LEDBlinkyControls.xml` doesn't help: LEDBlinky never looks menus up there. |
+| `doctor` warned "crash risk on: Genre, Favorites" | A false alarm from older versions, which wanted a `<game>` entry per menu in `LEDBlinkyControls.xml`. LEDBlinky reads only its `<emulator>` and `<frontEnd>` sections, and HyperSpin doesn't call it when these menus open. `<game name="Search" … spindoctor="compat-stub" />` lines an older `ledblinky fix` added are ignored; leave or delete them. |
 | Unused game buttons animate | Inspect `[GameOptions] GamePlayLWAFile`, not just per-ROM colors. |
 | Random frontend animation | Inspect `[FEOptions] FELWAFile`. |
 | Generated LWAX has invalid signature | Open in Animation Editor, then Animation → Save As. |
