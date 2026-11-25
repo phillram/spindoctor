@@ -43,9 +43,11 @@ command-specific; do not delete manifests to silence errors.
 | Toolkit “exe/FadeTitle/SteamID” error | Reinstall the helper using `install-tools`; module routing and placeholders must agree. |
 | Synthetic wheel missing INI/stuck fade | Rebuild with the current version; do not substitute ordinary PC-game INIs for recursive launch routing. |
 | Newly added wheel won't open | Check HyperSpin `Settings/<System>.ini` as well as database/media and RL settings. |
+| Vectrex games show white vectors, no colour overlay (or another game's) | MESS reads overlays only from `artwork\vectrex\vectrex.lay`, not old `.art` files, and RocketLauncher's MESS module asks for a game's view only when `artwork\Vectrex\<game>.png` is there. Each game needs a view named exactly as its ROM, above any longer name it starts with. `doctor` (Vectrex overlays) says what's missing: [Vectrex overlays](vectrex-overlays.md). |
 | “Cannot find” `\Databases\<System>\<System>.xml` | RocketLauncher wants that game list even for a system that isn't on the Main Menu: [an empty one is enough](pinball.md#rocketlauncher-says-it-cant-find-the-systems-database). |
 | Visual Pinball X won't start, or ignores its settings file | The stock module is for versions 8 and 9, and 10.8.0 reads an INI beside the program only with `-Ini`: [Visual Pinball X](pinball.md#visual-pinball-x). |
 | Panel buttons move BAM's camera or open its menu in Future Pinball | Its default keys are letters: [change them in `bam.cfg`](pinball.md#future-pinball-with-bam). |
+| A 3DS game stops at a message that it is encrypted | Azahar runs decrypted `.3ds` / `.cci` dumps only, and `.cia` files must be installed: [3DS games](nintendo-3ds.md#games). |
 
 ## Metadata and scraping
 
@@ -94,14 +96,18 @@ Logs redact some secrets, not all identifying data.
 | Zero-byte “present” media | Current audit treats it as missing; fetch-media can re-download. Check failed/partial downloads. |
 | Local videos never play | Inspect `[video defaults] path=`. A redirect replaces the wheel's own Video folder, with no per-game fallback. |
 | Empty wheel despite valid RL ROMs | HyperSpin `roms_only` uses its own path/extensions; RL validation alone does not satisfy that filter. |
+| Game videos look stretched (too wide or too tall) | HyperSpin stretches a theme's 1024×768 layout to the screen, and with `forceaspect="both"` the video fills its `<video>` box whatever its own shape. Give the box the videos' shape on screen: `w` × (screen width ÷ 1024) : `h` × (screen height ÷ 768) = video width : height (on 1920×1080, `w` × 1.875 : `h` × 1.406). A basic full-screen box plays 4:3 videos at 16:9, and tall two-screen DS or 3DS clips very wide. A game with its own `Themes/<game>.zip` plays its video in that theme, not the wheel's `Default.zip`. One box can't fit videos of two shapes: give the games of the other shape their own copy of the theme, with a box of their shape. `doctor` (Theme video shape) lists the wheel themes that do this, judged by the games that use them, and per wheel the games whose own theme does. |
 | TV snow or "No Video" plays for a game | HyperSpin plays `Media/Frontend/Video/No Video.flv` when a game has no video. `generate-media list` shows which; `placeholders --no-video-clip` makes a clearer clip. [Guide](generate-media.md). |
 | Reports call a game's media missing though a file is there | Only a SpinDoctor placeholder or drawn title is (`inspect` says so); real media replaces it. `generate-media remove` takes placeholders out. |
 | `generate-media record` saves nothing | Its reason is in the output: black or frozen picture, another window in front, or the game closed. Try a longer `--wait`; close overlays; black on every game means the capture can't see that display mode. |
 | `generate-media record` stops at once | A key, control-panel button or mouse click stops it. Leave the PC alone, and check for a stuck button. |
+| `put-in` or `media-scan --apply` stopped with `[WinError 5] Access is denied: '...tmp' -> '...import-....json'` | Another program (a virus scanner, the search indexer) had the undo record open for a moment. Current builds wait for it and finish the run, with a warning if the record still couldn't be saved. On an older build, run the same `put-in --apply` again for the files it didn't reach. |
 | Game hidden or shown as text | Check exact media stem/case/spaces, `wheels_only`, `parents_only`, enabled status and wheel art. |
 | Hidden Main Menu wheels show again after `add-system` or `generate-config` | Older builds rewrote `Main Menu.xml` with names only. Hide them again with `mainmenu hide SYSTEM --apply`; both commands now keep `enabled="False"`. |
 | No letter-jump graphic | Supply `Images/Letters/<character>.png` for visible title initials; run `doctor`. |
 | Starts on a different letter/game | Inspect `wheel-start`; set first/last/random with HyperSpin closed. |
+| Piped `mainmenu edit` commands left the Main Menu in the wrong order | Windows PowerShell 5.1 pipes a byte-order mark before the first line, and older builds called that line unrecognised and saved anyway. `edit` now ignores the mark and saves nothing if a piped command fails; put the menu's backup back. |
+| `mainmenu sort year` or `manufacturer` sorted A–Z | HyperSpin's own `Main Menu.xml` lists names only; `sort` now says so and stops. Use `sort alpha`, or `reorder` to move wheels. |
 | Recently Played or Most Played lost games or art after a wheel was retired | They read the list and media of the system the statistics name: [retire the old wheels](combined-wheels.md#retire-the-old-wheels). |
 | Missing synthetic art after move | Verify source media, redirects and mirror mode, then rebuild. Hardlinks cannot cross filesystems; auto mode falls back to copies. |
 | Custom logo not replaced by installer | Intentional: existing art is preserved. Back it up and remove/replace it deliberately. |
@@ -164,10 +170,12 @@ Task registration is Windows-only and separate from startup wheel refresh.
 | Symptom | Check / action |
 |---|---|
 | Coin/Start fails in one game | Check game-specific device-only binds and effective AHK remap; bind to the key the emulator actually receives. |
+| A MAME driving game won't brake from the panel, or one button does two things in it | Its cfg may keep only a steering wheel's axis for a pedal (increment `NONE`), or put two inputs on one key. `doctor`'s **MAME driving keys** check lists both; set the key in the game's Tab > Input (this Machine). Keys a driver gives its own inputs (often player 2's) never reach a cfg: check that menu too. |
 | Panel stops working while a controller is on | Some emulators read one input source: [panel and controller together](controller-input.md#panel-and-controller-together). |
 | Every game in one MAME loses panel keys | Inspect `default.cfg` for 0-byte/empty maps and a preserved controller/backup map. `doctor` warns about vulnerable old MAME pad codes; repair from a known-good map while closed. |
 | Daphne volume key pauses/quits | A zero key slot in `dapinput.ini` can match unmapped media keys. Assign valid deliberate SDL keys; back up first. |
 | PS4 pads do nothing in Xbox games | Cxbx-R misses a virtual Xbox pad that appears as it starts: [bind the real pads](xbox.md#ps4-pads). |
+| Panel or pad does nothing in 3DS games | Azahar binds each button to one source, so its profile is the panel or the pad; the module can pick per start: [3DS panel and pads](nintendo-3ds.md#panel-and-pads). |
 | DemulShooter not found | Set its explicit path, verify the installation and run detection. |
 | Gun fails after configure | Check target, per-game ROM requirements, native RL gun settings and duplicate User Functions startup. |
 | Gun audit says partial coverage | Only some games/emulators have recognized direct startup. Indirect scripts may work but are not proof for the inspector. |
@@ -176,6 +184,7 @@ Task registration is Windows-only and separate from startup wheel refresh.
 | A hotkey in an AHK key profile does nothing | RocketLauncher's menu navigation keys replace a plain `key::` in an Internal profile. `doctor` lists them; write `*key::` or a remap (`key::other`). |
 | One panel button does two things in a game | The game read the key before RocketLauncher's keymapper could block it: see [games that read the keyboard first](controller-input.md#games-that-read-the-keyboard-first). |
 | Future Pinball tables ignore coin, start and flippers | The table's script never started. `doctor` warns when the library is missing: [register it](#register-future-pinballs-type-library). |
+| An emulator hotkey on Coin + another button does nothing from the panel | Coin may be the encoder's shift button, which changes what the other buttons send: [hotkeys and the shift button](controller-input.md#emulator-hotkeys-and-the-encoders-shift-button). |
 
 [Light-gun setup and reversion](lightgun.md). Changing SpinDoctor tracking alone
 does not remove hooks.
@@ -248,6 +257,8 @@ Check internal emulator paths, not only `Rom_Path`.
   while their size still matches: [unpacked games](xbox.md#unpacked-games).
 - **Xbox games crawl:** one full CPU core and an idle GPU point to Cxbx-R's
   [core setting or build](xbox.md#one-cpu-core-is-full-and-the-game-crawls).
+- **An Azahar setting doesn't take:** its `\default` line still says `true`, so Azahar
+  ignores the value: [set both lines](nintendo-3ds.md#a-setting-that-doesnt-take).
 - **Restoring to new drive letters:** preview `backup restore --use-current-paths`.
 
 SpinDoctor cannot universally rewrite third-party emulator internals.

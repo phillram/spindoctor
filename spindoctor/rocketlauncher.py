@@ -986,7 +986,8 @@ _VIDEO_ASSETS: dict[str, str] = {
 # Design: zip contains only Theme.xml (no Info.txt, no SWF files) — exact
 # structure of the reference Favorites.zip provided by the cabinet owner.
 # The <video> element is full-screen: w="1024" h="768" x="512" y="384"
-# with forceaspect="both".
+# with forceaspect="both", which stretches the video to fill the box (the
+# bundled videos are 16:9, the box's shape on a 16:9 screen).
 #
 # HyperSpin path: Media\Main Menu\Themes\<SystemName>.zip
 _THEME_ASSETS: dict[str, str] = {
@@ -1230,7 +1231,9 @@ def install_system_theme(
     matching the reference layout provided by the cabinet owner.  The
     ``<video>`` element uses ``w="1024" h="768" x="512" y="384"``
     (full-screen, centred on HyperSpin's 1024×768 canvas) with
-    ``forceaspect="both"``.  Without a theme zip HyperSpin may not play the
+    ``forceaspect="both"``, which stretches the video to fill the box: the
+    bundled videos are 16:9, the box's shape on a 16:9 screen.  Without a
+    theme zip HyperSpin may not play the
     attract-mode audio/video for the system at all.
 
     When *overwrite* is ``False`` (default) the file is skipped if present.
