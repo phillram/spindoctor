@@ -1129,6 +1129,149 @@ def check_pc_launchability(config: Config) -> Check:
     return parent
 
 
+# ─── PCLauncher INI text ─────────────────────────────────────────────────────
+#
+# PCLauncher waits for a game's window by ``FadeTitle`` (a title, often with
+# ``ahk_class``).  RocketLauncher's AutoHotkey is an ANSI build: it compares
+# the INI's raw bytes with the window title in the PC's code page, so a
+# Japanese title is kept as its Shift-JIS bytes (on a Western PC they show as
+# ``‚a‚`‚s‚s‚k‚d``).  An editor that re-saves the INI as UTF-8 swaps every
+# byte it can't read for U+FFFD (``EF BF BD``): the bytes are gone, the window
+# is never found, and RocketLauncher gives up with "There was an error waiting
+# for the window" while the game runs behind the fade screen.
+
+_UTF8_REPLACEMENT = b"\xef\xbf\xbd"
+
+
+def _ini_lost_characters(path: Path) -> list[tuple[str, str]]:
+    """``(section, key)`` of every line in *path* holding U+FFFD.
+
+    Works on the raw bytes: decoding with ``errors="replace"`` would turn every
+    intact Shift-JIS or cp1252 title into U+FFFD as well.  A UTF-16 INI (BOM)
+    is decoded first.  Comment lines don't count; a damaged section name is
+    reported with an empty key.
+    """
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return []
+    if data[:2] in (b"\xff\xfe", b"\xfe\xff"):
+        try:
+            text = data.decode("utf-16")
+        except UnicodeDecodeError:
+            return []
+        rows = [(line, "�" in line) for line in text.splitlines()]
+    else:
+        if data.startswith(b"\xef\xbb\xbf"):
+            data = data[3:]
+        rows = [(raw.decode("utf-8", errors="replace"), _UTF8_REPLACEMENT in raw) for raw in data.splitlines()]
+    hits: list[tuple[str, str]] = []
+    section = ""
+    for line, lost in rows:
+        s = line.strip().lstrip("﻿")
+        if s.startswith("[") and "]" in s:
+            section = s[1:s.index("]")].strip()
+            if lost:
+                hits.append((section, ""))
+            continue
+        if not lost or s.startswith((";", "#")):
+            continue
+        hits.append((section, s.split("=", 1)[0].strip()))
+    return hits
+
+
+def check_pclauncher_ini_text(config: Config) -> Check:
+    """WARN for PCLauncher module INI values that lost bytes in a UTF-8 re-save.
+
+    Looks at the INIs RocketLauncher reads for the wheels on the Main Menu:
+    ``Modules\\PCLauncher\\PCLauncher.ini``, ``<System>.ini`` (the per-system
+    module INI with a ``[<game>]`` section per game) and ``<System>\\*.ini``
+    (per-game INIs), one ``os.scandir`` per folder.  Other INIs there (old
+    ``... BACKUP.ini`` copies, removed wheels) are left alone, and so are the
+    sections and per-game INIs of games the wheel's database doesn't list
+    (when it lists any).  With no Main Menu it looks at every INI in the folder.
+
+    Diagnosis only: the lost bytes can't be worked out from what is left, so
+    the fix names the values to put back.
+    """
+    name = "PCLauncher INI text"
+    if not config.rocketlauncher_dir:
+        return Check(name=name, status=Status.INFO, detail="rocketlauncher_dir not configured; skipping")
+    pcl = Path(config.rocketlauncher_dir) / "Modules" / "PCLauncher"
+    try:
+        entries = {e.name.lower(): e for e in os.scandir(pcl)}
+    except OSError:
+        return Check(name=name, status=Status.INFO, detail="no PCLauncher module folder")
+
+    from .rocketlauncher import _win_safe_stem
+
+    wheels: list[str] = []
+    if config.hyperspin_dir:
+        wheels = _main_menu_wheels(Path(config.hyperspin_dir) / "Databases" / "Main Menu" / "Main Menu.xml")
+    if wheels:
+        groups = [("PCLauncher.ini", None, ["pclauncher.ini"], [])] + [
+            (w, w, [f"{w}.ini".lower()], [w.lower()]) for w in wheels
+        ]
+    else:
+        groups = [(e.name, None, [k], []) for k, e in sorted(entries.items()) if e.is_file() and k.endswith(".ini")]
+        groups += [(e.name, None, [], [k]) for k, e in sorted(entries.items()) if e.is_dir()]
+
+    parent = Check(name=name, status=Status.OK)
+    checked = 0
+    for label, wheel, files, folders in groups:
+        games: set[str] = set()
+        if wheel and any(k in entries for k in files + folders):
+            try:
+                games = {g.lower() for g in load_database(wheel, config.databases_dir).games().keys()}
+            except Exception:  # noqa: BLE001 — DB integrity is check_databases' job
+                games = set()
+        stems = {_win_safe_stem(g).lower() for g in games}
+        found: list[str] = []
+        paths: list[tuple[Path, str, bool]] = []  # (path, shown name, per-system module INI)
+        for key in files:
+            e = entries.get(key)
+            if e is not None and e.is_file():
+                paths.append((Path(e.path), e.name, True))
+        for key in folders:
+            e = entries.get(key)
+            if e is None or not e.is_dir():
+                continue
+            try:
+                inis = sorted((f for f in os.scandir(e.path) if f.is_file() and f.name.lower().endswith(".ini")),
+                              key=lambda f: f.name.lower())
+            except OSError:
+                continue
+            paths += [(Path(f.path), f"{e.name}\\{f.name}", False) for f in inis
+                      if not stems or f.name[:-4].lower() in stems]
+        for path, shown, module_ini in paths:
+            checked += 1
+            for section, key in _ini_lost_characters(path):
+                # A [<game>] section RocketLauncher never reads can't break a launch
+                # (a section name that lost characters itself is always shown).
+                if (module_ini and games and section and "�" not in section
+                        and section.lower() not in games | {"settings"}):
+                    continue
+                where = f"[{section}] {key}".rstrip() if section else key
+                found.append(f"{shown} {where}")
+        if found:
+            more = f" (+{len(found) - 3} more)" if len(found) > 3 else ""
+            parent.children.append(Check(
+                name=label, status=Status.WARN,
+                detail=(f"{len(found)} value(s) lost characters (U+FFFD), so RocketLauncher can't match them: "
+                        + "; ".join(found[:3]) + more),
+                fix=("put back each listed value's original bytes: copy the line from a backup of the INI, or "
+                     "retype the window title in an editor that saves in the PC's ANSI code page (not UTF-8)"),
+            ))
+
+    if not parent.children:
+        parent.detail = f"{checked} INI(s) OK" if checked else "no PCLauncher INIs for the Main Menu's wheels"
+        if not checked:
+            parent.status = Status.INFO
+    else:
+        parent.status = _worst(c.status for c in parent.children)
+    return parent
+
+
 # ─── Casual Games (PopCap / Big Fish Games) ──────────────────────────────────
 #
 # RocketLauncher's Casual Games module starts each game's own .exe: gamePath
@@ -4973,6 +5116,7 @@ def run_health_checks(config: Config, fix: bool = False) -> HealthReport:
     _safe("Wheel wiring", lambda: check_wheel_wiring(config, fix, report.fixes_applied))
     _safe("PC games", lambda: check_pc_launchability(config))
     _safe("Casual Games", lambda: check_casual_games(config))
+    _safe("PCLauncher INI text", lambda: check_pclauncher_ini_text(config))
     _safe("ROM paths", lambda: check_rom_paths(config))
     _safe("HyperSpin ROMs only", lambda: check_hyperspin_roms_only(config))
     _safe("Video redirects", lambda: check_video_redirects(config))
