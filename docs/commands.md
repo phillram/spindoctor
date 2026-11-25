@@ -311,7 +311,7 @@ Options: `--help`.
   - `ledblinky admin-leds set`: Set uniform in-game admin colors/state across all games (default mode). Options: `--exit`, `--pause`, `--select`, `--search-off`, `--lmouse-off`, `--rmouse-off`, `--search-on`, `--lmouse-on`, `--rmouse-on`, `--emulator`, `--apply`, `--no-backup`, `--help`.
   - `ledblinky admin-leds show`: Print which admin buttons light in-game, and in what colors. Options: `--emulator`, `--by-console`, `--help`.
 - `ledblinky audit`: Show LEDBlinky coverage of the wheel games: covered / can be added / no data. Options: `--system/-s`, `--all-roms`, `--report`, `--help`.
-- `ledblinky check`: Scan HyperSpin + LedBlinky configs for known Search-menu conflicts. Options: `--menus`, `--help`.
+- `ledblinky check`: Find LedBlinky process hooks in HyperSpin's Search / Genre / Favorites menu settings. Options: `--menus`, `--help`.
 - `ledblinky colors`: Manage named color definitions in Color-RGB.ini. Options: `--help`.
   - `ledblinky colors add NAME`: Add a brand-new named color to Color-RGB.ini. Options: `--hex`, `--rgb`, `--apply`, `--no-backup`, `--help`.
   - `ledblinky colors brightness`: Set all Color-RGB.ini colors to a uniform brightness level. Options: `--scale`, `--apply`, `--no-backup`, `--verbose`, `--help`.
@@ -321,7 +321,7 @@ Options: `--help`.
   - `ledblinky colors randomize`: Give each game its own random button colors. Options: `--seed`, `--apply`, `--no-backup`, `--verbose`, `--help`.
   - `ledblinky colors sync-players`: Mirror P1 colors to all additional players based on controls.ini. Options: `--apply`, `--no-backup`, `--override`, `--verbose`, `--help`.
 - `ledblinky fill-defaults`: Add default Colors.ini entries for ROMs with no LED mapping. Options: `--color`, `--buttons`, `--players`, `--admin-buttons`, `--admin-color`, `--override-uniform`, `--no-add-keys`, `--system`, `--apply`, `--no-backup`, `--verbose`, `--help`.
-- `ledblinky fix`: Fix LEDBlinky overlay hooks so Search / Genre / Favorites don't hang HyperSpin. Options: `--apply`, `--output-dir`, `--no-backup`, `--menus`, `--help`.
+- `ledblinky fix`: Comment out LEDBlinky process hooks in HyperSpin's Search / Genre / Favorites menu settings. Options: `--apply`, `--output-dir`, `--no-backup`, `--menus`, `--help`.
 - `ledblinky generate`: Add the missing LEDBlinky controls.ini and Colors.ini entries. Options: `--system/-s`, `--all-roms`, `--overwrite`, `--apply`, `--output-dir`, `--verbose`, `--help`.
 - `ledblinky inspect-rom ROM_NAME`: Diagnose why a ROM's LED colors may not be applying. Options: `--help`.
 - `ledblinky lwax`: Build raw (unsigned) .lwax animation files from LEDBlinkyInputMap.xml. Options: `--help`.

@@ -11863,7 +11863,7 @@ class _SpinDoctorGUI:
 
         self._help_text(
             oh_frame,
-            text="Repair HyperSpin Search, Genre and Favorites overlay crashes by adding LEDBlinky control stubs and disabling per-menu process hooks. Writes to the configured LEDBlinky and HyperSpin folders, not the output folder.",
+            text="Find and turn off LEDBlinky process hooks in HyperSpin's Search menu settings (the lines that start or stop LEDBlinky as the menu opens or closes). Writes to the configured HyperSpin folder, not the output folder.",
         ).grid(row=0, column=0, columnspan=3, sticky="ew", padx=6, pady=(6, 4))
 
         oh_btn_row = self.ttk.Frame(oh_frame)
