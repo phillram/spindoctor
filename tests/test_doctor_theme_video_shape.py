@@ -1,8 +1,10 @@
-"""Tests for the `doctor` check of a wheel theme's video box against its videos' shape.
+"""Tests for the `doctor` check of game themes' video boxes against their videos' shape.
 
 HyperSpin 1.5 lays a theme out on a 1024x768 canvas and stretches it to the
 screen; with ``forceaspect="both"`` the video fills its ``<video>`` box.  A box
 that isn't the videos' shape on screen plays every clip too wide or too tall.
+A wheel's main theme (``Themes/Default.zip``) is judged by the videos of the
+games that use it, and a game's own theme (``Themes/<game>.zip``) by its video.
 
 Also :func:`spindoctor.introvideo.video_frame_size`, which reads the size from
 an MP4 track header or an FLV's ``onMetaData``.
@@ -23,6 +25,9 @@ WARN = health.Status.WARN
 INFO = health.Status.INFO
 
 FULL_SCREEN = {"w": "1024", "h": "768", "x": "512", "y": "384"}
+# On a 1920x1080 screen one canvas unit is 1.875 px across and 1.406 down.
+BOX_4X3 = {"w": "480", "h": "480"}   # 900 x 675 px
+BOX_3X4 = {"w": "270", "h": "480"}   # 506 x 675 px
 
 
 def _box(kind: bytes, payload: bytes) -> bytes:
@@ -73,8 +78,11 @@ def _theme_zip(path, attrs, forceaspect="both", name="Theme.xml"):
 
 def _cabinet(tmp_path, wheels, hidden=(), resolution=(1920, 1080)):
     """A HyperSpin folder.  *wheels* maps wheel name -> dict with ``box``
-    (``<video>`` attributes, or None for no theme), ``forceaspect``, and
-    ``videos`` (file name -> bytes)."""
+    (the main theme's ``<video>`` attributes, or None for no theme),
+    ``forceaspect``, ``videos`` (file name -> bytes), ``own`` (game name ->
+    ``<video>`` attributes of its own ``Themes/<game>.zip``), ``art`` (games
+    with wheel art), and the database: ``games`` (names), ``db`` (its XML
+    games, or None for no database), else one game per video."""
     hs = tmp_path / "HyperSpin"
     menu = "".join(f'<game name="{w}" enabled="False"/>' if w in hidden else f'<game name="{w}"/>'
                    for w in wheels)
@@ -84,13 +92,23 @@ def _cabinet(tmp_path, wheels, hidden=(), resolution=(1920, 1080)):
            + (f"[Resolution]\nFullScreen=true\nWidth={resolution[0]}\nHeight={resolution[1]}\n"
               if resolution else ""))
     for wheel, spec in wheels.items():
-        _write(hs / "Databases" / wheel / f"{wheel}.xml", '<menu><game name="g1"><description>G</description></game></menu>')
+        if "db" in spec:
+            db = spec["db"]
+        else:
+            names = spec.get("games") or sorted({v.rsplit(".", 1)[0] for v in spec.get("videos", {})}) or ["g1"]
+            db = "".join(f'<game name="{g}"><description>{g}</description></game>' for g in names)
+        if db is not None:
+            _write(hs / "Databases" / wheel / f"{wheel}.xml", f"<menu>{db}</menu>")
         _write(hs / "Settings" / f"{wheel}.ini", spec.get("ini", "[filters]\nwheels_only=false\n"))
         if spec.get("box") is not None:
             _theme_zip(hs / "Media" / wheel / "Themes" / spec.get("zip_name", "Default.zip"),
                        spec["box"], spec.get("forceaspect", "both"))
+        for game, attrs in spec.get("own", {}).items():
+            _theme_zip(hs / "Media" / wheel / "Themes" / f"{game}.zip", attrs)
         for name, data in spec.get("videos", {}).items():
             _write(hs / "Media" / wheel / "Video" / name, data)
+        for game in spec.get("art", ()):
+            _write(hs / "Media" / wheel / "Images" / "Wheel" / f"{game}.png", b"")
     return Config(roms_dir=str(tmp_path / "Games"), hyperspin_dir=str(hs)), hs
 
 
@@ -177,7 +195,10 @@ def test_the_usual_shape_wins(tmp_path):
     videos["odd.flv"] = _flv(720, 480)
     cfg, _hs = _cabinet(tmp_path, {"Nintendo DSi": {"box": FULL_SCREEN, "videos": videos}})
     node = _node(health.check_theme_video_shape(cfg), "Nintendo DSi")
-    assert "its videos are 2:3 (the usual shape of 7 read)" in node.detail
+    # One video per game (the .mp4 before the .flv), so 6 games' videos.
+    assert "its videos are 2:3 (the usual shape of 6 read)" in node.detail
+    assert ('Not all its videos are that shape (1 of the 6 read is 3:2: "odd"), and one box '
+            "can't fit them all: give those games their own copy of the theme") in node.fix
 
 
 def test_flv_videos_are_read(tmp_path):
@@ -190,7 +211,7 @@ def test_video_folder_redirect_is_followed(tmp_path):
     shared = tmp_path / "Shared Video"
     _write(shared / "a.mp4", _mp4(256, 384))
     cfg, _hs = _cabinet(tmp_path, {"Nintendo DSi": {
-        "box": FULL_SCREEN, "ini": f"[video defaults]\npath={shared}\n"}})
+        "box": FULL_SCREEN, "games": ["a"], "ini": f"[video defaults]\npath={shared}\n"}})
     assert _node(health.check_theme_video_shape(cfg), "Nintendo DSi").status == WARN
 
 
@@ -203,11 +224,12 @@ def test_skipped_wheels(tmp_path):
         "Unreadable": {"box": FULL_SCREEN, "videos": {"a.mp4": b"junk"}},
         "Bad Box": {"box": {"w": "wide", "h": "768"}, "videos": tall},
         "Hidden": {"box": FULL_SCREEN, "videos": tall},
-        "Game Theme Only": {"box": FULL_SCREEN, "zip_name": "g1.zip", "videos": tall},
+        # g1's own theme, but g1 has no video (a.mp4 is no game's).
+        "Game Theme Only": {"box": FULL_SCREEN, "zip_name": "g1.zip", "games": ["g1"], "videos": tall},
     }, hidden=("Hidden",))
     chk = health.check_theme_video_shape(cfg)
     assert chk.status == OK and not chk.children
-    assert chk.detail == 'no wheel theme with forceaspect="both" and readable videos to check'
+    assert chk.detail == 'no wheel or game theme with forceaspect="both" and readable videos to check'
 
 
 def test_theme_names_and_attributes_in_any_case(tmp_path):
@@ -225,6 +247,123 @@ def test_no_resolution_or_no_hyperspin_is_info(tmp_path):
     assert chk.status == INFO and "no [Resolution] Width / Height" in chk.detail
     chk = health.check_theme_video_shape(Config(roms_dir=str(tmp_path / "G"), hyperspin_dir=str(tmp_path / "none")))
     assert chk.status == INFO and "skipping" in chk.detail
+
+
+# ── which games use which theme ─────────────────────────────────────────────
+
+def test_main_theme_no_game_uses_is_skipped(tmp_path):
+    # Every game has its own theme in its video's shape, so nobody sees the full-screen main theme.
+    cfg, _hs = _cabinet(tmp_path, {"Nintendo 3DS": {
+        "box": FULL_SCREEN,
+        "own": {"a": {"w": "313.6", "h": "501.8"}, "b": {"w": "313.6", "h": "501.8"}},
+        "videos": {"a.mp4": _mp4(240, 288), "b.mp4": _mp4(240, 288)}}})
+    chk = health.check_theme_video_shape(cfg)
+    assert chk.status == OK and not chk.children
+    assert chk.detail == ("the video box of 2 game themes match the videos' shape; "
+                          "1 wheel theme that no game uses (each has its own) was skipped")
+
+
+def test_main_theme_is_judged_by_the_games_that_use_it(tmp_path):
+    # Two 4:3 games on the 4:3 main theme; five tall games with tall themes of their own.
+    tall = {f"t{i}": BOX_3X4 for i in range(5)}
+    videos = {f"t{i}.mp4": _mp4(480, 640) for i in range(5)}
+    videos.update({"a.mp4": _mp4(640, 480), "b.flv": _flv(640, 480)})
+    cfg, _hs = _cabinet(tmp_path, {"CAVE": {"box": BOX_4X3, "own": tall, "videos": videos}})
+    chk = health.check_theme_video_shape(cfg)
+    assert chk.status == OK and not chk.children
+    assert chk.detail == "the video box of 1 wheel theme and 5 game themes match the videos' shape"
+    node = health._theme_shape_node(cfg, "CAVE", (1920, 1080), ["a.mp4", "b.flv"])
+    assert node.status == OK and "its videos are 4:3 (the usual shape of 2 read)" in node.detail
+    # By all its videos (the usual shape 3:4), the same main theme would look 1.8x too wide.
+    assert health._theme_shape_node(cfg, "CAVE", (1920, 1080)).status == WARN
+
+
+def test_a_game_theme_that_stretches_its_video_warns(tmp_path):
+    cfg, hs = _cabinet(tmp_path, {"Sega Naomi": {
+        "own": {"wide": FULL_SCREEN, "right": BOX_4X3, "tall": BOX_4X3,
+                "other aspect": dict(FULL_SCREEN, forceaspect="none"), "no video": FULL_SCREEN},
+        "games": ["wide", "right", "tall", "other aspect", "no video"],
+        "videos": {"wide.mp4": _mp4(640, 480), "right.mp4": _mp4(640, 480), "tall.mp4": _mp4(480, 640),
+                   "other aspect.mp4": _mp4(640, 480)}}})
+    chk = health.check_theme_video_shape(cfg)
+    node = _node(chk, "Sega Naomi (games' own themes)")
+    assert chk.status == WARN and node.status == WARN and len(chk.children) == 1
+    assert node.detail == ("2 of 3 games' own themes stretch their video: "
+                           '"wide" (1.3x too wide), "tall" (1.8x too wide)')
+    assert str(hs / "Media" / "Sega Naomi" / "Themes") + "\\<game>.zip" in node.fix
+    assert "give <video> its video's shape on screen, w x 1.875 : h x 1.406 = video width : height" in node.fix
+    assert chk.detail == "2 of 3 game themes checked stretch the videos out of shape"
+
+
+def test_one_game_theme_reads_in_the_singular(tmp_path):
+    cfg, _hs = _cabinet(tmp_path, {"Nintendo Game Boy Color": {
+        "own": {"zelda": FULL_SCREEN}, "videos": {"zelda.mp4": _mp4(534, 480)}}})
+    chk = health.check_theme_video_shape(cfg)
+    assert _node(chk, "Nintendo Game Boy Color (games' own themes)").detail == (
+        "1 of 1 game's own theme stretches its video: \"zelda\" (1.6x too wide)")
+    assert chk.detail == "1 of 1 game theme checked stretches the videos out of shape"
+
+
+def test_games_not_on_the_wheel_dont_count(tmp_path):
+    # Commented out, switched off, or (wheels_only) without wheel art: only "a" is on the wheel,
+    # and it has its own theme, so the full-screen main theme is skipped.
+    db = ('<game name="a"><description>A</description></game>'
+          '<!-- <game name="gone"><description>Gone</description></game> -->'
+          '<game name="off"><description>Off</description><enabled>No</enabled></game>'
+          '<game name="no art"><description>No art</description></game>')
+    tall = _mp4(256, 384)
+    cfg, _hs = _cabinet(tmp_path, {"Nintendo DSi": {
+        "box": FULL_SCREEN, "db": db, "own": {"a": {"w": "203.5", "h": "518.9"}, "no art": FULL_SCREEN},
+        "art": ["a", "off"], "ini": "[filters]\nwheels_only=true\n",
+        "videos": {"a.mp4": tall, "gone.mp4": tall, "off.mp4": tall, "no art.mp4": tall}}})
+    chk = health.check_theme_video_shape(cfg)
+    assert chk.status == OK and not chk.children
+    assert chk.detail.endswith("1 wheel theme that no game uses (each has its own) was skipped")
+
+
+def test_clones_use_their_parents_theme_and_video_when_set(tmp_path):
+    db = ('<game name="pac"><description>P</description></game>'
+          '<game name="pacc"><description>C</description><cloneof>pac</cloneof></game>')
+    spec = {"box": BOX_3X4, "db": db, "own": {"pac": FULL_SCREEN}, "videos": {"pac.mp4": _mp4(640, 480)}}
+    on = dict(spec, ini="[themes]\nuse_parent_vids=true\nuse_parent_themes=true\n")
+    cfg, _hs = _cabinet(tmp_path / "on", {"MAME": on})
+    chk = health.check_theme_video_shape(cfg)
+    assert _node(chk, "MAME (games' own themes)").detail.startswith(
+        '2 of 2 games\' own themes stretch their video: "pac" (1.3x too wide), "pacc" (1.3x too wide)')
+    assert chk.detail.endswith("1 wheel theme that no game uses (each has its own) was skipped")
+    # Off: the clone has no video of its own, so only the parent's theme is judged.
+    cfg, _hs = _cabinet(tmp_path / "off", {"MAME": spec})
+    chk = health.check_theme_video_shape(cfg)
+    assert chk.detail == "1 of 1 game theme checked stretches the videos out of shape"
+    # Videos only (any case): the clone plays the parent's 4:3 video in the tall main theme.
+    vids = dict(spec, ini="[Themes]\nUse_Parent_Vids=TRUE\n")
+    cfg, _hs = _cabinet(tmp_path / "vids", {"MAME": vids})
+    node = _node(health.check_theme_video_shape(cfg), "MAME")
+    assert node.status == WARN and node.detail.startswith("its videos play 1.8x too tall")
+
+
+def test_videos_of_another_shape_on_the_main_theme_are_info(tmp_path):
+    videos = {f"w{i}.mp4": _mp4(640, 480) for i in range(5)}
+    videos.update({"Tall B.mp4": _mp4(480, 640), "tall a.mp4": _mp4(480, 640)})
+    cfg, hs = _cabinet(tmp_path, {"Nintendo Arcade Systems": {"box": BOX_4X3, "videos": videos}})
+    chk = health.check_theme_video_shape(cfg)
+    node = _node(chk, "Nintendo Arcade Systems")
+    assert chk.status == INFO and node.status == INFO
+    assert node.detail == ('some videos are another shape and play stretched (2 of the 7 read are 3:4: '
+                           '"tall a", "Tall B"); the theme\'s video box is 4:3 on the 1920x1080 screen, '
+                           "its videos are 4:3 (the usual shape of 7 read)")
+    assert node.fix == ("One box can't fit videos of two shapes: give those games their own copy of the theme, "
+                        f"{hs / 'Media' / 'Nintendo Arcade Systems' / 'Themes'}\\<game>.zip, with a box of "
+                        "their shape (w x 1.875 : h x 1.406 = video width : height)")
+    assert chk.detail == ("the video box of 1 wheel theme matches the videos' shape; "
+                          "1 wheel theme also stretches the videos of another shape than most")
+
+
+def test_no_database_judges_the_main_theme_by_all_videos(tmp_path):
+    cfg, _hs = _cabinet(tmp_path, {"Nintendo DSi": {
+        "box": FULL_SCREEN, "db": None, "videos": {"x.mp4": _mp4(256, 384), "y.mp4": _mp4(256, 384)}}})
+    node = _node(health.check_theme_video_shape(cfg), "Nintendo DSi")
+    assert node.status == WARN and "(the usual shape of 2 read)" in node.detail
 
 
 def test_registered_in_doctor():
