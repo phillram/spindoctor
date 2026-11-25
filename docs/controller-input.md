@@ -69,6 +69,9 @@ panel or the pad; its module can [pick one per start](nintendo-3ds.md#panel-and-
 Dolphin can combine keyboard-encoder and pad inputs, but GameCube keyboard
 bindings need explicit device qualifiers when the selected pad is disconnected.
 Per-game Dolphin profiles can overwrite global controller edits.
+SSF (Sega Saturn) keeps each game's keys in the game's own settings file once it
+has run, so a layout changed in `SSF.ini` must be copied there too:
+[SSF per-game settings](cabinet-architecture-reference.md#ssf-per-game-settings).
 
 See [cabinet input reference](cabinet-architecture-reference.md#input) and
 [gun/remap precedence](lightgun.md#two-guns-model-3-and-sinden).

@@ -125,8 +125,31 @@ These are manual integration checks, not promises that migration rewrites them.
 | Dolphin | Use a module compatible with the installed wx/Qt generation. Verify actual window title/class, fullscreen and focus. RVZ is already compressed and must be permitted in effective `Rom_Extension`. |
 | Phoenix Jaguar | The configured XML library's `<Dump>` paths and cartridge selection can remain stale even when RocketLauncher passes the new ROM path. BIOS paths are separate. |
 | ScummVM | The module reads `scummvm.ini` from `CustomConfig` (module INI, relative to the RocketLauncher folder), else from `%APPDATA%\ScummVM\`; a list kept beside the exe (a portable setup) is read only through `CustomConfig`. Per-game `path=` values inside it survive a ROM drive change; update deliberately. `doctor` checks both. |
-| Virtual-drive systems | Reinstall the correct drive type and update `Virtual_Drive_Path`/drive letter; changing the ROM root alone is insufficient. |
+| SSF (Saturn) | Once a game has run, its own `Setting\Saturn\<product code>_<title>.ini` wins over `SSF.ini`, keys included: [SSF per-game settings](#ssf-per-game-settings). Discs come through the virtual drive. |
+| Virtual-drive systems | Reinstall the correct drive type and update `Virtual_Drive_Path`/drive letter; changing the ROM root alone is insufficient. If DAEMON Tools refuses every mount after an emulator was closed by force: [a stuck virtual drive](troubleshooting.md#library-and-launch-routing). |
 | Other emulators | Inspect internal ROM/save paths, module INIs, framefiles and per-game overrides after a move. |
+
+### SSF per-game settings
+
+SSF 0.12 (Sega Saturn) reads `SSF.ini` only for a game it has never run. After
+that it keeps the game's settings in `Setting\Saturn\<product code>_<title>.ini`
+beside `SSF.exe` (for example `MK-81019_ASTAL.ini`) and uses that file, so later
+changes to `SSF.ini` don't reach the game. That includes the ones RocketLauncher's
+SSF module writes there before each start.
+
+- **Keys:** each game's file has its own `Pad0_0_0` (player 1) and `Pad1_0_0`
+  (player 2) lines. After changing the panel layout in `SSF.ini`, copy those two
+  lines into every file in `Setting\Saturn\`, with SSF closed; otherwise the games
+  played before keep the old keys.
+- **Module options:** the module's per-game options (a `[<game>]` section in its
+  INI, such as `SH2enabled`, `ForceRegion` or `BusWait`) are written to `SSF.ini`
+  only. For a game that has already run, change its own file too, or set
+  `DeleteCachedSettings=true` for it: the module then deletes the game's file
+  before each start, and SSF reads `SSF.ini` again. The module reads `UseBIOS`
+  from `[Settings]` only, never from a game's section.
+- **SH-2 cache:** a few games need SH-2 cache emulation, Astal the best known.
+  Some setups keep an older SSF build just for it. One build is enough once the
+  game's own file has `SH2Cache="1"` (with `SH2enabled=true` in the module INI).
 
 ## Input
 
