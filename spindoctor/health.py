@@ -3579,6 +3579,258 @@ def check_future_pinball_typelib(config: Config) -> Check:
                  detail="type library registered" + (f" for {registered}" if registered else ""))
 
 
+# ─── DOSBox game configs ──────────────────────────────────────────────────────
+#
+# RocketLauncher's DOSBox module (2.0.x, made for eXoDOS sets) gives each game a
+# short folder name from ``ZipMapping\<System>.ini`` and starts DOSBox with that
+# game's own ``<Config_Folder>\<short>\dosbox.conf``.  A missing one stops the
+# game with a CheckFile error before DOSBox starts, while every RocketLauncher
+# check passes.
+
+# Text only the eXoDOS-style DOSBox module has (it may be renamed, e.g.
+# "DOSBox (Alt+Enter).ahk"); other DOSBox modules start games differently.
+_DOSBOX_MODULE_MARKS = ("zipmapping", "config_folder")
+
+
+class _DosboxModules:
+    """The eXoDOS-style DOSBox modules and their INIs, each read once per run."""
+
+    def __init__(self, look: _RomLookup):
+        self.look = look
+        self._texts: dict[str, str] = {}
+        self._inis: dict[str, dict[str, dict[str, str]]] = {}
+
+    def text(self, module: Path) -> str:
+        """The module's source, lower-cased ("" when it can't be read)."""
+        key = os.path.normcase(str(module))
+        if key not in self._texts:
+            try:
+                self._texts[key] = _read_windows_text(module).lower()
+            except OSError:
+                self._texts[key] = ""
+        return self._texts[key]
+
+    def ini(self, path: Path) -> dict[str, dict[str, str]]:
+        key = os.path.normcase(str(path))
+        if key not in self._inis:
+            self._inis[key] = _read_rl_ini(path)
+        return self._inis[key]
+
+    def matches(self, module: Optional[Path]) -> bool:
+        """Whether *module* is the eXoDOS-style DOSBox module."""
+        if module is None or not module.name.lower().startswith("dosbox") or not self.look.exists(module):
+            return False
+        text = self.text(module)
+        return all(mark in text for mark in _DOSBOX_MODULE_MARKS)
+
+    def setting(self, module: Path, sections: list[str], key: str) -> str:
+        """A setting as the module's ``IniReadCheck(settingsFile, "Settings|<game>", …)``
+        reads it from ``<module folder>\\<module name>.ini``: the last of
+        *sections* with a value wins ("" when none has one)."""
+        data = self.ini(module.parent / f"{module.stem}.ini")
+        value = ""
+        for section in sections:
+            value = data.get(section.lower(), {}).get(key.lower(), "").strip() or value
+        return value
+
+
+def _dosbox_saves(system: str, look: _RomLookup, mods: _DosboxModules, module: Path) -> Optional[Check]:
+    """INFO when RocketLauncher deletes the wheel's unpacked games, and with them
+    the saves DOS games keep in their own folders; None when it keeps them.
+
+    RL's ``7zCleanUp`` deletes the game it unpacked when ``7z_Delete_Temp`` is
+    true and ``7z_Games_to_Keep`` (``Settings\\RocketLauncher.ini`` only, for
+    every system) is blank; when that is a number, it keeps only that many of
+    the newest folders in the unpack folder, whatever ``7z_Delete_Temp`` says.
+    A module that sets ``sevenZGamesToKeep`` itself decides on its own."""
+    import re
+
+    if look.rl_setting(system, "7z", "7z_enabled", "false").lower() != "true":
+        return None
+    if re.search(r"(?m)^\s*sevenzgamestokeep\s*:?=", mods.text(module)):
+        return None
+    general = look.settings_dir / "RocketLauncher.ini"
+    keep = mods.ini(general).get("7z", {}).get("7z_games_to_keep", "").strip()
+    delete = look.rl_setting(system, "7z", "7z_delete_temp", "true").lower() == "true"
+    own = look.settings_dir / system / "RocketLauncher.ini"
+    if keep.isdigit():
+        kept = int(keep)
+        if kept == 0:
+            what = "every unpacked game's folder is deleted"
+        elif kept == 1:
+            what = "only the newest unpacked game keeps its folder"
+        else:
+            what = f"only the {kept} newest unpacked games keep their folders"
+        detail = (f"DOS games save inside their own folder, but {what}: 7z_Games_to_Keep={keep} "
+                  f"under [7z] in {general} (for every system; it overrides 7z_Delete_Temp)")
+        fix = (f"Set 7z_Delete_Temp=false under [7z] in {own}, and (since 7z_Games_to_Keep is for every "
+               f"system) set sevenZGamesToKeep := \"\" in {module.name} before it calls 7zCleanUp")
+    elif delete:
+        detail = ("DOS games save inside their own folder, but RocketLauncher deletes each game's "
+                  "unpacked folder when it closes (7z_Delete_Temp=true)")
+        fix = f"Set 7z_Delete_Temp=false under [7z] in {own}"
+    else:
+        return None
+    return Check(name="Saves", status=Status.INFO, detail=detail, fix=fix)
+
+
+def _wheel_dosbox(system: str, look: _RomLookup, mods: _DosboxModules, databases_dir: Path) -> Optional[Check]:
+    """One wheel's node for :func:`check_dosbox_game_configs`; None when none of
+    its games starts through the eXoDOS-style DOSBox module."""
+
+    def dosbox(src: Optional[_RomSource]) -> bool:
+        return src is not None and not src.stops and mods.matches(look.module_file(src))
+
+    overrides = look.game_overrides(system)
+    own = look.source(system)
+    if not dosbox(own) and not any(
+        dosbox(look.source(other, emu) if other and other.lower() != system.lower()
+               else look.source(system, emu) or own)
+        for emu, other in overrides.values()
+    ):
+        return None
+
+    games, raw = _wheel_games(system, databases_dir)
+    missing: list[tuple[str, Path, Path]] = []  # (game, expected config, ZipMapping INI)
+    no_folder: list[tuple[str, str]] = []       # (game, short name): extracted sets only
+    saves: dict[str, Check] = {}
+    checked = unfound = unknown = 0
+    for name in games:
+        src, _other = look.game_source(system, name, overrides)
+        if src is None or src.stops:
+            continue  # RL stops before any module runs (the ROM paths check)
+        rl_name = raw.get(name, name)  # RL gets the XML name exactly as written
+        module = look.module_file(src, rl_name)
+        if not mods.matches(module):
+            continue
+        picked = look.pick(src, rl_name) if src.checkable() else None
+        rom_name = picked.rom_name if picked is not None else rl_name
+        mapping_ini = module.parent / "ZipMapping" / f"{src.system}.ini"
+        short = mods.ini(mapping_ini).get("mapping", {}).get(rom_name.lower(), "").strip() or rom_name
+        folder_setting = mods.setting(module, ["Settings"], "Config_Folder").strip('"').strip()
+        if look.rl_setting(src.system, "7z", "7z_enabled", "false").lower() != "true":
+            # Unpacked sets: the module looks for a <short> folder in each Rom_Path
+            # folder, the last one found wins, and stops when there is none.
+            found = [f for _el, f in src.folders if f is not None and look.exists(f / short)]
+            if not found:
+                if src.checkable():
+                    no_folder.append((name, short))
+                else:
+                    unknown += 1
+                continue
+            rom_dir: Optional[Path] = found[-1]
+        elif picked is not None:
+            rom_dir = picked.rom_dir
+        elif src.checkable():
+            # "Cannot find Rom"; under Skipchecks RL carries on and the module
+            # stops instead ("Couldn't find <game>").  The ROM paths check's job.
+            unfound += 1
+            continue
+        else:
+            rom_dir = None  # a drive path off Windows
+        if folder_setting:
+            config_dir = _resolve_rom_path(folder_setting, look.rl_dir)
+        elif rom_dir is not None:
+            config_dir = rom_dir / ("!win3x" if "windows" in src.system.lower() else "!dos")
+        else:
+            config_dir = None
+        if config_dir is None:
+            unknown += 1
+            continue
+        conf_name = mods.setting(module, ["Settings", rom_name], "Conf_File") or "dosbox.conf"
+        checked += 1
+        # The config folder is listed once; the game's own folder only when it's there.
+        configs = look.listing(config_dir)
+        sub = configs[1].get(short.lower()) if configs is not None else None
+        if sub is None or not look.exists(config_dir / sub / conf_name):
+            missing.append((name, config_dir / short / conf_name, mapping_ini))
+        if src.system.lower() not in saves:
+            note = _dosbox_saves(src.system, look, mods, module)
+            if note is not None:
+                saves[src.system.lower()] = note
+
+    node = Check(name=system, status=Status.OK)
+    if missing:
+        rows = [f"{g}: {conf}" for g, conf, _m in missing]
+        node.children.append(Check(
+            name="Configs", status=Status.WARN,
+            detail=(f"{len(missing)}/{checked} games won't start: the DOSBox module stops with a CheckFile "
+                    f"error when the game's config isn't there: {_some(rows, 3)}"),
+            fix=(f"Give each game its config at that path, or map the game to the config folder it has: "
+                 f"<game>=<folder> under [mapping] in {missing[0][2]}"),
+        ))
+    if no_folder:
+        rows = [g if s == g else f"{g} [{s}]" for g, s in no_folder]
+        node.children.append(Check(
+            name="Game folders", status=Status.WARN,
+            detail=(f"{len(no_folder)} games won't start: no Rom_Path folder holds their folder, so the "
+                    f"module stops (\"Couldn't find a folder …\"): {_some(rows, 5)}"),
+            fix="Unpack each game into a folder named after it (or its ZipMapping name) in Rom_Path",
+        ))
+    node.children.extend(saves.values())
+
+    notes = []
+    if checked and not missing:
+        notes.append(f"{checked} games OK")
+    if unfound:
+        notes.append(f"{unfound} not found by RocketLauncher (see ROM paths)")
+    if unknown:
+        notes.append(f"{unknown} with paths that can't be checked on this OS")
+    node.detail = "; ".join(notes)
+    node.status = _worst([c.status for c in node.children])
+    return node
+
+
+def check_dosbox_game_configs(config: Config) -> Check:
+    """Does each game RocketLauncher starts with the eXoDOS-style DOSBox module
+    have its own DOSBox config?
+
+    That module (``Modules\\DOSBox\\DOSBox.ahk`` 2.0.x and renamed copies such
+    as ``DOSBox (Alt+Enter).ahk``) maps the game to a short folder name under
+    ``[mapping]`` in ``ZipMapping\\<System>.ini`` beside it (else the game's
+    name) and starts DOSBox with ``<Config_Folder>\\<short>\\<Conf_File>``:
+    ``Config_Folder`` under ``[Settings]`` in the module's INI (relative to the
+    RocketLauncher folder), else ``!dos`` (``!win3x`` for a Windows system) in
+    the folder RocketLauncher found the game in; ``Conf_File`` under the
+    game's own section or ``[Settings]``, else ``dosbox.conf``.  A missing
+    config stops the game before DOSBox starts: WARN, listing the games.  For
+    unpacked sets (7z off) a game whose folder isn't in Rom_Path is a WARN too.
+
+    DOS games keep their saves in their own folder, which RocketLauncher may
+    delete after each game (``7z_Delete_Temp``, and ``7z_Games_to_Keep`` in
+    ``Settings\\RocketLauncher.ini``, which applies to every system): INFO,
+    unless the module sets ``sevenZGamesToKeep`` itself.  Wheels switched off
+    on the Main Menu are capped at INFO.  Diagnosis only.
+    """
+    name = "DOSBox game configs"
+    if not config.hyperspin_dir or not Path(config.hyperspin_dir).is_dir():
+        return Check(name=name, status=Status.INFO, detail="hyperspin_dir not configured; skipping")
+    if not config.rocketlauncher_dir:
+        return Check(name=name, status=Status.INFO, detail="rocketlauncher_dir not configured; skipping")
+
+    from .rocketlauncher import SKIP_GENERATE_CONFIG
+
+    mm_path = Path(config.hyperspin_dir) / "Databases" / "Main Menu" / "Main Menu.xml"
+    look = _RomLookup(Path(config.rocketlauncher_dir))
+    mods = _DosboxModules(look)
+    hidden = _hidden_main_menu_wheels(mm_path)
+    parent = Check(name=name, status=Status.OK)
+    for system in _main_menu_wheels(mm_path):
+        if system in SKIP_GENERATE_CONFIG:
+            continue
+        node = _wheel_dosbox(system, look, mods, config.databases_dir)
+        if node is None:
+            continue
+        if system in hidden:
+            node.name = f"{system} (hidden on the Main Menu)"
+            _cap_at_info(node)
+        parent.children.append(node)
+    if not parent.children:
+        return Check(name=name, status=Status.INFO, detail="no wheels start games with the eXoDOS DOSBox module")
+    parent.status = _worst(c.status for c in parent.children)
+    return parent
+
+
 def check_coin_start(config: Config) -> Check:
     """Games on the Main Menu's wheels that can't take a coin or start from a key.
 
@@ -5386,6 +5638,7 @@ def run_health_checks(config: Config, fix: bool = False) -> HealthReport:
     _safe("MAME driving keys", lambda: check_mame_driving_keys(config))
     _safe("Keymapper hotkeys", lambda: check_keymapper_hotkeys(config))
     _safe("Future Pinball scripting", lambda: check_future_pinball_typelib(config))
+    _safe("DOSBox game configs", lambda: check_dosbox_game_configs(config))
     _safe("LEDBlinky", lambda: check_ledblinky(config))
     _safe("LED coverage", lambda: check_led_coverage(config))
     _safe("Intro video", lambda: check_intro_video(config))
