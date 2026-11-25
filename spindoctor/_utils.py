@@ -22,9 +22,17 @@ import re
 import shutil
 import stat
 import tempfile
+import time
 import zlib
 from pathlib import Path
 from typing import Optional
+
+# Windows refuses to rename over a file another program has open for a
+# moment (a virus scanner or the search indexer reading a file just
+# written): ERROR_ACCESS_DENIED (5) or ERROR_SHARING_VIOLATION (32).
+_REPLACE_BUSY_WINERRORS = (5, 32)
+_REPLACE_ATTEMPTS = 10
+_REPLACE_RETRY_SECONDS = 0.2
 
 
 def resolve_atomic_tmp_dir(target: Path, configured: Optional[Path]) -> Path:
@@ -39,8 +47,22 @@ def resolve_atomic_tmp_dir(target: Path, configured: Optional[Path]) -> Path:
     return target.parent
 
 
+def _replace_when_free(src: str, target: Path) -> None:
+    """``os.replace``, tried again for about two seconds while Windows says
+    the file is in use; any other error, or a lock that stays, is raised."""
+    for attempt in range(1, _REPLACE_ATTEMPTS + 1):
+        try:
+            os.replace(src, target)
+            return
+        except OSError as exc:
+            if attempt == _REPLACE_ATTEMPTS or getattr(exc, "winerror", None) not in _REPLACE_BUSY_WINERRORS:
+                raise
+        time.sleep(_REPLACE_RETRY_SECONDS)
+
+
 def atomic_write_bytes(target: Path, data: bytes, tmp_dir: Optional[Path] = None) -> None:
-    """Write complete bytes through a unique temp file, then replace the target."""
+    """Write complete bytes through a unique temp file, then replace the target
+    (waiting out a brief lock on Windows, see :func:`_replace_when_free`)."""
     fd, tmp = tempfile.mkstemp(dir=resolve_atomic_tmp_dir(target, tmp_dir), suffix=".tmp")
     try:
         remaining = memoryview(data)
@@ -51,7 +73,7 @@ def atomic_write_bytes(target: Path, data: bytes, tmp_dir: Optional[Path] = None
             remaining = remaining[written:]
         os.close(fd)
         fd = -1
-        os.replace(tmp, target)
+        _replace_when_free(tmp, target)
         tmp = None
     finally:
         if fd >= 0:

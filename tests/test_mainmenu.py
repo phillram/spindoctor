@@ -109,6 +109,57 @@ def test_move_up_and_down(tmp_path):
     assert menu.systems() == ["Nintendo 64", "MAME", "Sony Playstation"]
 
 
+@pytest.mark.parametrize("use_output_dir", [False, True])
+@pytest.mark.parametrize("stdlib_xml", [False, True])
+def test_save_keeps_child_elements_after_edits(tmp_path, monkeypatch, use_output_dir, stdlib_xml):
+    if stdlib_xml:
+        monkeypatch.setattr("spindoctor.database._lxml_etree", lambda: None)
+        monkeypatch.setattr("spindoctor.mainmenu._lxml_etree", lambda: None)
+    xml = SAMPLE_MENU_XML.replace(
+        "<year>1975</year>",
+        '<year>1975</year><custom source="cabinet"><value>Keep me</value></custom>',
+    )
+    original = _seed_menu(tmp_path, xml)
+    cfg = _config(tmp_path)
+    menu = load_main_menu(cfg)
+    move_down(menu, "MAME")
+    remove_system(menu, "Nintendo 64")
+    add_system(menu, "Atari Jaguar")
+    reorder(menu, "Atari Jaguar", 2)
+    hide(menu, "MAME")
+    output_dir = tmp_path / "out" if use_output_dir else None
+
+    for _ in range(2):  # Saving the same object twice must also retain its tree.
+        path = save_main_menu(menu, cfg, output_dir=output_dir)
+        assert _names_in(path) == ["Sony Playstation", "Atari Jaguar", "MAME"]
+        root = ET.parse(path).getroot()
+        games = {g.get("name"): g for g in root.findall("game")}
+        assert games["MAME"].findtext("year") == "1975"
+        assert games["MAME"].findtext("manufacturer") == "Various"
+        assert games["MAME"].findtext("custom/value") == "Keep me"
+        assert games["MAME"].find("custom").get("source") == "cabinet"
+        assert games["MAME"].get("enabled") == "False"
+        assert games["MAME"].find("enabled") is None
+        assert games["Sony Playstation"].findtext("year") == "1994"
+        assert list(games["Atari Jaguar"]) == []
+    if use_output_dir:
+        assert original.read_text(encoding="utf-8") == xml
+
+
+def test_save_duplicate_system_keeps_last_entries_children(tmp_path):
+    path = _seed_menu(
+        tmp_path,
+        '<menu><game name="MAME"><custom>old</custom></game>'
+        '<game name="Other"/><game name="MAME"><custom>last</custom></game></menu>',
+    )
+    cfg = _config(tmp_path)
+    menu = load_main_menu(cfg)
+    reorder(menu, "MAME", 1)
+    save_main_menu(menu, cfg)
+    assert _names_in(path) == ["MAME", "Other"]
+    assert ET.parse(path).getroot().find("game/custom").text == "last"
+
+
 def test_hide_and_show_toggle_enabled(tmp_path):
     _seed_menu(tmp_path)
     cfg = _config(tmp_path)
