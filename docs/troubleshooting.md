@@ -101,6 +101,8 @@ Logs redact some secrets, not all identifying data.
 | Hidden Main Menu wheels show again after `add-system` or `generate-config` | Older builds rewrote `Main Menu.xml` with names only. Hide them again with `mainmenu hide SYSTEM --apply`; both commands now keep `enabled="False"`. |
 | No letter-jump graphic | Supply `Images/Letters/<character>.png` for visible title initials; run `doctor`. |
 | Starts on a different letter/game | Inspect `wheel-start`; set first/last/random with HyperSpin closed. |
+| Piped `mainmenu edit` commands left the Main Menu in the wrong order | Windows PowerShell 5.1 pipes a byte-order mark before the first line, and older builds called that line unrecognised and saved anyway. `edit` now ignores the mark and saves nothing if a piped command fails; put the menu's backup back. |
+| `mainmenu sort year` or `manufacturer` sorted A–Z | HyperSpin's own `Main Menu.xml` lists names only; `sort` now says so and stops. Use `sort alpha`, or `reorder` to move wheels. |
 | Recently Played or Most Played lost games or art after a wheel was retired | They read the list and media of the system the statistics name: [retire the old wheels](combined-wheels.md#retire-the-old-wheels). |
 | Missing synthetic art after move | Verify source media, redirects and mirror mode, then rebuild. Hardlinks cannot cross filesystems; auto mode falls back to copies. |
 | Custom logo not replaced by installer | Intentional: existing art is preserved. Back it up and remove/replace it deliberately. |
