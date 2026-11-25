@@ -9,6 +9,10 @@
 """
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
+
 import pytest
 from click.testing import CliRunner
 
@@ -61,6 +65,24 @@ def _names(menu_path):
 
 def _edit(commands):
     return CliRunner().invoke(cli, ["mainmenu", "edit"], input=commands, catch_exceptions=False)
+
+
+def _edit_through_a_pipe(menu_path, commands):
+    """Run ``mainmenu edit`` with *commands* on a real pipe that then closes.
+
+    Input that ends is only an end of file on a real pipe: click 8.1's
+    CliRunner (Python 3.8) answers an exhausted input with blank lines
+    forever, so the editor would never see it end.
+    """
+    home = menu_path.parents[3] / "home"
+    env = dict(os.environ, HOME=str(home), USERPROFILE=str(home), COLUMNS="200",
+               TERM="dumb", NO_COLOR="1", PYTHONIOENCODING="utf-8")
+    env.pop("FORCE_COLOR", None)
+    proc = subprocess.run(
+        [sys.executable, "-m", "spindoctor.cli", "mainmenu", "edit"],
+        input=commands.encode("utf-8"), capture_output=True, env=env, timeout=120,
+    )
+    return proc.returncode, (proc.stdout + proc.stderr).decode("utf-8", "replace")
 
 
 # ─── edit: byte-order mark ───────────────────────────────────────────────────
@@ -156,19 +178,20 @@ def test_edit_refuses_input_that_cant_be_the_utf8_its_bom_says(cabinet):
 
 def test_edit_fails_when_piped_input_ends_after_a_failed_command(cabinet):
     before = cabinet.read_bytes()
-    result = _edit("move 2 to 1\nbogus\n")
-    assert result.exit_code == 1
-    assert "bogus" in result.output and "nothing was saved" in result.output
+    code, output = _edit_through_a_pipe(cabinet, "move 2 to 1\nbogus\n")
+    assert code == 1, output
+    assert "bogus" in output and "nothing was saved" in output
     assert cabinet.read_bytes() == before
 
 
 def test_edit_fails_when_piped_changes_end_without_q(cabinet):
     before = cabinet.read_bytes()
-    result = _edit("move 2 to 1\n")
-    assert result.exit_code == 1
-    assert "ended without q" in result.output
+    code, output = _edit_through_a_pipe(cabinet, "move 2 to 1\n")
+    assert code == 1, output
+    assert "ended without q" in output
     assert cabinet.read_bytes() == before
 
 
 def test_edit_piped_input_with_no_changes_can_just_end(cabinet):
-    assert _edit("list\n").exit_code == 0
+    code, output = _edit_through_a_pipe(cabinet, "list\n")
+    assert code == 0, output
