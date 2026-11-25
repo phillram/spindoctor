@@ -1126,6 +1126,149 @@ def check_pc_launchability(config: Config) -> Check:
     return parent
 
 
+# ─── PCLauncher INI text ─────────────────────────────────────────────────────
+#
+# PCLauncher waits for a game's window by ``FadeTitle`` (a title, often with
+# ``ahk_class``).  RocketLauncher's AutoHotkey is an ANSI build: it compares
+# the INI's raw bytes with the window title in the PC's code page, so a
+# Japanese title is kept as its Shift-JIS bytes (on a Western PC they show as
+# ``‚a‚`‚s‚s‚k‚d``).  An editor that re-saves the INI as UTF-8 swaps every
+# byte it can't read for U+FFFD (``EF BF BD``): the bytes are gone, the window
+# is never found, and RocketLauncher gives up with "There was an error waiting
+# for the window" while the game runs behind the fade screen.
+
+_UTF8_REPLACEMENT = b"\xef\xbf\xbd"
+
+
+def _ini_lost_characters(path: Path) -> list[tuple[str, str]]:
+    """``(section, key)`` of every line in *path* holding U+FFFD.
+
+    Works on the raw bytes: decoding with ``errors="replace"`` would turn every
+    intact Shift-JIS or cp1252 title into U+FFFD as well.  A UTF-16 INI (BOM)
+    is decoded first.  Comment lines don't count; a damaged section name is
+    reported with an empty key.
+    """
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return []
+    if data[:2] in (b"\xff\xfe", b"\xfe\xff"):
+        try:
+            text = data.decode("utf-16")
+        except UnicodeDecodeError:
+            return []
+        rows = [(line, "�" in line) for line in text.splitlines()]
+    else:
+        if data.startswith(b"\xef\xbb\xbf"):
+            data = data[3:]
+        rows = [(raw.decode("utf-8", errors="replace"), _UTF8_REPLACEMENT in raw) for raw in data.splitlines()]
+    hits: list[tuple[str, str]] = []
+    section = ""
+    for line, lost in rows:
+        s = line.strip().lstrip("﻿")
+        if s.startswith("[") and "]" in s:
+            section = s[1:s.index("]")].strip()
+            if lost:
+                hits.append((section, ""))
+            continue
+        if not lost or s.startswith((";", "#")):
+            continue
+        hits.append((section, s.split("=", 1)[0].strip()))
+    return hits
+
+
+def check_pclauncher_ini_text(config: Config) -> Check:
+    """WARN for PCLauncher module INI values that lost bytes in a UTF-8 re-save.
+
+    Looks at the INIs RocketLauncher reads for the wheels on the Main Menu:
+    ``Modules\\PCLauncher\\PCLauncher.ini``, ``<System>.ini`` (the per-system
+    module INI with a ``[<game>]`` section per game) and ``<System>\\*.ini``
+    (per-game INIs), one ``os.scandir`` per folder.  Other INIs there (old
+    ``... BACKUP.ini`` copies, removed wheels) are left alone, and so are the
+    sections and per-game INIs of games the wheel's database doesn't list
+    (when it lists any).  With no Main Menu it looks at every INI in the folder.
+
+    Diagnosis only: the lost bytes can't be worked out from what is left, so
+    the fix names the values to put back.
+    """
+    name = "PCLauncher INI text"
+    if not config.rocketlauncher_dir:
+        return Check(name=name, status=Status.INFO, detail="rocketlauncher_dir not configured; skipping")
+    pcl = Path(config.rocketlauncher_dir) / "Modules" / "PCLauncher"
+    try:
+        entries = {e.name.lower(): e for e in os.scandir(pcl)}
+    except OSError:
+        return Check(name=name, status=Status.INFO, detail="no PCLauncher module folder")
+
+    from .rocketlauncher import _win_safe_stem
+
+    wheels: list[str] = []
+    if config.hyperspin_dir:
+        wheels = _main_menu_wheels(Path(config.hyperspin_dir) / "Databases" / "Main Menu" / "Main Menu.xml")
+    if wheels:
+        groups = [("PCLauncher.ini", None, ["pclauncher.ini"], [])] + [
+            (w, w, [f"{w}.ini".lower()], [w.lower()]) for w in wheels
+        ]
+    else:
+        groups = [(e.name, None, [k], []) for k, e in sorted(entries.items()) if e.is_file() and k.endswith(".ini")]
+        groups += [(e.name, None, [], [k]) for k, e in sorted(entries.items()) if e.is_dir()]
+
+    parent = Check(name=name, status=Status.OK)
+    checked = 0
+    for label, wheel, files, folders in groups:
+        games: set[str] = set()
+        if wheel and any(k in entries for k in files + folders):
+            try:
+                games = {g.lower() for g in load_database(wheel, config.databases_dir).games().keys()}
+            except Exception:  # noqa: BLE001 — DB integrity is check_databases' job
+                games = set()
+        stems = {_win_safe_stem(g).lower() for g in games}
+        found: list[str] = []
+        paths: list[tuple[Path, str, bool]] = []  # (path, shown name, per-system module INI)
+        for key in files:
+            e = entries.get(key)
+            if e is not None and e.is_file():
+                paths.append((Path(e.path), e.name, True))
+        for key in folders:
+            e = entries.get(key)
+            if e is None or not e.is_dir():
+                continue
+            try:
+                inis = sorted((f for f in os.scandir(e.path) if f.is_file() and f.name.lower().endswith(".ini")),
+                              key=lambda f: f.name.lower())
+            except OSError:
+                continue
+            paths += [(Path(f.path), f"{e.name}\\{f.name}", False) for f in inis
+                      if not stems or f.name[:-4].lower() in stems]
+        for path, shown, module_ini in paths:
+            checked += 1
+            for section, key in _ini_lost_characters(path):
+                # A [<game>] section RocketLauncher never reads can't break a launch
+                # (a section name that lost characters itself is always shown).
+                if (module_ini and games and section and "�" not in section
+                        and section.lower() not in games | {"settings"}):
+                    continue
+                where = f"[{section}] {key}".rstrip() if section else key
+                found.append(f"{shown} {where}")
+        if found:
+            more = f" (+{len(found) - 3} more)" if len(found) > 3 else ""
+            parent.children.append(Check(
+                name=label, status=Status.WARN,
+                detail=(f"{len(found)} value(s) lost characters (U+FFFD), so RocketLauncher can't match them: "
+                        + "; ".join(found[:3]) + more),
+                fix=("put back each listed value's original bytes: copy the line from a backup of the INI, or "
+                     "retype the window title in an editor that saves in the PC's ANSI code page (not UTF-8)"),
+            ))
+
+    if not parent.children:
+        parent.detail = f"{checked} INI(s) OK" if checked else "no PCLauncher INIs for the Main Menu's wheels"
+        if not checked:
+            parent.status = Status.INFO
+    else:
+        parent.status = _worst(c.status for c in parent.children)
+    return parent
+
+
 # ─── Casual Games (PopCap / Big Fish Games) ──────────────────────────────────
 #
 # RocketLauncher's Casual Games module starts each game's own .exe: gamePath
@@ -2501,6 +2644,390 @@ def check_letter_art(config: Config) -> Check:
     return parent
 
 
+# HyperSpin 1.5 lays a theme out on this canvas and stretches it to the screen.
+_THEME_CANVAS = (1024, 768)
+# Videos played this much too wide or too tall look plainly stretched.
+# 4:3 videos in a full-screen box on a 16:9 screen are 1.33x too wide.
+_THEME_STRETCH_LIMIT = 1.3
+# Videos read per wheel, spread through the folder, to learn their usual shape.
+_THEME_VIDEO_SAMPLE = 25
+# Games named per wheel whose own theme stretches their video.
+_THEME_GAMES_SHOWN = 5
+_NAMED_SHAPES = ((16 / 9, "16:9"), (4 / 3, "4:3"), (3 / 2, "3:2"), (5 / 4, "5:4"), (10 / 9, "10:9"),
+                 (1.0, "1:1"), (5 / 6, "5:6"), (3 / 4, "3:4"), (2 / 3, "2:3"), (9 / 16, "9:16"))
+
+
+def _shape_text(ratio: float) -> str:
+    """*ratio* (width / height) as ``4:3`` when within 1% of a common shape,
+    else as ``1.85:1``."""
+    for value, text in _NAMED_SHAPES:
+        if abs(ratio / value - 1) <= 0.01:
+            return text
+    return f"{ratio:.2f}:1"
+
+
+def _theme_zips(folder: Path) -> "dict[str, Path]":
+    """The zips in a wheel's ``Themes`` folder as ``{name.lower(): path}``:
+    ``default`` is the wheel's main theme, the others games' own
+    (``<game>.zip``); {} when there are none."""
+    zips: "dict[str, Path]" = {}
+    try:
+        with os.scandir(folder) as it:
+            for entry in it:
+                stem, ext = os.path.splitext(entry.name)
+                if ext.lower() == ".zip" and entry.is_file():
+                    zips[stem.lower()] = folder / entry.name
+    except OSError:
+        pass
+    return zips
+
+
+def _default_theme_zip(folder: Path) -> Optional[Path]:
+    """``Default.zip`` in a wheel's ``Themes`` folder, any case; None if absent."""
+    return _theme_zips(folder).get("default")
+
+
+def _theme_video_box(zip_path: Path) -> Optional[dict]:
+    """The ``<video>`` element's attributes (names lower-cased) in a theme
+    zip's ``Theme.xml``; None when there's no readable one.  Read with a
+    pattern, not an XML parser: hand-made themes aren't always valid XML."""
+    import re
+    import zipfile
+
+    try:
+        with zipfile.ZipFile(zip_path) as zf:
+            entry = next((n for n in zf.namelist()
+                          if n.replace("\\", "/").rsplit("/", 1)[-1].lower() == "theme.xml"), None)
+            if entry is None:
+                return None
+            text = zf.read(entry).decode("utf-8", errors="replace")
+    except (OSError, zipfile.BadZipFile, KeyError, RuntimeError, ValueError):
+        return None
+    m = re.search(r"<video\b([^>]*)>", text, re.IGNORECASE)
+    if not m:
+        return None
+    return {k.lower(): v for k, v in re.findall(r'([\w-]+)\s*=\s*"([^"]*)"', m.group(1))}
+
+
+def _hs_video_folder(config: Config, system: str) -> Path:
+    """The folder HyperSpin plays *system*'s game videos from: its
+    ``[video defaults] path=`` when that's a folder (absolute, or under
+    ``Media`` or the HyperSpin folder), else ``Media\\<system>\\Video``."""
+    from pathlib import PureWindowsPath
+
+    hs_dir = Path(config.hyperspin_dir)
+    raw = _hs_video_path(hs_dir, system)
+    if raw:
+        win = PureWindowsPath(raw)
+        # A cabinet writes Windows paths; Path(raw) also covers a native
+        # absolute path, which PureWindowsPath doesn't count as absolute off Windows.
+        if win.drive or win.is_absolute() or Path(raw).is_absolute():
+            candidates = [Path(raw)]
+        else:
+            rel = Path(*[p for p in win.parts if p != "."]) if win.parts else Path()
+            candidates = [config.media_dir / rel, hs_dir / rel]
+        for folder in candidates:
+            if folder.is_dir():
+                return folder
+    return config.media_dir / system / "Video"
+
+
+def _hs_game_videos(folder: Path) -> "dict[str, str]":
+    """``{game name.lower(): file name}`` of the videos directly in *folder*,
+    one per game (an ``.mp4`` before an ``.flv``); {} if it can't be listed."""
+    found: "dict[str, str]" = {}
+    try:
+        with os.scandir(folder) as it:
+            for entry in it:
+                stem, ext = os.path.splitext(entry.name)
+                ext = ext.lower()
+                if ext in _HS_VIDEO_EXTS and entry.is_file() and (stem.lower() not in found or ext == ".mp4"):
+                    found[stem.lower()] = entry.name
+    except OSError:
+        pass
+    return found
+
+
+def _video_shapes(folder: Path, files: "list[str]") -> "list[tuple[float, str]]":
+    """``(width / height, game name)`` of up to :data:`_THEME_VIDEO_SAMPLE`
+    of the video *files* in *folder*, spread through them A-Z, sorted by
+    shape; [] if none can be read."""
+    from .introvideo import video_frame_size
+
+    names = sorted(files, key=str.lower)
+    step = max(1, len(names) // _THEME_VIDEO_SAMPLE)
+    shapes = []
+    for file_name in names[::step][:_THEME_VIDEO_SAMPLE]:
+        size = video_frame_size(folder / file_name)
+        if size:
+            shapes.append((size[0] / size[1], os.path.splitext(file_name)[0]))
+    return sorted(shapes)
+
+
+def _theme_box_size(box: Optional[dict]) -> "Optional[tuple[float, float]]":
+    """A ``<video>`` box's ``w``, ``h`` when it has ``forceaspect="both"`` and
+    a usable size; None otherwise (nothing to judge)."""
+    if not box or box.get("forceaspect", "").strip().lower() != "both":
+        return None
+    try:
+        w, h = float(box.get("w", "")), float(box.get("h", ""))
+    except ValueError:
+        return None
+    return (w, h) if w > 0 and h > 0 else None
+
+
+def _theme_fits(stretch: float) -> bool:
+    """True when a video shown *stretch* times too wide (below 1: too tall)
+    still looks its own shape."""
+    return 1 / _THEME_STRETCH_LIMIT < stretch < _THEME_STRETCH_LIMIT
+
+
+def _theme_stretch_text(stretch: float) -> str:
+    """*stretch* as ``1.3x too wide`` or ``1.8x too tall``."""
+    return f"{stretch:.1f}x too wide" if stretch > 1 else f"{1 / stretch:.1f}x too tall"
+
+
+def _theme_shape_node(config: Config, system: str, screen: "tuple[int, int]",
+                      files: "Optional[list[str]]" = None) -> Optional[Check]:
+    """A wheel's main theme for :func:`check_theme_video_shape` on a *screen*
+    (width, height): OK; INFO when it fits the usual shape but some videos
+    are another; WARN when it stretches the videos.  None when there's
+    nothing to compare (no ``Default.zip``, a ``forceaspect`` other than
+    ``both``, no usable box, or no readable video).
+
+    *files* are the videos of the games that use the main theme (file names
+    in the wheel's video folder); without, all the wheel's videos."""
+    themes = config.media_dir / system / "Themes"
+    theme = _default_theme_zip(themes)
+    box = _theme_video_box(theme) if theme else None
+    size = _theme_box_size(box)
+    if size is None:
+        return None
+    folder = _hs_video_folder(config, system)
+    if files is None:
+        files = list(_hs_game_videos(folder).values())
+    shapes = _video_shapes(folder, files)
+    if not shapes:
+        return None
+    clip, read = shapes[len(shapes) // 2][0], len(shapes)
+    sx, sy = screen[0] / _THEME_CANVAS[0], screen[1] / _THEME_CANVAS[1]
+    shown = (size[0] * sx) / (size[1] * sy)
+    stretch = shown / clip
+    said = (f"the theme's video box is {_shape_text(shown)} on the {screen[0]}x{screen[1]} screen, "
+            f"its videos are {_shape_text(clip)} (the usual shape of {read} read)")
+    box_shape = f"w x {sx:.4g} : h x {sy:.4g} = video width : height"
+    own_copy = (f"give those games their own copy of the theme, {themes}\\<game>.zip, "
+                f"with a box of their shape ({box_shape})")
+
+    def odd_ones(odd: "list[tuple[float, str]]") -> str:
+        return (f"{len(odd)} of the {read} read {'is' if len(odd) == 1 else 'are'} "
+                f"{_shape_text(odd[len(odd) // 2][0])}: "
+                + _some(sorted((f'"{g}"' for _s, g in odd), key=str.lower), _THEME_GAMES_SHOWN))
+
+    if _theme_fits(stretch):
+        # One box can't fit clips of two shapes: the odd ones need their own.
+        odd = [s for s in shapes if not _theme_fits(shown / s[0])]
+        if not odd:
+            return Check(name=system, status=Status.OK, detail=said)
+        return Check(
+            name=system, status=Status.INFO,
+            detail=f"some videos are another shape and play stretched ({odd_ones(odd)}); {said}",
+            fix=f"One box can't fit videos of two shapes: {own_copy}",
+        )
+    fix = (f"In Theme.xml in {theme}, give <video> the videos' shape on screen, {box_shape} "
+           f'(now w="{box.get("w")}" h="{box.get("h")}"), or use a theme made for this system')
+    odd = [s for s in shapes if not _theme_fits(clip / s[0])]
+    if odd:
+        fix += (f". Not all its videos are that shape ({odd_ones(odd)}), "
+                f"and one box can't fit them all: {own_copy}")
+    return Check(
+        name=system, status=Status.WARN,
+        detail=f"its videos play {_theme_stretch_text(stretch)}: {said}",
+        fix=fix,
+    )
+
+
+def _game_themes_node(system: str, screen: "tuple[int, int]", themes: Path, folder: Path,
+                      own: "list[tuple[str, Path, str]]") -> "tuple[Optional[Check], int, int]":
+    """Games' own themes on one wheel for :func:`check_theme_video_shape`:
+    *own* lists each game's name, the theme zip it uses and its video's file
+    name in *folder*.  The WARN naming the games whose theme stretches their
+    video (None when none does), how many were checked, and how many stretch."""
+    from .introvideo import video_frame_size
+
+    sx, sy = screen[0] / _THEME_CANVAS[0], screen[1] / _THEME_CANVAS[1]
+    sizes: "dict[Path, Optional[tuple[float, float]]]" = {}
+    checked, bad = 0, []
+    for name, theme, video in own:
+        if theme not in sizes:
+            sizes[theme] = _theme_box_size(_theme_video_box(theme))
+        size = sizes[theme]
+        frame = video_frame_size(folder / video) if size else None
+        if not frame:
+            continue
+        checked += 1
+        stretch = (size[0] * sx) / (size[1] * sy) / (frame[0] / frame[1])
+        if not _theme_fits(stretch):
+            bad.append(f'"{name}" ({_theme_stretch_text(stretch)})')
+    if not bad:
+        return None, checked, 0
+    n = len(bad)
+    whose = "game's own theme" if checked == 1 else "games' own themes"
+    return Check(
+        name=f"{system} (games' own themes)", status=Status.WARN,
+        detail=(f"{n} of {checked} {whose} "
+                f"stretch{'es' if n == 1 else ''} {'its' if n == 1 else 'their'} video: "
+                f"{_some(bad, _THEME_GAMES_SHOWN)}"),
+        fix=(f"In Theme.xml in each one's {themes}\\<game>.zip, give <video> its video's shape on screen, "
+             f"w x {sx:.4g} : h x {sy:.4g} = video width : height"),
+    ), checked, n
+
+
+def _hs_clone_parents(system: str, databases_dir: Path) -> "dict[str, str]":
+    """``{clone name.lower(): parent name.lower()}`` from a wheel's database;
+    {} when it can't be read."""
+    try:
+        games = load_database(system, databases_dir).games()
+    except Exception:  # noqa: BLE001 — DB integrity is check_databases' job
+        return {}
+    parents = {}
+    for name, game in games.items():
+        parent = (game.cloneof or "").strip().lower()
+        if parent and parent != name.lower():
+            parents[name.lower()] = parent
+    return parents
+
+
+def _wheel_theme_nodes(config: Config, view: "_HsWheelView", screen: "tuple[int, int]") -> dict:
+    """One wheel for :func:`check_theme_video_shape`: ``main`` (the main
+    theme's node, or None), ``games`` (the games' own themes' WARN, or None),
+    ``games_checked``, ``games_bad``, and ``unused`` (True when no game on
+    the wheel uses its main theme, so it isn't judged)."""
+    system = view.system
+    themes = config.media_dir / system / "Themes"
+    out = {"main": None, "games": None, "games_checked": 0, "games_bad": 0, "unused": False}
+    if not view.listed:
+        # No readable database: judge the main theme by all the wheel's videos.
+        out["main"] = _theme_shape_node(config, system, screen)
+        return out
+    zips = _theme_zips(themes)
+    folder = _hs_video_folder(config, system)
+    videos = _hs_game_videos(folder)
+    opts = _read_rl_ini(view.ini).get("themes", {})
+    parent_themes = opts.get("use_parent_themes", "").strip().lower() == "true"
+    parent_vids = opts.get("use_parent_vids", "").strip().lower() == "true"
+    parents = _hs_clone_parents(system, config.databases_dir) if parent_themes or parent_vids else {}
+    on_main, main_files, own = 0, set(), []
+    for name, _desc in view.shown():
+        key = name.lower()
+        parent = parents.get(key.strip(), "")
+        # A game's own Themes\<game>.zip, else (use_parent_themes) its parent's,
+        # else the main theme; its own video, else (use_parent_vids) its parent's.
+        theme = zips.get(key) if key != "default" else None
+        if theme is None and parent_themes and parent and parent != "default":
+            theme = zips.get(parent)
+        video = videos.get(key) or (videos.get(parent) if parent_vids and parent else None)
+        if theme is None:
+            on_main += 1
+            if video:
+                main_files.add(video)
+        elif video:
+            own.append((name, theme, video))
+    if on_main:
+        out["main"] = _theme_shape_node(config, system, screen, sorted(main_files))
+    elif "default" in zips and _theme_box_size(_theme_video_box(zips["default"])):
+        out["unused"] = True
+    if own:
+        out["games"], out["games_checked"], out["games_bad"] = _game_themes_node(
+            system, screen, themes, folder, own)
+    return out
+
+
+def check_theme_video_shape(config: Config) -> Check:
+    """Game themes, a wheel's or a game's own, that stretch videos out of shape.
+
+    A HyperSpin 1.5 theme is laid out on a 1024x768 canvas that is stretched
+    to the screen (``[Resolution]`` in ``Settings\\Settings.ini``): on a
+    1920x1080 screen one unit is 1.875 pixels across and 1.406 down.  With
+    ``forceaspect="both"`` the video fills its ``<video>`` box, ``w`` by
+    ``h``, whatever the clip's own shape.  So a box that isn't the videos'
+    shape *on screen* pulls every clip wider or taller: a basic full-screen
+    theme turns 4:3 videos into 16:9 ones, and tall two-screen handheld clips
+    (DS, 3DS) into wide smears.
+
+    Per visible Main Menu wheel, for the games HyperSpin puts on it (from its
+    database), the theme each one plays its video in: its own
+    ``Media\\<System>\\Themes\\<game>.zip``, else its parent's with
+    ``use_parent_themes=true``, else the wheel's main theme ``Default.zip``.
+    Only boxes with ``forceaspect="both"`` are judged, against the videos
+    (MP4 / M4V / MOV track headers, FLV ``onMetaData``; no ffprobe):
+
+    * the main theme against the median shape of up to 25 videos of the
+      games that use it; not at all when every game has its own theme, as
+      nobody sees it then.  INFO when the usual shape fits but some of the
+      videos read are another shape: one box can't fit both, so those games
+      need their own copy of the theme with a box of their shape;
+    * each game's own theme against that game's video, with the games
+      whose theme stretches theirs named per wheel.
+
+    A WARN when videos play 1.3x or more too wide or too tall.  Games with
+    no readable video and other ``forceaspect`` values are skipped; with no
+    readable database the main theme is judged by all the wheel's videos.
+    Diagnosis only.
+    """
+    name = "Theme video shape"
+    views = _hs_wheel_views(config)
+    if views is None:
+        return Check(name=name, status=Status.INFO,
+                     detail="hyperspin_dir or its Main Menu not found; skipping")
+    from .display_mode import hyperspin_resolution
+
+    screen = hyperspin_resolution(config)
+    if screen is None:
+        return Check(name=name, status=Status.INFO,
+                     detail=("no [Resolution] Width / Height in HyperSpin's Settings\\Settings.ini, "
+                             "so how far themes are stretched isn't known; skipping"))
+    parent = Check(name=name, status=Status.OK)
+    wheels = wheels_bad = mixed = games = games_bad = unused = 0
+    for view in views:
+        if view.system == "Main Menu":
+            continue
+        found = _wheel_theme_nodes(config, view, screen)
+        main = found["main"]
+        if main is not None:
+            wheels += 1
+            wheels_bad += main.status == Status.WARN
+            mixed += main.status == Status.INFO
+            if main.status != Status.OK:
+                parent.children.append(main)
+        if found["games"] is not None:
+            parent.children.append(found["games"])
+        games += found["games_checked"]
+        games_bad += found["games_bad"]
+        unused += found["unused"]
+    counts = [(n, bad, what) for n, bad, what in ((wheels, wheels_bad, "wheel theme"), (games, games_bad, "game theme"))
+              if n]
+    if wheels_bad or games_bad:
+        one = len(counts) == 1 and wheels_bad + games_bad == 1
+        parent.detail = (" and ".join(f"{bad:,} of {n:,} {what}{'s' if n != 1 else ''}" for n, bad, what in counts)
+                         + f" checked stretch{'es' if one else ''} the videos out of shape")
+    elif counts:
+        one = len(counts) == 1 and wheels + games == 1
+        parent.detail = ("the video box of "
+                         + " and ".join(f"{n:,} {what}{'s' if n != 1 else ''}" for n, _bad, what in counts)
+                         + f" {'matches' if one else 'match'} the videos' shape")
+    else:
+        parent.detail = 'no wheel or game theme with forceaspect="both" and readable videos to check'
+    if mixed:
+        parent.detail += (f"; {mixed} wheel theme{'s' if mixed != 1 else ''} also stretch{'es' if mixed == 1 else ''} "
+                          "the videos of another shape than most")
+    if unused:
+        parent.detail += (f"; {unused} wheel theme{'s' if unused != 1 else ''} that no game uses "
+                          f"(each has its own) {'was' if unused == 1 else 'were'} skipped")
+    parent.status = _worst(c.status for c in parent.children)
+    return parent
+
+
 def check_lightguns(config: Config) -> Check:
     """Verify DemulShooter wiring for every system marked ``lightgun: true``.
 
@@ -3100,6 +3627,187 @@ def check_mame_key_maps(config: Config) -> Check:
     return parent
 
 
+def _mame_wheel_games(config: Config) -> dict[tuple[Path, str], dict]:
+    """``(folder, exe)`` -> the games the Main Menu's visible wheels launch with that MAME build.
+
+    Follows each wheel's ``Default_Emulator`` and its ``Games.ini`` overrides,
+    as the Coin/Start check does, for ``mame*`` / ``hbmame*`` programs; MESS
+    console wheels are skipped.  Each value has ``exe`` (as RocketLauncher
+    names it), ``emulators`` (in order) and ``games`` (``{lower-case name:
+    (name, [wheels])}``).
+    """
+    from .ledblinky_profiles import MESS_DRIVERS, MESS_PER_GAME_DRIVER
+
+    mm_path = Path(config.hyperspin_dir) / "Databases" / "Main Menu" / "Main Menu.xml"
+    hidden = {w.lower() for w in _hidden_main_menu_wheels(mm_path)}
+    wheels = [w for w in _main_menu_wheels(mm_path) if w.lower() not in hidden]
+    rl = _RomLookup(Path(config.rocketlauncher_dir))
+    mess_systems = {s.lower() for s in (*MESS_DRIVERS, *MESS_PER_GAME_DRIVER)}
+    defaults: dict[str, str] = {}
+    programs: dict[tuple[str, str], Optional[Path]] = {}
+
+    def default_emulator(system: str) -> str:
+        if system not in defaults:
+            found = rl.system(system)
+            defaults[system] = found[2][found[1]].get("default_emulator", "") if found else ""
+        return defaults[system]
+
+    def mame_program(emulator: str, system: str) -> Optional[Path]:
+        key = (emulator.lower(), system.lower())
+        if key not in programs:
+            path = None
+            if emulator and system.lower() not in mess_systems:
+                found = rl.system(system)
+                data = found[2] if found else {}
+                # Like RL, use the local emulator section when present, even if empty.
+                section = data.get(emulator.lower(), rl.global_emus.get(emulator.lower(), {}))
+                raw = next((section[k] for k in _EMU_PATH_KEYS if section.get(k)), "")
+                path = _resolve_rom_path(raw, rl.rl_dir) if raw else None
+                if path is not None and not (path.name.lower().startswith(("mame", "hbmame"))
+                                             and path.parent.is_dir()):
+                    path = None
+            programs[key] = path
+        return programs[key]
+
+    out: dict[tuple[Path, str], dict] = {}
+    for wheel in wheels:
+        overrides = rl.game_overrides(wheel)
+        if mame_program(default_emulator(wheel), wheel) is None and not any(
+                mame_program(emu or default_emulator(other or wheel), other or wheel) is not None
+                for emu, other in overrides.values()):
+            continue  # no game on this wheel launches with MAME
+        games, _ = _wheel_games(wheel, config.databases_dir)
+        for game in games:
+            emu, other = overrides.get(game.lower(), ("", ""))
+            system = other or wheel
+            emulator = emu or default_emulator(system)
+            path = mame_program(emulator, system)
+            if path is None:
+                continue
+            g = out.setdefault((path.parent, path.name.lower()),
+                               {"exe": path.name, "emulators": [], "games": {}})
+            if emulator not in g["emulators"]:
+                g["emulators"].append(emulator)
+            on = g["games"].setdefault(game.lower(), (game, []))[1]
+            if wheel not in on:
+                on.append(wheel)
+    return out
+
+
+def check_mame_driving_keys(config: Config) -> Check:
+    """MAME driving games whose pedals no key presses, or that give one key two jobs.
+
+    A game set up for a steering wheel can keep only the wheel's axis for a
+    pedal in its own cfg, so on a keyboard panel it steers and accelerates
+    but never brakes; the same cfgs can put two inputs on one key.  For the
+    games the Main Menu's visible wheels launch with MAME, whose cfg names a
+    pedal (see :mod:`spindoctor.mame_pedals`):
+
+    * A pedal whose own key is gone while the folder-wide one has a key, or
+      that names only a device MAME no longer finds: WARN.
+    * One key alone on two inputs of different types, among what the game's
+      cfg sets: WARN.
+    * A folder-wide pedal with no key: INFO (real pedals work that way), or
+      a WARN when it names only a lost device.
+
+    Keys a driver gives its own inputs never appear in a cfg, so they aren't
+    covered.  Diagnosis only.
+    """
+    from .mame_pedals import MamePedalKeys, _pedal_order, input_name
+
+    name = "MAME driving keys"
+    if not config.rocketlauncher_dir:
+        return Check(name=name, status=Status.INFO,
+                     detail="rocketlauncher_dir not configured; skipping")
+    groups = _mame_wheel_games(config)
+    if not groups:
+        return Check(name=name, status=Status.INFO,
+                     detail="no MAME games on the Main Menu's wheels")
+
+    parent = Check(name=name, status=Status.OK)
+    checked, with_pedals, bad = 0, 0, 0
+    for (folder, _exe), g in groups.items():
+        reader = MamePedalKeys(folder, g["exe"])
+        checked += len(g["games"])
+        games = [r for r in (reader.game(game) for game, _ in g["games"].values()) if r is not None]
+        if not games:
+            continue
+        wheels: list[str] = []
+        for r in games:
+            wheels.extend(w for w in g["games"][r.game.lower()][1] if w not in wheels)
+        with_pedals += len(games)
+        node = Check(name=" / ".join(g["emulators"]), status=Status.OK)
+        n_games = f"{len(games)} game{'s' if len(games) != 1 else ''}"
+
+        no_key = sorted((r for r in games if r.no_key),
+                        key=lambda r: (not any(b.lost for _, b in r.no_key), r.game.lower()))
+        doubled = sorted((r for r in games if r.two_jobs), key=lambda r: r.game.lower())
+        bad += len({r.game.lower() for r in no_key + doubled})
+        if no_key:
+            listed = ", ".join(r.no_key_text() for r in no_key[:5])
+            more = f", and {len(no_key) - 5} more" if len(no_key) > 5 else ""
+            node.children.append(Check(
+                name="pedals", status=Status.WARN,
+                detail=(f"{len(no_key)} of {n_games} with pedals have a pedal that no key presses "
+                        f"(Pedal 1 is usually the gas, Pedal 2 the brake): {listed}{more}"),
+                fix=reader.pedal_fix(),
+            ))
+        if doubled:
+            listed = ", ".join(r.two_jobs_text() for r in doubled[:5])
+            more = f", and {len(doubled) - 5} more" if len(doubled) > 5 else ""
+            node.children.append(Check(
+                name="keys", status=Status.WARN,
+                detail=(f"{len(doubled)} of {n_games} with pedals give one key two jobs, so one "
+                        f"press does both: {listed}{more}"),
+                fix=reader.two_jobs_fix(),
+            ))
+        for kind in sorted({k for r in games for k in r.as_folder}, key=_pedal_order):
+            wide = reader.folder_binding(kind)
+            if wide.has_key:
+                continue
+            affected = sum(1 for r in games if kind in r.as_folder)
+            n_affected = f"{affected} game{'s' if affected != 1 else ''}"
+            where = wide.source or "MAME's own keys"
+            if wide.lost:
+                node.children.append(Check(
+                    name=where, status=Status.WARN,
+                    detail=(f"{input_name(kind)} is bound to a device MAME no longer finds "
+                            f"({wide.seq}), so {n_affected} with that pedal can't press it"),
+                    fix=f"with MAME closed, bind {input_name(kind)} Inc again in {where}, or in "
+                        "MAME's menu (Tab > Input (general))",
+                ))
+            else:
+                how = wide.seq if wide.why() == "nothing" else f"{wide.why()}: {wide.seq}"
+                node.children.append(Check(
+                    name=where, status=Status.INFO,
+                    detail=(f"{input_name(kind)} has no key ({how}): "
+                            "fine for real pedals, but a keyboard panel can't press it in "
+                            f"{n_affected}, unless a game's driver gives it a key of its own"),
+                ))
+        if node.children:
+            node.detail = f"{n_games} with pedals on {', '.join(wheels)}"
+            node.status = _worst(c.status for c in node.children)
+            parent.children.append(node)
+
+    games_text = f"MAME game{'s' if with_pedals != 1 else ''} with pedals"
+    if not with_pedals:
+        parent.detail = f"{checked} MAME game{'s' if checked != 1 else ''}: none whose cfg sets a pedal"
+    elif bad:
+        parent.detail = (f"{bad} of {with_pedals} MAME games with pedals have a pedal no key "
+                         "presses, or a key with two jobs")
+    elif any(c.status == Status.WARN for c in parent.children):
+        parent.detail = (f"{with_pedals} {games_text}; a folder-wide pedal is bound to a device "
+                         "MAME no longer finds")
+    elif parent.children:
+        parent.detail = (f"{with_pedals} {games_text}; some folder-wide pedals have no key "
+                         "(fine for real pedals)")
+    else:
+        parent.detail = (f"{with_pedals} {games_text}: every pedal has a key and no key does "
+                         "two jobs, as far as their cfgs show")
+    parent.status = _worst(c.status for c in parent.children)
+    return parent
+
+
 @dataclass(frozen=True)
 class _EmuFolderSetting:
     """One emulator config value that names a ROM or save folder.
@@ -3581,6 +4289,273 @@ def check_daphne_keys(config: Config) -> Check:
                          "volume or media key presses")
     else:
         parent.detail = f"{total} key file{'s' if total != 1 else ''}: no action left on key 0"
+    parent.status = _worst(c.status for c in parent.children)
+    return parent
+
+
+# Layout items that draw an element's artwork (MAME layout version 2).
+_LAYOUT_ART_ITEMS = ("backdrop", "overlay", "bezel", "cpanel", "marquee")
+
+
+def _layout_views(lay: Path) -> "tuple[list[tuple[str, Optional[list[str]]]], str]":
+    """The views of a MAME layout (``.lay``) file in file order, as ``(name,
+    image files its artwork items draw)``, the files None when an item names
+    an element the file doesn't define; and why MAME can't use the file
+    ("" when it can)."""
+    try:
+        root = ET.fromstring(lay.read_bytes())
+    except OSError as e:
+        return [], f"can't be read ({e.strerror or e})"
+    except ET.ParseError as e:
+        return [], f"isn't valid XML ({e})"
+    if root.tag != "mamelayout" or (root.get("version") or "").strip() != "2":
+        return [], 'isn\'t a <mamelayout version="2"> layout'
+    images = {
+        (el.get("name") or ""): [img.get("file") or "" for img in el.iter("image") if img.get("file")]
+        for el in root.findall("element")
+    }
+    views: list[tuple[str, Optional[list[str]]]] = []
+    for view in root.findall("view"):
+        files: Optional[list[str]] = []
+        for item in view:
+            if item.tag not in _LAYOUT_ART_ITEMS:
+                continue
+            ref = item.get("element") or ""
+            if ref not in images:
+                files = None
+                break
+            files += images[ref]
+        views.append((view.get("name") or "", files))
+    return views, ""
+
+
+def _layout_view_shown(name: str, views: "list[tuple[str, Optional[list[str]]]]") -> str:
+    """The view MAME shows for ``-view "<name>"``: the first whose name starts
+    with *name*, ignoring case, else the first one ("" when there is none)."""
+    low = name.lower()
+    return next((v for v, _f in views if v.lower().startswith(low)), views[0][0] if views else "")
+
+
+def _vectrex_artwork(look: _RomLookup, emu_dir: Path) -> "tuple[list[Check], str, bool]":
+    """The findings on one MESS folder's Vectrex artwork for
+    :func:`check_vectrex_overlays`: the rows, a detail for the wheel when no
+    row warns, and False when there's no overlay of any kind."""
+    import re
+    from pathlib import PureWindowsPath
+
+    def listing(folder: Optional[Path]) -> "tuple[dict[str, str], dict[str, str]]":
+        found = look.listing(folder) if folder is not None else None
+        return found if found is not None else ({}, {})
+
+    # Each folder listed once, names looked up ignoring case, as Windows does.
+    emu_dirs = listing(emu_dir)[1]
+    art_dir = emu_dir / emu_dirs["artwork"] if "artwork" in emu_dirs else None
+    art_files, art_dirs = listing(art_dir)
+    vec_dir = art_dir / art_dirs["vectrex"] if art_dir is not None and "vectrex" in art_dirs else None
+    vec_files = listing(vec_dir)[0]
+    where = vec_dir or (art_dir or emu_dir / "artwork") / "Vectrex"  # as the module spells it
+    lay = where / vec_files.get("vectrex.lay", "vectrex.lay")
+    has_lay = "vectrex.lay" in vec_files
+
+    def stems(files: "dict[str, str]", ext: str) -> "dict[str, str]":
+        return {low[:-len(ext)]: real[:-len(ext)] for low, real in files.items()
+                if low.endswith(ext) and len(low) > len(ext)}
+
+    arts = sorted({**stems(art_files, ".art"), **stems(vec_files, ".art")}.values(), key=str.lower)
+    pngs = stems(vec_files, ".png")
+    if not arts and not pngs and not has_lay:
+        return [], f"no overlays in {where}: every game shows plain white vectors", False
+
+    views, error = _layout_views(lay) if has_lay else ([], "")
+    if error:
+        return [Check(
+            name="vectrex.lay", status=Status.WARN,
+            detail=f"{lay} {error}, so MESS ignores it and no game shows its overlay",
+            fix=(f'Correct {lay}: valid XML in a <mamelayout version="2"> element (an & in a game\'s '
+                 "name is written &amp;)"),
+        )], "", True
+
+    names = {v.lower() for v, _f in views}
+    rows: list[Check] = []
+    # Overlays still in the pre-0.107 .art format.  "Game (USA) (A00ED3D6)"
+    # is one of two dumps' copies of the overlay of the game "Game (USA)".
+    crc = re.compile(r"\s\([0-9a-f]{8}\)$", re.IGNORECASE)
+    old = [a for a in arts if a.lower() not in names and crc.sub("", a).lower() not in names]
+    if old:
+        n = len(old)
+        rows.append(Check(
+            name="Old .art overlays", status=Status.WARN,
+            detail=(f"{n} .art overlay{'s' if n != 1 else ''} with no view in "
+                    f"{'vectrex.lay' if has_lay else 'a vectrex.lay (there is none)'} ({_some(old)}): "
+                    "MAME and MESS stopped reading .art files in 0.107, so "
+                    f"{'these games run' if n != 1 else 'this game runs'} without an overlay"),
+            fix=(f"Give each game a view in {lay}, named exactly as its ROM, that draws the .art file's "
+                 f"PNG saved as {where / '<game>.png'}"),
+        ))
+
+    # PNGs the module asks MESS for a view of, with no view of that name.
+    lost = [real for low, real in sorted(pngs.items()) if low not in names]
+    if lost and not has_lay:
+        rows.append(Check(
+            name="vectrex.lay", status=Status.WARN,
+            detail=(f"not in {where}: the module asks MESS for the view of each of the {len(lost)} "
+                    "games with an overlay PNG there, but MESS has only its own plain views"),
+            fix=f"Add {lay} with one view per PNG, named exactly as the PNG, drawing it as an overlay",
+        ))
+    elif lost:
+        n = len(lost)
+        if views:
+            got = [f"{p} gets {_layout_view_shown(p, views)}'s" for p in lost]
+            why = f"the module asks MESS for that view, and MESS shows another one ({_some(got)})"
+        else:
+            why = f"vectrex.lay has no views, so they show plain white vectors ({_some(lost)})"
+        rows.append(Check(
+            name="Overlay PNGs", status=Status.WARN,
+            detail=f"{n} overlay PNG{'s' if n != 1 else ''} with no view of the same name in vectrex.lay: {why}",
+            fix=f'Add a <view name="<game>"> drawing <game>.png to {lay} for each, named exactly as the PNG',
+        ))
+
+    # Views the module asks for that MESS doesn't reach, or that draw nothing.
+    late: list[str] = []
+    broken: list[str] = []
+    for i, (view, files) in enumerate(views):
+        low = view.lower()
+        if low not in pngs:
+            continue
+        first = next((v for v, _f in views[:i] if v.lower().startswith(low)), None)
+        if first is not None:
+            late.append(f"{view} gets {first}'s" if first.lower() != low else f"{view} (twice)")
+        elif files is None or not all(look.exists(where.joinpath(*PureWindowsPath(f).parts)) for f in files):
+            broken.append(view)
+    if late:
+        n = len(late)
+        rows.append(Check(
+            name="View order", status=Status.WARN,
+            detail=(f"{n} game{'s get' if n != 1 else ' gets'} an earlier view whose name starts with "
+                    f"{'theirs' if n != 1 else 'its own'} ({_some(late)}): MESS takes the first view whose "
+                    "name starts with the one asked for"),
+            fix=(f"In {lay}, put each game's view above every longer name it starts with (views sorted "
+                 "by name are in that order), and keep one view per name"),
+        ))
+    if broken:
+        n = len(broken)
+        rows.append(Check(
+            name="Overlay images", status=Status.WARN,
+            detail=(f"{n} game{'s' if n != 1 else ''}' view draws an image that isn't in {where}, or an "
+                    f"element vectrex.lay doesn't define ({_some(broken)}), so "
+                    f"{'they show' if n != 1 else 'it shows'} no overlay"),
+            fix=f"In {lay}, give each view's overlay an <element> whose <image file=\"...\"> is in {where}",
+        ))
+
+    # Views no game reaches: the module asks for -view standard without the PNG.
+    unasked = [v for v, _f in views if v.lower() not in pngs]
+    if unasked:
+        n = len(unasked)
+        rows.append(Check(
+            name="Views without a PNG", status=Status.INFO,
+            detail=(f"{n} view{'s' if n != 1 else ''} in vectrex.lay with no PNG of the same name "
+                    f"({_some(unasked)}): the module starts a game with -view standard (plain white "
+                    f"vectors) unless {where / '<game>.png'} is there"),
+            fix=f"For each such game on the wheel, save its overlay as {where / '<view name>.png'}",
+        ))
+
+    good = sum(1 for low in pngs if low in names)
+    detail = (f"{good} overlay{'s' if good != 1 else ''} in {where}, each with its own view in vectrex.lay"
+              if good else f"no overlay PNG in {where}")
+    if arts and not old:
+        detail += (f"; {len(arts)} old .art file{'s are' if len(arts) != 1 else ' is'} unused "
+                   "(MESS reads only vectrex.lay)")
+    return rows, detail, True
+
+
+def check_vectrex_overlays(config: Config) -> Check:
+    """Vectrex games that start without their colour overlay, or with another game's.
+
+    A Vectrex draws white vectors; each game came with a coloured plastic
+    overlay.  RocketLauncher's MESS module starts a Vectrex game with
+    ``-view "<romName>"`` when ``<emulator folder>\\artwork\\Vectrex\\<romName>.png``
+    exists, else ``-view standard`` (plain white).  MESS reads the views from
+    ``artwork\\vectrex\\vectrex.lay`` (a MAME layout file; MAME and MESS
+    stopped reading ``.art`` files in 0.107) and takes the first view whose
+    name starts with the name asked for, ignoring case; with none, the file's
+    first view: another game's overlay.
+
+    Per visible Main Menu wheel with "vectrex" in its name whose default
+    emulator uses the MESS module, in the ``artwork`` folder beside its
+    ``Emu_Path``:
+
+    * ``.art`` overlays (in ``artwork`` or ``artwork\\Vectrex``) whose game has
+      no view in ``vectrex.lay``: WARN, the game runs without its overlay.
+    * PNGs with no view of the same name (or no ``vectrex.lay`` at all): WARN,
+      MESS shows another view.
+    * A game whose view comes after a view whose name starts with the game's
+      ("Polar Rescue (USA) (Beta)" before "Polar Rescue (USA)"): WARN.
+    * A game's view drawing an image that isn't there, or an element the
+      file doesn't define: WARN.  A ``vectrex.lay`` MESS can't read: WARN.
+    * Views with no PNG of their name (the module never asks for them), and
+      ``Use_Overlays=false`` for the system in the module's INI: INFO.
+
+    Diagnosis only.
+    """
+    name = "Vectrex overlays"
+    if not config.hyperspin_dir or not Path(config.hyperspin_dir).is_dir():
+        return Check(name=name, status=Status.INFO, detail="hyperspin_dir not configured; skipping")
+    if not config.rocketlauncher_dir:
+        return Check(name=name, status=Status.INFO, detail="rocketlauncher_dir not configured; skipping")
+
+    mm_path = Path(config.hyperspin_dir) / "Databases" / "Main Menu" / "Main Menu.xml"
+    hidden = _hidden_main_menu_wheels(mm_path)
+    look = _RomLookup(Path(config.rocketlauncher_dir))
+    folders: dict[str, tuple[list[Check], str, bool]] = {}  # one reading per MESS folder
+    parent = Check(name=name, status=Status.OK)
+    for system in _main_menu_wheels(mm_path):
+        if "vectrex" not in system.lower() or system in hidden:
+            continue
+        src = look.source(system)
+        module = look.module_file(src) if src is not None and src.emu_where else None
+        if module is None or module.name.lower() != "mess.ahk":
+            continue
+        node = Check(name=system, status=Status.OK)
+        parent.children.append(node)
+        program = _resolve_rom_path(src.emu_path, look.rl_dir) if src.emu_path else None
+        if program is None:
+            node.status = Status.INFO
+            node.detail = (f"no Emu_Path in {src.emu_where}" if not src.emu_path
+                           else "Emu_Path uses a Windows drive letter; can't check it on this OS")
+            continue
+        emu_dir = _windows_case(program.parent)
+        if not emu_dir.is_dir():
+            node.status = Status.INFO
+            node.detail = f"emulator folder not found: {emu_dir} (see ROM paths)"
+            continue
+        key = os.path.normcase(str(emu_dir))
+        if key not in folders:
+            folders[key] = _vectrex_artwork(look, emu_dir)
+        rows, detail, found = folders[key]
+        node.children = list(rows)
+        # The module's own INI can switch overlays off for the whole system.
+        ini = module.parent / f"{module.stem}.ini"
+        if _read_rl_ini(ini).get(system.lower(), {}).get("use_overlays", "").strip().lower() == "false":
+            node.children.append(Check(
+                name="Use_Overlays", status=Status.INFO,
+                detail=(f"Use_Overlays=false under [{system}] in {ini}: the module starts MESS with "
+                        "-nouse_overlays, so no game shows its overlay"),
+                fix=f"Set Use_Overlays=true under [{system}] in {ini}",
+            ))
+        node.status = _worst(c.status for c in node.children) if found else Status.INFO
+        node.detail = detail if node.status != Status.WARN else f"MESS folder {emu_dir}"
+
+    if not parent.children:
+        return Check(name=name, status=Status.INFO,
+                     detail="no visible Vectrex wheel starts with RocketLauncher's MESS module")
+    total = len(parent.children)
+    warned = sum(1 for c in parent.children if c.status == Status.WARN)
+    plural = "s" if total != 1 else ""
+    if warned:
+        parent.detail = (f"{warned} of {total} Vectrex wheel{plural} on MESS start{'s' if warned == 1 else ''} "
+                         "some games without their overlay, or with another game's")
+    else:
+        parent.detail = f"{total} Vectrex wheel{plural} on MESS: no overlay problem found"
     parent.status = _worst(c.status for c in parent.children)
     return parent
 
@@ -4138,21 +5113,25 @@ def run_health_checks(config: Config, fix: bool = False) -> HealthReport:
     _safe("Wheel wiring", lambda: check_wheel_wiring(config, fix, report.fixes_applied))
     _safe("PC games", lambda: check_pc_launchability(config))
     _safe("Casual Games", lambda: check_casual_games(config))
+    _safe("PCLauncher INI text", lambda: check_pclauncher_ini_text(config))
     _safe("ROM paths", lambda: check_rom_paths(config))
     _safe("HyperSpin ROMs only", lambda: check_hyperspin_roms_only(config))
     _safe("Video redirects", lambda: check_video_redirects(config))
     _safe("Spaces in game names", lambda: check_game_name_spaces(config))
     _safe("Wheel art", lambda: check_wheel_art(config))
     _safe("Letter art", lambda: check_letter_art(config))
+    _safe("Theme video shape", lambda: check_theme_video_shape(config))
     _safe("Match cache", lambda: check_match_cache(config, fix, report.fixes_applied))
     _safe("Global Emulators.ini", lambda: check_global_emulators(config, fix, report.fixes_applied))
     _safe("RocketLauncher settings", lambda: check_rocketlauncher_settings(config))
     _safe("Lightguns", lambda: check_lightguns(config))
     _safe("Emulator ROM folders", lambda: check_emulator_rom_paths(config))
     _safe("Daphne keys", lambda: check_daphne_keys(config))
+    _safe("Vectrex overlays", lambda: check_vectrex_overlays(config))
     _safe("User Functions", lambda: check_user_functions(config))
     _safe("Coin/Start", lambda: check_coin_start(config))
     _safe("MAME key maps", lambda: check_mame_key_maps(config))
+    _safe("MAME driving keys", lambda: check_mame_driving_keys(config))
     _safe("Keymapper hotkeys", lambda: check_keymapper_hotkeys(config))
     _safe("Future Pinball scripting", lambda: check_future_pinball_typelib(config))
     _safe("LEDBlinky", lambda: check_ledblinky(config))

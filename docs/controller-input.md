@@ -64,6 +64,8 @@ One panel button then does two things, or the remapped key does nothing.
 Bind emulators to the intended virtual pad, not a transient physical DS4 device.
 Cxbx-Reloaded is an exception: it misses a virtual pad that appears as it starts,
 so bind its [real pads through SDL](xbox.md#ps4-pads).
+Azahar (Nintendo 3DS) binds each button to one source, so a profile is either the
+panel or the pad; its module can [pick one per start](nintendo-3ds.md#panel-and-pads).
 Dolphin can combine keyboard-encoder and pad inputs, but GameCube keyboard
 bindings need explicit device qualifiers when the selected pad is disconnected.
 Per-game Dolphin profiles can overwrite global controller edits.
@@ -188,3 +190,37 @@ Checked in ActiveGS and AppleWin with DualShock 4 controllers (DS4Windows runnin
 panel and a controller both worked in play, with this file plus three more buttons
 (AppleWin's window class is `APPLE2FRAME`). For N-Rage, `xInput=0` was also tried on
 the cabinet.
+
+## Emulator hotkeys and the encoder's shift button
+
+Encoders with a shift function (Ultimarc's I-PAC and Mini-PAC, for example) give one
+button, often Coin, a second layer. While it is held, every other input sends its
+shifted code instead of its own, or nothing when no shifted code is set, and the shift
+button's own key isn't sent. An emulator hotkey that is a chord of that button and
+another, such as Coin + Right for "next disc", then never fires from the panel. It still
+works from a keyboard, from a controller, or when a test sends the two keys itself,
+so it can look fine until someone tries it on the panel.
+
+- **See what a combination really sends** before binding it: a window with a low-level
+  keyboard hook that lists key codes shows it. A combination that shows nothing has no
+  shifted code. The mapping lives on the encoder board, so a saved WinIPAC file may not
+  match it.
+- **Bind hotkeys to keys the panel sends on their own**: spare buttons, or shifted codes
+  that exist. Leave out keys RocketLauncher uses in games (exit, Pause menu).
+- **Controllers are not affected.** A pad's Share + D-pad chord reaches the emulator, so
+  the pad can keep the chord while the panel gets a single key.
+- **Keep a chord's keys off one-key hotkeys** that act on the game. In DuckStation, a
+  restart bound to Pause + Select, with Pause alone as "next disc", restarted the game
+  and then switched disc as well: the key still held after the restart fired again.
+
+DuckStation's `[Hotkeys]` in `settings.ini` takes one binding per line, and ` & ` makes a
+chord. The panel's Pause (`P`) and Select (`Enter`) buttons change disc here, and the
+first controller keeps Share + D-pad:
+
+```ini
+[Hotkeys]
+SwitchToNextDisc = Keyboard/P
+SwitchToNextDisc = SDL-0/Back & SDL-0/DPadRight
+SwitchToPreviousDisc = Keyboard/Enter
+SwitchToPreviousDisc = SDL-0/Back & SDL-0/DPadLeft
+```

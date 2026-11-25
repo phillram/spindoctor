@@ -7137,6 +7137,7 @@ def media_scan_cmd(
             )
             for src, reason in result.skipped:
                 console.print(f"  [dim]·[/dim] {src.name} — {reason}")
+        _print_record_error(result)
         if result.manifest_path:
             console.print(
                 f"\nManifest: {result.manifest_path.name}\n"
@@ -7186,6 +7187,12 @@ def _gen_states(config: Config, systems, all_systems: bool) -> list:
     return [genmedia.wheel_state(config, w) for w in wheels]
 
 
+def _print_record_error(result) -> None:
+    """Warn when an import went on although its undo record couldn't be saved."""
+    if result is not None and result.record_error:
+        console.print(f"[yellow]Warning:[/yellow] {escape(result.record_error)}")
+
+
 def _gen_staged(stage, errors: list, *, config: Optional[Config] = None, put_in: bool = False,
                 overwrite: bool = False) -> None:
     """What was staged, and what to do with it; with *put_in*, put it in
@@ -7219,6 +7226,7 @@ def _gen_staged(stage, errors: list, *, config: Optional[Config] = None, put_in:
                   + (f", {left} left out (their places are filled)" if left else "") + ".")
     for path, why in result.skipped if result else ():
         console.print(f"  [yellow]left out:[/yellow] {escape(path.name)}: {escape(why)}")
+    _print_record_error(result)
     if result and result.manifest_path:
         console.print("[cyan]spindoctor generate-media undo --apply[/cyan] takes them out again.")
 
@@ -7896,6 +7904,7 @@ def generate_media_put_in(batch, systems, games, stage_dir, all_batches, overwri
     console.print(f"[green]{len(result.imported)} file(s) put in.[/green]")
     for path, why in result.skipped:
         console.print(f"  [yellow]left out:[/yellow] {escape(path.name)}: {escape(why)}")
+    _print_record_error(result)
     if result.manifest_path:
         console.print("[cyan]spindoctor generate-media undo --apply[/cyan] takes them out again.")
 
@@ -7939,6 +7948,7 @@ def _gen_put_in_all(config, systems, games, stage_dir, verbose, apply_changes, o
     console.print(f"[green]{len(result.imported)} file(s) put in.[/green]")
     for path, why in result.skipped:
         console.print(f"  [yellow]left out:[/yellow] {escape(path.name)}: {escape(why)}")
+    _print_record_error(result)
     if result.manifest_path:
         console.print("[cyan]spindoctor generate-media undo --apply[/cyan] takes them all out again.")
 
@@ -8822,8 +8832,77 @@ def mainmenu_sort(strategy, apply, output_dir):
     if strategy == "alpha":
         sort_alphabetical(menu)
     else:
+        problem, missing = _sort_field_check(menu, strategy)
+        if problem:
+            err_console.print(f"[red]{problem}[/red]")
+            sys.exit(1)
+        if missing:
+            console.print(
+                f"[yellow]{len(missing)} system(s) have no {strategy} and "
+                f"sort first:[/yellow] {', '.join(missing)}"
+            )
         sort_by_field(menu, strategy)
     _apply_or_preview(f"sort: {strategy}", menu, config, output_dir, apply)
+
+
+def _sort_field_check(menu, field_name):
+    """Return ``(problem, missing)`` for sorting *menu* by *field_name*.
+
+    HyperSpin's own Main Menu.xml lists names only, so on most cabinets no
+    entry has a manufacturer or year, and sorting by one would quietly sort
+    A-Z.  *problem* says so when no entry has the field; *missing* names
+    the entries without it otherwise.
+    """
+    missing = [
+        e.system for e in menu.entries if not (getattr(e, field_name) or "").strip()
+    ]
+    if menu.entries and len(missing) == len(menu.entries):
+        return (
+            f"No Main Menu entry has a {field_name}: HyperSpin's own Main Menu.xml "
+            "lists names only, so this would just sort A-Z. Use 'sort alpha' for "
+            "that, or 'reorder' to move wheels.",
+            missing,
+        )
+    return None, missing
+
+
+# A UTF-8 byte-order mark at the start of piped input.  Windows PowerShell 5.1
+# sends one when $OutputEncoding is UTF-8.  Python reads a pipe in the ANSI
+# code page, so the mark then arrives as "ï»¿" (cp1252), and every non-ASCII
+# letter after it is just as garbled ("Pokémon" as "PokÃ©mon").
+_PIPE_CODE_PAGES = ("cp1252",)
+
+
+def _input_bom(line):
+    """``(rest, code_page)`` for a first line that may start with a UTF-8 BOM.
+
+    *code_page* is the encoding the UTF-8 input was misread as (``None`` when
+    the mark was read correctly or there is none); the caller re-reads every
+    line through it with :func:`_recode_piped`.
+    """
+    if line.startswith("\ufeff"):
+        return line[1:], None
+    pages = [getattr(sys.stdin, "encoding", None) or ""] + list(_PIPE_CODE_PAGES)
+    for page in dict.fromkeys(p.lower() for p in pages if p):
+        try:
+            misread = "\ufeff".encode("utf-8").decode(page)
+        except (LookupError, UnicodeError):
+            continue
+        if misread != "\ufeff" and line.startswith(misread):
+            return line[len(misread):], page
+    return line, None
+
+
+def _recode_piped(line, code_page):
+    """*line* as the UTF-8 it was before being misread as *code_page*.
+
+    Raises :class:`ValueError` when it can't have been UTF-8, rather than
+    letting a garbled name be saved.
+    """
+    try:
+        return line.encode(code_page).decode("utf-8")
+    except UnicodeError:
+        raise ValueError(f"not UTF-8, as the byte-order mark said: {line}") from None
 
 
 @mainmenu_group.command("edit")
@@ -8842,6 +8921,9 @@ def mainmenu_edit(output_dir):
       sort alpha|manufacturer|year
       list            re-render the table
       q | quit        exit (prompts to save if dirty)
+
+    Commands can also be piped in, one per line. If a piped command
+    fails, nothing is saved.
     """
     from .mainmenu import (
         add_system, hide, move_down, move_up, remove_system, reorder,
@@ -8850,6 +8932,11 @@ def mainmenu_edit(output_dir):
     config = _checked_cfg()
     menu = _load_menu_or_exit(config)
     dirty = False
+    # Piped commands come from a script, not a person watching the table:
+    # one that fails (a dropped "move N to M" shifts every later index) means
+    # nothing is saved.
+    scripted = not (sys.stdin is not None and sys.stdin.isatty())
+    failed = []
 
     def render():
         console.print(_render_menu_table(menu, config))
@@ -8861,12 +8948,32 @@ def mainmenu_edit(output_dir):
         "add NAME | remove N | sort alpha|manufacturer|year | list | q[/dim]"
     )
 
+    def piped_failure(why):
+        err_console.print(f"[red]{why}, so nothing was saved[/red]")
+        sys.exit(1)
+
+    first, code_page = True, None
     while True:
         try:
-            line = click.prompt("mainmenu>", default="", show_default=False).strip()
+            line = click.prompt("mainmenu>", default="", show_default=False)
         except click.exceptions.Abort:
+            if scripted and failed:
+                piped_failure(f"{len(failed)} piped command(s) failed: {'; '.join(failed)}")
+            if scripted and dirty:
+                piped_failure("The piped commands ended without q")
             console.print("\n[yellow]Aborted.[/yellow]")
             return
+        if first:
+            line, code_page = _input_bom(line)
+            first = False
+        if code_page:
+            try:
+                line = _recode_piped(line, code_page)
+            except ValueError as e:
+                console.print(f"[red]{e}[/red]")
+                failed.append(line.strip())
+                continue
+        line = line.strip()
         if not line:
             continue
         parts = line.split()
@@ -8915,17 +9022,27 @@ def mainmenu_edit(output_dir):
                 if strat == "alpha":
                     sort_alphabetical(menu)
                 elif strat in {"manufacturer", "year", "genre"}:
+                    problem, _missing = _sort_field_check(menu, strat)
+                    if problem:
+                        console.print(f"[red]{problem}[/red]")
+                        failed.append(line)
+                        continue
                     sort_by_field(menu, strat)
                 else:
                     console.print(f"[red]unknown sort:[/red] {strat}")
+                    failed.append(line)
                     continue
                 dirty = True
                 render()
             else:
                 console.print(f"[red]unrecognised command:[/red] {line}")
+                failed.append(line)
         except (KeyError, ValueError, click.UsageError) as e:
             console.print(f"[red]{e}[/red]")
+            failed.append(line)
 
+    if scripted and failed:
+        piped_failure(f"{len(failed)} piped command(s) failed: {'; '.join(failed)}")
     if not dirty:
         console.print("[dim]No changes.[/dim]")
         return
