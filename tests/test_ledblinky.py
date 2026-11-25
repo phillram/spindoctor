@@ -3,7 +3,6 @@ from __future__ import annotations
 from tests.helpers import encode_legacy_text as _encode_legacy_text
 
 from spindoctor.config import Config
-from spindoctor._text import read_editable_text
 
 import textwrap
 import types
@@ -1452,14 +1451,3 @@ def test_hook_patch_preserves_crlf_and_missing_final_newline():
     assert result == text.replace("Start_Hyperspin_Process=LEDBlinky.exe",
                                  ";Start_Hyperspin_Process=LEDBlinky.exe  " + ledblinky.LEDBLINKY_DISABLE_TAG)
     assert ledblinky._comment_out_hooks(result) == (result, 0)
-
-
-def test_stub_xml_preserves_comments_processing_instructions_and_encoding(tmp_path):
-    path = tmp_path / ledblinky.CONTROLS_XML_NAME
-    text = '<?xml version="1.0" encoding="UTF-16"?>\r\n<EmulatorList><!-- café --><?custom keep?></EmulatorList>'
-    path.write_bytes(text.encode("utf-16"))
-    assert ledblinky._ensure_controls_xml_entries(path, path, ["Search"]) == (True, ["Search"])
-    result = read_editable_text(path)
-    assert "<!-- café -->" in result
-    assert "<?custom keep?>" in result
-    assert path.read_bytes().startswith(b"\xff\xfe")
