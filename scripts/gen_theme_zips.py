@@ -11,7 +11,9 @@ by the cabinet owner.
 Theme.xml layout
 ----------------
   w="1024" h="768" x="512" y="384"  — full-screen, centred on 1024×768 canvas
-  forceaspect="both"                — maintain video aspect ratio
+  forceaspect="both"                — stretch the video to fill the box (the
+                                      bundled videos are 16:9, the box's shape
+                                      on a 16:9 screen)
   type/start/rest="none"            — no animations
 
 The zip contains ONLY Theme.xml (no Info.txt, no SWF files, no Video.png),
@@ -34,7 +36,9 @@ SYSTEMS = [
 # ── Theme.xml ─────────────────────────────────────────────────────────────────
 
 # Copied verbatim from the reference Favorites.zip provided by the cabinet owner.
-# Full-screen (1024×768), centred at (512, 384), aspect-ratio preserved.
+# Full-screen (1024×768), centred at (512, 384).  HyperSpin stretches the
+# 1024×768 canvas to the screen and, with forceaspect="both", the video to fill
+# its box, so the video plays at the screen's shape, not its own.
 THEME_XML = """\
 <Theme>
     <video w="1024"
