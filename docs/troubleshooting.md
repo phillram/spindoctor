@@ -102,6 +102,8 @@ Logs redact some secrets, not all identifying data.
 | Hidden Main Menu wheels show again after `add-system` or `generate-config` | Older builds rewrote `Main Menu.xml` with names only. Hide them again with `mainmenu hide SYSTEM --apply`; both commands now keep `enabled="False"`. |
 | No letter-jump graphic | Supply `Images/Letters/<character>.png` for visible title initials; run `doctor`. |
 | Starts on a different letter/game | Inspect `wheel-start`; set first/last/random with HyperSpin closed. |
+| Piped `mainmenu edit` commands left the Main Menu in the wrong order | Windows PowerShell 5.1 pipes a byte-order mark before the first line, and older builds called that line unrecognised and saved anyway. `edit` now ignores the mark and saves nothing if a piped command fails; put the menu's backup back. |
+| `mainmenu sort year` or `manufacturer` sorted A–Z | HyperSpin's own `Main Menu.xml` lists names only; `sort` now says so and stops. Use `sort alpha`, or `reorder` to move wheels. |
 | Recently Played or Most Played lost games or art after a wheel was retired | They read the list and media of the system the statistics name: [retire the old wheels](combined-wheels.md#retire-the-old-wheels). |
 | Missing synthetic art after move | Verify source media, redirects and mirror mode, then rebuild. Hardlinks cannot cross filesystems; auto mode falls back to copies. |
 | Custom logo not replaced by installer | Intentional: existing art is preserved. Back it up and remove/replace it deliberately. |
@@ -176,6 +178,7 @@ Task registration is Windows-only and separate from startup wheel refresh.
 | A hotkey in an AHK key profile does nothing | RocketLauncher's menu navigation keys replace a plain `key::` in an Internal profile. `doctor` lists them; write `*key::` or a remap (`key::other`). |
 | One panel button does two things in a game | The game read the key before RocketLauncher's keymapper could block it: see [games that read the keyboard first](controller-input.md#games-that-read-the-keyboard-first). |
 | Future Pinball tables ignore coin, start and flippers | The table's script never started. `doctor` warns when the library is missing: [register it](#register-future-pinballs-type-library). |
+| An emulator hotkey on Coin + another button does nothing from the panel | Coin may be the encoder's shift button, which changes what the other buttons send: [hotkeys and the shift button](controller-input.md#emulator-hotkeys-and-the-encoders-shift-button). |
 
 [Light-gun setup and reversion](lightgun.md). Changing SpinDoctor tracking alone
 does not remove hooks.
