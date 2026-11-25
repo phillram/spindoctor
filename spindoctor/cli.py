@@ -7137,6 +7137,7 @@ def media_scan_cmd(
             )
             for src, reason in result.skipped:
                 console.print(f"  [dim]·[/dim] {src.name} — {reason}")
+        _print_record_error(result)
         if result.manifest_path:
             console.print(
                 f"\nManifest: {result.manifest_path.name}\n"
@@ -7186,6 +7187,12 @@ def _gen_states(config: Config, systems, all_systems: bool) -> list:
     return [genmedia.wheel_state(config, w) for w in wheels]
 
 
+def _print_record_error(result) -> None:
+    """Warn when an import went on although its undo record couldn't be saved."""
+    if result is not None and result.record_error:
+        console.print(f"[yellow]Warning:[/yellow] {escape(result.record_error)}")
+
+
 def _gen_staged(stage, errors: list, *, config: Optional[Config] = None, put_in: bool = False,
                 overwrite: bool = False) -> None:
     """What was staged, and what to do with it; with *put_in*, put it in
@@ -7219,6 +7226,7 @@ def _gen_staged(stage, errors: list, *, config: Optional[Config] = None, put_in:
                   + (f", {left} left out (their places are filled)" if left else "") + ".")
     for path, why in result.skipped if result else ():
         console.print(f"  [yellow]left out:[/yellow] {escape(path.name)}: {escape(why)}")
+    _print_record_error(result)
     if result and result.manifest_path:
         console.print("[cyan]spindoctor generate-media undo --apply[/cyan] takes them out again.")
 
@@ -7896,6 +7904,7 @@ def generate_media_put_in(batch, systems, games, stage_dir, all_batches, overwri
     console.print(f"[green]{len(result.imported)} file(s) put in.[/green]")
     for path, why in result.skipped:
         console.print(f"  [yellow]left out:[/yellow] {escape(path.name)}: {escape(why)}")
+    _print_record_error(result)
     if result.manifest_path:
         console.print("[cyan]spindoctor generate-media undo --apply[/cyan] takes them out again.")
 
@@ -7939,6 +7948,7 @@ def _gen_put_in_all(config, systems, games, stage_dir, verbose, apply_changes, o
     console.print(f"[green]{len(result.imported)} file(s) put in.[/green]")
     for path, why in result.skipped:
         console.print(f"  [yellow]left out:[/yellow] {escape(path.name)}: {escape(why)}")
+    _print_record_error(result)
     if result.manifest_path:
         console.print("[cyan]spindoctor generate-media undo --apply[/cyan] takes them all out again.")
 

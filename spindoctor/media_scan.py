@@ -319,6 +319,9 @@ class ImportResult:
     imported: list[tuple[Path, Path]] = field(default_factory=list)
     skipped: list[tuple[Path, str]] = field(default_factory=list)
     manifest_path: Optional[Path] = None
+    # Set when the manifest on disk couldn't be brought up to date: which
+    # how many files it lacks, and why.  Undo leaves those files in place.
+    record_error: str = ""
 
 
 def _do_action(src: Path, dest: Path, action: str) -> None:
@@ -355,6 +358,12 @@ def import_media(
 
     A target that is only a stand-in (:mod:`spindoctor.placeholders`) is
     replaced without *overwrite*, after a backup like any overwritten file.
+
+    The manifest is saved whole before and after each file.  Until the first
+    save works nothing is imported, and a failure raises; after that, a save
+    that fails (another program holding the file) doesn't stop the run: the
+    next save catches the manifest up.  If the last one fails too,
+    ``record_error`` says how many files undo won't find.
     """
     if action not in {"copy", "move", "link"}:
         raise ValueError(f"unknown action: {action!r}")
@@ -377,6 +386,20 @@ def import_media(
     }
     if label:
         data["label"] = label
+    saved_upto = 0      # data["imports"] entries in the manifest on disk
+    unsaved: Optional[OSError] = None
+
+    def save(step, *args) -> None:
+        nonlocal saved_upto, unsaved
+        try:
+            step(manifest_path, data, *args)
+        except OSError as exc:
+            if result.manifest_path is None:
+                raise   # no manifest on disk yet: nothing goes in without one
+            unsaved = exc
+        else:
+            saved_upto, unsaved = len(data["imports"]), None
+
     seen_targets = set()
     for sm in items:
         if sm.target_path is None:
@@ -420,7 +443,7 @@ def import_media(
                 result.skipped.append((sm.local.path, f"backup failed: {e}"))
                 continue
             entry["backup"] = str(backup)
-        begin_step(manifest_path, data, "imports", entry)
+        save(begin_step, "imports", entry)
         result.manifest_path = manifest_path
         seen_targets.add(target)
         try:
@@ -431,7 +454,16 @@ def import_media(
             result.skipped.append((sm.local.path, f"{action} failed: {e}"))
             continue
         result.imported.append((sm.local.path, target))
-        complete_step(manifest_path, data, entry)
+        save(complete_step, entry)
+    if unsaved is not None:
+        save(checkpoint)    # one more try before saying the record lags behind
+    if unsaved is not None:
+        # An entry saved as pending is still undone; only later ones are lost.
+        done = {str(dest) for _src, dest in result.imported}
+        missing = sum(1 for e in data["imports"][saved_upto:] if e["dest"] in done)
+        if missing:
+            result.record_error = (f"Couldn't save the undo record {manifest_path.name} ({unsaved}); "
+                                   f"undo won't take out the last {missing} file(s).")
     return result
 
 
