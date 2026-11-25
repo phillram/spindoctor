@@ -33,6 +33,7 @@ command-specific; do not delete manifests to silence errors.
 | Content dupes have different sizes/SHA1s | Recognized NES/FDS/SNES ROM headers are ignored for content pairing. Wrapper equality is not required. |
 | “Cannot find Rom” | Check actual stem, allowed extensions, per-game emulator and every effective ROM path. |
 | “You do not have a RocketLauncher module for …” | RocketLauncher looks in a module folder named after the emulator entry. An entry that shares a module needs `Module=..\<folder>\<module>.ahk`: [two builds side by side](xbox.md#two-builds-side-by-side). |
+| ScummVM: “Cannot find …\scummvm.ini”, or a game won't start | The ScummVM module reads ScummVM's game list from `CustomConfig` under `[Settings]` in its module INI (relative to the RocketLauncher folder), else from `%APPDATA%\ScummVM\scummvm.ini`. Each game's target (its `TargetName`, else its name) needs a section there whose `path=` is the game's folder; after a drive change those paths still name the old drive. `doctor`'s "ScummVM game list" check finds both. |
 | Casual Games cannot locate program | Check `gamePath`, executable naming/fallback folder and matching placeholder; unrelated `.txt` files can match accidentally. |
 | AHK cannot launch a program | Inspect effective User Functions for stale helper paths and working directories. |
 | A game on a mixed wheel starts with the wrong keys or settings | Read the system name and key profile in `RocketLauncher.log`: [combined wheels](combined-wheels.md#check-it). |
@@ -229,7 +230,7 @@ Run `doctor` and archive checks, then test a game directly and through RL.
 Check internal emulator paths, not only `Rom_Path`.
 
 - **Virtual discs:** correct DAEMON Tools path, drive letter and drive type.
-- **ScummVM blank/quit:** game paths in `scummvm.ini`; focus/fullscreen problems
+- **ScummVM blank/quit:** game paths in `scummvm.ini` (`doctor` checks them); focus/fullscreen problems
   are separate from missing game data.
 - **Dolphin fade timeout:** module must match installed Qt/wx generation and
   actual game title/class. Verify focus/fullscreen, not merely process existence.
