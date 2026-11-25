@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [3.5.0] - 2026-11-25
+
+Cabinet diagnostics and fixes release. Seven new `doctor` checks (theme video shape, Vectrex overlays, MAME driving keys, PCLauncher window titles, ScummVM game lists, DOSBox game configs, and the bundled ScreenScraper developer ID), `mainmenu set-order`, per-game keys and held key combinations for `generate-media record`, and fixes for the logon-task popup after upgrading to 3.4.0, `fetch-media` lookups that used up API allowances, and Main Menu edits that lost data. No breaking CLI or configuration changes.
+
 ### Added
 
 - **`doctor` warns when a wheel's theme stretches its videos out of shape ("Theme video shape").** HyperSpin 1.5 stretches a theme's 1024×768 layout to the screen, and with `forceaspect="both"` the video fills its `<video>` box whatever its own shape (the comments on the bundled synthetic-wheel theme said it kept the shape; they're corrected). So a basic full-screen theme plays 4:3 videos at 16:9 on a widescreen cabinet, and tall two-screen DS / 3DS clips more than twice too wide. For each visible wheel whose `Themes/Default.zip` uses `forceaspect="both"`, `doctor` compares the box's shape on screen (from `[Resolution]` in `Settings/Settings.ini`) with the usual shape of up to 25 of the wheel's videos, read from their headers by the new `introvideo.video_frame_size` (MP4 / M4V / MOV track header, FLV `onMetaData`; no ffprobe), and warns at 1.3x too wide or too tall, with the box size to aim for. Diagnosis only. Covered by `tests/test_doctor_theme_video_shape.py`.
@@ -2544,7 +2548,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v3.4.0...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v3.5.0...HEAD
+[3.5.0]: https://github.com/phillram/spindoctor/compare/v3.4.0...v3.5.0
 [3.4.0]: https://github.com/phillram/spindoctor/compare/v3.3.0...v3.4.0
 [3.3.0]: https://github.com/phillram/spindoctor/compare/v3.2.0...v3.3.0
 [3.2.0]: https://github.com/phillram/spindoctor/compare/v3.1.0...v3.2.0
