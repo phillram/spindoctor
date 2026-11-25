@@ -248,6 +248,75 @@ def video_duration_seconds(path: Path) -> Optional[float]:
     return duration / timescale
 
 
+#: Containers whose picture size :func:`video_frame_size` can read: the ISO
+#: base media ones (track header, ``tkhd``) and Flash video (``onMetaData``).
+FRAME_SIZE_EXTENSIONS = DURATION_EXTENSIONS | {".flv"}
+
+
+def video_frame_size(path: Path) -> "Optional[tuple[int, int]]":
+    """``(width, height)`` a video is shown at, or ``None``.
+
+    MP4 / M4V / MOV: the first track whose header (``tkhd``) gives a size,
+    which is the display size (any pixel aspect already applied).  FLV: the
+    ``width`` and ``height`` in its ``onMetaData``.  Pure Python, reading a
+    few header bytes (no ffprobe).  ``None`` for other containers, a file
+    that can't be read, or one that gives no size.
+    """
+    suffix = Path(path).suffix.lower()
+    if suffix == ".flv":
+        return _flv_frame_size(path)
+    if suffix not in DURATION_EXTENSIONS:
+        return None
+    try:
+        with open(path, "rb") as fh:
+            end = os.fstat(fh.fileno()).st_size
+            moov = _find_box(fh, 0, end, b"moov")
+            if moov is None:
+                return None
+            pos, stop = moov
+            while True:
+                trak = _find_box(fh, pos, stop, b"trak")
+                if trak is None:
+                    return None
+                tkhd = _find_box(fh, trak[0], trak[1], b"tkhd")
+                if tkhd is not None:
+                    fh.seek(tkhd[0])
+                    head = fh.read(96)
+                    # Width and height (16.16 fixed point) end the box: after
+                    # 76 bytes in version 0, 88 in version 1 (64-bit times).
+                    at = 88 if head[:1] == b"\x01" else 76
+                    if len(head) >= at + 8:
+                        width, height = struct.unpack(">II", head[at:at + 8])
+                        if width >> 16 and height >> 16:
+                            return width >> 16, height >> 16
+                pos = trak[1]      # an audio track (no size): try the next
+    except (OSError, struct.error):
+        return None
+
+
+def _flv_frame_size(path: Path) -> "Optional[tuple[int, int]]":
+    """``width`` and ``height`` from an ``.flv``'s ``onMetaData`` in its
+    first 2 KB: each an AMF0 name (2-byte length, then the name), marker 0,
+    and an 8-byte big-endian double.  ``None`` when either is missing."""
+    try:
+        with open(path, "rb") as fh:
+            head = fh.read(2048)
+    except OSError:
+        return None
+    if head[:3] != b"FLV":
+        return None
+    size = []
+    for key in (b"\x00\x05width\x00", b"\x00\x06height\x00"):
+        at = head.find(key)
+        if at < 0 or at + len(key) + 8 > len(head):
+            return None
+        (value,) = struct.unpack(">d", head[at + len(key):at + len(key) + 8])
+        if not 0 < value < 100_000:
+            return None
+        size.append(int(round(value)))
+    return size[0], size[1]
+
+
 def swap_retry_attempts(target: Path, pool: Optional[Path] = None) -> int:
     """How many times :func:`swap_video` tries the copy before giving up.
 
