@@ -476,7 +476,7 @@ def test_put_in_finishes_when_its_undo_record_stays_locked(cabinet, monkeypatch)
     result = _run("put-in", stage.name, "--apply")
     assert result.exit_code == 0 and "3 file(s) put in" in result.output
     assert "Warning: Couldn't save the undo record import-" in result.output
-    assert "[WinError 5] Access is denied" in result.output
+    assert "Access is denied" in result.output   # the reason, as the OS words it
     assert "undo won't take out the last 2 file(s)" in result.output
     folder = cabinet.media_dir / "NES" / "Images" / "Wheel"
     assert all((folder / f"{game}.png").is_file() for game in ("Bravo", "Charlie", "Delta"))

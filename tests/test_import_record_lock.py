@@ -169,7 +169,7 @@ def test_a_record_that_stays_locked_still_puts_everything_in_and_says_so(tmp_pat
     assert len(result.imported) == 3
     assert sorted(p.name for p in media.iterdir()) == ["Alpha.png", "Bravo.png", "Charlie.png"]
     assert result.manifest_path.name in result.record_error
-    assert "[WinError 5] Access is denied" in result.record_error
+    assert "Access is denied" in result.record_error   # the reason, as the OS words it
     assert "undo won't take out the last 2 file(s)" in result.record_error
     # The record on disk still has Alpha (as begun), so undo takes it out.
     monkeypatch.undo()
