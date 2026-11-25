@@ -3103,6 +3103,187 @@ def check_mame_key_maps(config: Config) -> Check:
     return parent
 
 
+def _mame_wheel_games(config: Config) -> dict[tuple[Path, str], dict]:
+    """``(folder, exe)`` -> the games the Main Menu's visible wheels launch with that MAME build.
+
+    Follows each wheel's ``Default_Emulator`` and its ``Games.ini`` overrides,
+    as the Coin/Start check does, for ``mame*`` / ``hbmame*`` programs; MESS
+    console wheels are skipped.  Each value has ``exe`` (as RocketLauncher
+    names it), ``emulators`` (in order) and ``games`` (``{lower-case name:
+    (name, [wheels])}``).
+    """
+    from .ledblinky_profiles import MESS_DRIVERS, MESS_PER_GAME_DRIVER
+
+    mm_path = Path(config.hyperspin_dir) / "Databases" / "Main Menu" / "Main Menu.xml"
+    hidden = {w.lower() for w in _hidden_main_menu_wheels(mm_path)}
+    wheels = [w for w in _main_menu_wheels(mm_path) if w.lower() not in hidden]
+    rl = _RomLookup(Path(config.rocketlauncher_dir))
+    mess_systems = {s.lower() for s in (*MESS_DRIVERS, *MESS_PER_GAME_DRIVER)}
+    defaults: dict[str, str] = {}
+    programs: dict[tuple[str, str], Optional[Path]] = {}
+
+    def default_emulator(system: str) -> str:
+        if system not in defaults:
+            found = rl.system(system)
+            defaults[system] = found[2][found[1]].get("default_emulator", "") if found else ""
+        return defaults[system]
+
+    def mame_program(emulator: str, system: str) -> Optional[Path]:
+        key = (emulator.lower(), system.lower())
+        if key not in programs:
+            path = None
+            if emulator and system.lower() not in mess_systems:
+                found = rl.system(system)
+                data = found[2] if found else {}
+                # Like RL, use the local emulator section when present, even if empty.
+                section = data.get(emulator.lower(), rl.global_emus.get(emulator.lower(), {}))
+                raw = next((section[k] for k in _EMU_PATH_KEYS if section.get(k)), "")
+                path = _resolve_rom_path(raw, rl.rl_dir) if raw else None
+                if path is not None and not (path.name.lower().startswith(("mame", "hbmame"))
+                                             and path.parent.is_dir()):
+                    path = None
+            programs[key] = path
+        return programs[key]
+
+    out: dict[tuple[Path, str], dict] = {}
+    for wheel in wheels:
+        overrides = rl.game_overrides(wheel)
+        if mame_program(default_emulator(wheel), wheel) is None and not any(
+                mame_program(emu or default_emulator(other or wheel), other or wheel) is not None
+                for emu, other in overrides.values()):
+            continue  # no game on this wheel launches with MAME
+        games, _ = _wheel_games(wheel, config.databases_dir)
+        for game in games:
+            emu, other = overrides.get(game.lower(), ("", ""))
+            system = other or wheel
+            emulator = emu or default_emulator(system)
+            path = mame_program(emulator, system)
+            if path is None:
+                continue
+            g = out.setdefault((path.parent, path.name.lower()),
+                               {"exe": path.name, "emulators": [], "games": {}})
+            if emulator not in g["emulators"]:
+                g["emulators"].append(emulator)
+            on = g["games"].setdefault(game.lower(), (game, []))[1]
+            if wheel not in on:
+                on.append(wheel)
+    return out
+
+
+def check_mame_driving_keys(config: Config) -> Check:
+    """MAME driving games whose pedals no key presses, or that give one key two jobs.
+
+    A game set up for a steering wheel can keep only the wheel's axis for a
+    pedal in its own cfg, so on a keyboard panel it steers and accelerates
+    but never brakes; the same cfgs can put two inputs on one key.  For the
+    games the Main Menu's visible wheels launch with MAME, whose cfg names a
+    pedal (see :mod:`spindoctor.mame_pedals`):
+
+    * A pedal whose own key is gone while the folder-wide one has a key, or
+      that names only a device MAME no longer finds: WARN.
+    * One key alone on two inputs of different types, among what the game's
+      cfg sets: WARN.
+    * A folder-wide pedal with no key: INFO (real pedals work that way), or
+      a WARN when it names only a lost device.
+
+    Keys a driver gives its own inputs never appear in a cfg, so they aren't
+    covered.  Diagnosis only.
+    """
+    from .mame_pedals import MamePedalKeys, _pedal_order, input_name
+
+    name = "MAME driving keys"
+    if not config.rocketlauncher_dir:
+        return Check(name=name, status=Status.INFO,
+                     detail="rocketlauncher_dir not configured; skipping")
+    groups = _mame_wheel_games(config)
+    if not groups:
+        return Check(name=name, status=Status.INFO,
+                     detail="no MAME games on the Main Menu's wheels")
+
+    parent = Check(name=name, status=Status.OK)
+    checked, with_pedals, bad = 0, 0, 0
+    for (folder, _exe), g in groups.items():
+        reader = MamePedalKeys(folder, g["exe"])
+        checked += len(g["games"])
+        games = [r for r in (reader.game(game) for game, _ in g["games"].values()) if r is not None]
+        if not games:
+            continue
+        wheels: list[str] = []
+        for r in games:
+            wheels.extend(w for w in g["games"][r.game.lower()][1] if w not in wheels)
+        with_pedals += len(games)
+        node = Check(name=" / ".join(g["emulators"]), status=Status.OK)
+        n_games = f"{len(games)} game{'s' if len(games) != 1 else ''}"
+
+        no_key = sorted((r for r in games if r.no_key),
+                        key=lambda r: (not any(b.lost for _, b in r.no_key), r.game.lower()))
+        doubled = sorted((r for r in games if r.two_jobs), key=lambda r: r.game.lower())
+        bad += len({r.game.lower() for r in no_key + doubled})
+        if no_key:
+            listed = ", ".join(r.no_key_text() for r in no_key[:5])
+            more = f", and {len(no_key) - 5} more" if len(no_key) > 5 else ""
+            node.children.append(Check(
+                name="pedals", status=Status.WARN,
+                detail=(f"{len(no_key)} of {n_games} with pedals have a pedal that no key presses "
+                        f"(Pedal 1 is usually the gas, Pedal 2 the brake): {listed}{more}"),
+                fix=reader.pedal_fix(),
+            ))
+        if doubled:
+            listed = ", ".join(r.two_jobs_text() for r in doubled[:5])
+            more = f", and {len(doubled) - 5} more" if len(doubled) > 5 else ""
+            node.children.append(Check(
+                name="keys", status=Status.WARN,
+                detail=(f"{len(doubled)} of {n_games} with pedals give one key two jobs, so one "
+                        f"press does both: {listed}{more}"),
+                fix=reader.two_jobs_fix(),
+            ))
+        for kind in sorted({k for r in games for k in r.as_folder}, key=_pedal_order):
+            wide = reader.folder_binding(kind)
+            if wide.has_key:
+                continue
+            affected = sum(1 for r in games if kind in r.as_folder)
+            n_affected = f"{affected} game{'s' if affected != 1 else ''}"
+            where = wide.source or "MAME's own keys"
+            if wide.lost:
+                node.children.append(Check(
+                    name=where, status=Status.WARN,
+                    detail=(f"{input_name(kind)} is bound to a device MAME no longer finds "
+                            f"({wide.seq}), so {n_affected} with that pedal can't press it"),
+                    fix=f"with MAME closed, bind {input_name(kind)} Inc again in {where}, or in "
+                        "MAME's menu (Tab > Input (general))",
+                ))
+            else:
+                how = wide.seq if wide.why() == "nothing" else f"{wide.why()}: {wide.seq}"
+                node.children.append(Check(
+                    name=where, status=Status.INFO,
+                    detail=(f"{input_name(kind)} has no key ({how}): "
+                            "fine for real pedals, but a keyboard panel can't press it in "
+                            f"{n_affected}, unless a game's driver gives it a key of its own"),
+                ))
+        if node.children:
+            node.detail = f"{n_games} with pedals on {', '.join(wheels)}"
+            node.status = _worst(c.status for c in node.children)
+            parent.children.append(node)
+
+    games_text = f"MAME game{'s' if with_pedals != 1 else ''} with pedals"
+    if not with_pedals:
+        parent.detail = f"{checked} MAME game{'s' if checked != 1 else ''}: none whose cfg sets a pedal"
+    elif bad:
+        parent.detail = (f"{bad} of {with_pedals} MAME games with pedals have a pedal no key "
+                         "presses, or a key with two jobs")
+    elif any(c.status == Status.WARN for c in parent.children):
+        parent.detail = (f"{with_pedals} {games_text}; a folder-wide pedal is bound to a device "
+                         "MAME no longer finds")
+    elif parent.children:
+        parent.detail = (f"{with_pedals} {games_text}; some folder-wide pedals have no key "
+                         "(fine for real pedals)")
+    else:
+        parent.detail = (f"{with_pedals} {games_text}: every pedal has a key and no key does "
+                         "two jobs, as far as their cfgs show")
+    parent.status = _worst(c.status for c in parent.children)
+    return parent
+
+
 @dataclass(frozen=True)
 class _EmuFolderSetting:
     """One emulator config value that names a ROM or save folder.
@@ -4156,6 +4337,7 @@ def run_health_checks(config: Config, fix: bool = False) -> HealthReport:
     _safe("User Functions", lambda: check_user_functions(config))
     _safe("Coin/Start", lambda: check_coin_start(config))
     _safe("MAME key maps", lambda: check_mame_key_maps(config))
+    _safe("MAME driving keys", lambda: check_mame_driving_keys(config))
     _safe("Keymapper hotkeys", lambda: check_keymapper_hotkeys(config))
     _safe("Future Pinball scripting", lambda: check_future_pinball_typelib(config))
     _safe("LEDBlinky", lambda: check_ledblinky(config))

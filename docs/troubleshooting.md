@@ -163,6 +163,7 @@ Task registration is Windows-only and separate from startup wheel refresh.
 | Symptom | Check / action |
 |---|---|
 | Coin/Start fails in one game | Check game-specific device-only binds and effective AHK remap; bind to the key the emulator actually receives. |
+| A MAME driving game won't brake from the panel, or one button does two things in it | Its cfg may keep only a steering wheel's axis for a pedal (increment `NONE`), or put two inputs on one key. `doctor`'s **MAME driving keys** check lists both; set the key in the game's Tab > Input (this Machine). Keys a driver gives its own inputs (often player 2's) never reach a cfg: check that menu too. |
 | Panel stops working while a controller is on | Some emulators read one input source: [panel and controller together](controller-input.md#panel-and-controller-together). |
 | Every game in one MAME loses panel keys | Inspect `default.cfg` for 0-byte/empty maps and a preserved controller/backup map. `doctor` warns about vulnerable old MAME pad codes; repair from a known-good map while closed. |
 | Daphne volume key pauses/quits | A zero key slot in `dapinput.ini` can match unmapped media keys. Assign valid deliberate SDL keys; back up first. |
