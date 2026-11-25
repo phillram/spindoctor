@@ -45,6 +45,7 @@ command-specific; do not delete manifests to silence errors.
 | “Cannot find” `\Databases\<System>\<System>.xml` | RocketLauncher wants that game list even for a system that isn't on the Main Menu: [an empty one is enough](pinball.md#rocketlauncher-says-it-cant-find-the-systems-database). |
 | Visual Pinball X won't start, or ignores its settings file | The stock module is for versions 8 and 9, and 10.8.0 reads an INI beside the program only with `-Ini`: [Visual Pinball X](pinball.md#visual-pinball-x). |
 | Panel buttons move BAM's camera or open its menu in Future Pinball | Its default keys are letters: [change them in `bam.cfg`](pinball.md#future-pinball-with-bam). |
+| A 3DS game stops at a message that it is encrypted | Azahar runs decrypted `.3ds` / `.cci` dumps only, and `.cia` files must be installed: [3DS games](nintendo-3ds.md#games). |
 
 ## Metadata and scraping
 
@@ -171,6 +172,7 @@ Task registration is Windows-only and separate from startup wheel refresh.
 | Every game in one MAME loses panel keys | Inspect `default.cfg` for 0-byte/empty maps and a preserved controller/backup map. `doctor` warns about vulnerable old MAME pad codes; repair from a known-good map while closed. |
 | Daphne volume key pauses/quits | A zero key slot in `dapinput.ini` can match unmapped media keys. Assign valid deliberate SDL keys; back up first. |
 | PS4 pads do nothing in Xbox games | Cxbx-R misses a virtual Xbox pad that appears as it starts: [bind the real pads](xbox.md#ps4-pads). |
+| Panel or pad does nothing in 3DS games | Azahar binds each button to one source, so its profile is the panel or the pad; the module can pick per start: [3DS panel and pads](nintendo-3ds.md#panel-and-pads). |
 | DemulShooter not found | Set its explicit path, verify the installation and run detection. |
 | Gun fails after configure | Check target, per-game ROM requirements, native RL gun settings and duplicate User Functions startup. |
 | Gun audit says partial coverage | Only some games/emulators have recognized direct startup. Indirect scripts may work but are not proof for the inspector. |
@@ -252,6 +254,8 @@ Check internal emulator paths, not only `Rom_Path`.
   while their size still matches: [unpacked games](xbox.md#unpacked-games).
 - **Xbox games crawl:** one full CPU core and an idle GPU point to Cxbx-R's
   [core setting or build](xbox.md#one-cpu-core-is-full-and-the-game-crawls).
+- **An Azahar setting doesn't take:** its `\default` line still says `true`, so Azahar
+  ignores the value: [set both lines](nintendo-3ds.md#a-setting-that-doesnt-take).
 - **Restoring to new drive letters:** preview `backup restore --use-current-paths`.
 
 SpinDoctor cannot universally rewrite third-party emulator internals.

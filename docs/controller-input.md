@@ -64,6 +64,8 @@ One panel button then does two things, or the remapped key does nothing.
 Bind emulators to the intended virtual pad, not a transient physical DS4 device.
 Cxbx-Reloaded is an exception: it misses a virtual pad that appears as it starts,
 so bind its [real pads through SDL](xbox.md#ps4-pads).
+Azahar (Nintendo 3DS) binds each button to one source, so a profile is either the
+panel or the pad; its module can [pick one per start](nintendo-3ds.md#panel-and-pads).
 Dolphin can combine keyboard-encoder and pad inputs, but GameCube keyboard
 bindings need explicit device qualifiers when the selected pad is disconnected.
 Per-game Dolphin profiles can overwrite global controller edits.
