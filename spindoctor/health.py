@@ -1523,6 +1523,257 @@ def check_casual_games(config: Config) -> Check:
     return parent
 
 
+# ─── ScummVM ──────────────────────────────────────────────────────────────────
+#
+# RocketLauncher's ScummVM module (v2.x) starts ``scummvm.exe [-c<list>] <target>``
+# and ScummVM looks the game's folder up under ``[<target>] path=`` in its game
+# list, scummvm.ini.  Every RocketLauncher check passes while that list is
+# missing or still points at an old drive.
+
+_SCUMMVM_MODULE = "scummvm.ahk"
+
+
+@dataclass
+class _ScummGame:
+    """One wheel game as the ScummVM module starts it."""
+    name: str                 # database name
+    target: str               # the [section] looked up in the game list
+    fallback: Optional[Path]  # LaunchMode=ParseIni's <romPath>\<romName>, when that exists
+
+
+def _scummvm_game_list(
+    look: _RomLookup, module: Path, system: str, game: str,
+) -> tuple[Optional[Path], str, Optional[Path]]:
+    """``(file, where, ini)``: the scummvm.ini the ScummVM module reads for
+    *game*, where that comes from (for display), and the module INI that sets
+    ``CustomConfig`` (None when none does).
+
+    ``CustomConfig`` under ``[Settings]`` (:meth:`_RomLookup.module_setting`),
+    relative to the RocketLauncher folder as ``GetFullName`` resolves it; when
+    it is blank, ScummVM's own ``%APPDATA%\\ScummVM\\scummvm.ini``.  *file* is
+    None when that can't be told on this OS (a drive path off Windows, no
+    ``APPDATA``)."""
+    value, ini = look.module_setting(module, system, game, ["Settings"], "CustomConfig")
+    value = value.strip('"').strip()
+    if value:
+        return _resolve_rom_path(value, look.rl_dir), f"CustomConfig={value} in {ini}", ini
+    appdata = os.environ.get("APPDATA", "")
+    where = "no CustomConfig, so the module reads ScummVM's own list in %APPDATA%"
+    return (Path(appdata) / "ScummVM" / "scummvm.ini" if appdata else None), where, None
+
+
+def _wheel_scummvm(system: str, look: _RomLookup, databases_dir: Path, roms_dir: str) -> Optional[Check]:
+    """One wheel's node for :func:`check_scummvm_game_list`; None when none of
+    its games starts through the ScummVM module."""
+    import re
+
+    def scummvm(src: Optional[_RomSource]) -> bool:
+        module = look.module_file(src) if src is not None and not src.stops else None
+        return module is not None and module.name.lower() == _SCUMMVM_MODULE
+
+    overrides = look.game_overrides(system)
+    own = look.source(system)
+    if not scummvm(own) and not any(
+        scummvm(look.source(other, emu) if other and other.lower() != system.lower()
+                else look.source(system, emu) or own)
+        for emu, other in overrides.values()
+    ):
+        return None
+
+    games, raw = _wheel_games(system, databases_dir)
+    # game list -> (file, where, CustomConfig INI, module, emulator folder, games)
+    lists: dict[str, tuple[Optional[Path], str, Optional[Path], Path, Optional[Path], list[_ScummGame]]] = {}
+    unfound = 0
+    for name in games:
+        src, _other = look.game_source(system, name, overrides)
+        if src is None or src.stops:
+            continue  # RL stops before any module runs (the ROM paths check)
+        rl_name = raw.get(name, name)  # RL gets the XML name exactly as written
+        module = look.module_file(src, rl_name)
+        if module is None or module.name.lower() != _SCUMMVM_MODULE or not look.exists(module):
+            continue
+        picked = look.pick(src, rl_name) if src.checkable() else None
+        if picked is not None:
+            rom_dir, rom_name = picked.rom_dir, picked.rom_name
+        elif not src.checkable() or look.skips_rom_check(src.system):
+            # Under Skipchecks RL carries on with romPath set to the whole
+            # Rom_Path, which names a folder only when it holds one.
+            only = [f for _el, f in src.folders]
+            rom_dir, rom_name = (only[0] if len(only) == 1 else None), rl_name
+        else:
+            unfound += 1  # "Cannot find Rom": the ROM paths check reports it
+            continue
+        mode, _ini = look.module_setting(module, src.system, rl_name, [rom_name, "Settings"], "LaunchMode")
+        target, _ini = look.module_setting(module, src.system, rl_name, [rom_name], "TargetName")
+        target = target or rom_name
+        fallback = None
+        if mode.lower() == "parseini":  # the module reads path= itself
+            # ScummVM section names have no spaces or parentheses, so the
+            # module looks up "Some_Game__CD_" for "Some Game (CD)".
+            target = re.sub(r"[ ()]", "_", target)
+            if rom_dir is not None and look.exists(rom_dir / rom_name):
+                fallback = rom_dir / rom_name
+        file, where, ini = _scummvm_game_list(look, module, src.system, rl_name)
+        program = _resolve_rom_path(src.emu_path, look.rl_dir) if src.emu_path else None
+        key = os.path.normcase(str(file)) if file is not None else where
+        lists.setdefault(key, (file, where, ini, module, program.parent if program else None, []))[5].append(
+            _ScummGame(name, target, fallback))
+
+    node = Check(name=system, status=Status.OK)
+    total = sum(len(entry[5]) for entry in lists.values())
+    checked = 0
+    uncheckable = False
+    listed: list[Path] = []  # game lists that are there
+    for file, where, ini, module, emu_dir, items in lists.values():
+        module_ini = ini or module.parent / f"{module.stem}.ini"
+        if file is None:
+            uncheckable = True
+            continue
+        if not look.exists(file):
+            beside = emu_dir / "scummvm.ini" if emu_dir is not None else None
+            if beside is not None and look.exists(beside):
+                try:
+                    rel = os.path.relpath(beside, look.rl_dir)
+                except ValueError:  # another drive
+                    rel = str(beside)
+                step = f"Set CustomConfig={rel} under [Settings] in {module_ini} (the game list beside the emulator)"
+            elif ini is None:
+                step = (f"Set CustomConfig=<your scummvm.ini, relative to the RocketLauncher folder> under "
+                        f"[Settings] in {module_ini}, or start ScummVM once so it writes {file}")
+            else:
+                step = f"Point CustomConfig in {module_ini} at your scummvm.ini (relative to the RocketLauncher folder)"
+            node.children.append(Check(
+                name="Game list", status=Status.WARN,
+                detail=f"{len(items)}/{total} games won't start (\"Cannot find {file}\"): {where}",
+                fix=step,
+            ))
+            continue
+        listed.append(file)
+        try:
+            _read_windows_text(file)
+        except OSError as e:
+            node.children.append(Check(name="Game list", status=Status.INFO, detail=f"{file} unreadable: {e}"))
+            continue
+        data = _read_rl_ini(file)
+        no_section: list[_ScummGame] = []
+        no_folder: list[tuple[_ScummGame, str, Optional[Path]]] = []  # (game, path=, folder)
+        fell_back: list[_ScummGame] = []
+        for g in items:
+            section = data.get(g.target.lower())
+            value = (section or {}).get("path", "")  # ScummVM reads it as written, quotes and all
+            # A relative path= starts from the emulator's folder, where RL runs ScummVM.
+            folder = _setting_folder(value, emu_dir, False) if value else None
+            if value and folder is None:
+                uncheckable = True
+                continue
+            checked += 1
+            if folder is not None and look.exists(folder):
+                continue
+            if g.fallback is not None:
+                fell_back.append(g)
+            elif section is None:
+                no_section.append(g)
+            else:
+                no_folder.append((g, value, folder))
+        if no_section:
+            names = [g.name if g.target == g.name else f"{g.name} [{g.target}]" for g in no_section]
+            node.children.append(Check(
+                name="Targets", status=Status.WARN,
+                detail=(f"{len(no_section)}/{len(items)} games have no section in {file}, so ScummVM "
+                        f"doesn't know where their files are: {_some(names, 5)}"),
+                fix=(f"Add the games in ScummVM (Add Game, with this game list), then name each one's target: "
+                     f"TargetName=<ScummVM target> under [<game>] in {module_ini}"),
+            ))
+        if no_folder:
+            rows = [f"{g.name}: {value or 'no path='}" for g, value, _f in no_folder]
+            example = next((
+                f" (e.g. [{g.target}] path={new})" for g, value, f in no_folder if value and f is not None
+                for new in [_rebased_setting(value, f, roms_dir, False)] if new
+            ), "")
+            node.children.append(Check(
+                name="Game folders", status=Status.WARN,
+                detail=(f"{len(no_folder)}/{len(items)} games won't start: their path= in {file} is "
+                        f"missing or names a folder that doesn't exist: {_some(rows, 3)}"),
+                fix=(f"With ScummVM closed (it rewrites {file.name} when it exits), point path= under each "
+                     f"game's section at its folder{example}"),
+            ))
+        if fell_back:
+            node.children.append(Check(
+                name="ParseIni", status=Status.INFO,
+                detail=(f"{len(fell_back)}/{len(items)} games have no folder at their path= in {file}, so the "
+                        f"module sends their Rom_Path folder instead: {_some([g.name for g in fell_back], 5)}"),
+            ))
+
+    notes = []
+    if checked and not any(c.status == Status.WARN for c in node.children):
+        notes.append(f"{checked} games OK")
+    if len(listed) == 1:
+        notes.append(f"game list: {listed[0]}")
+    if unfound:
+        notes.append(f"{unfound} not found by RocketLauncher (see ROM paths)")
+    if uncheckable:
+        notes.append("some paths use Windows drive letters or %APPDATA%; can't check them on this OS")
+    node.detail = "; ".join(notes)
+    node.status = _worst([c.status for c in node.children])
+    return node
+
+
+def check_scummvm_game_list(config: Config) -> Check:
+    """Will ScummVM find each ScummVM wheel game that RocketLauncher starts?
+
+    RocketLauncher's ScummVM module (``Modules\\ScummVM\\ScummVM.ahk``) reads
+    ScummVM's game list from the module INI's ``[Settings] CustomConfig``
+    (relative to the RocketLauncher folder), or from ScummVM's own
+    ``%APPDATA%\\ScummVM\\scummvm.ini`` when that is blank, and stops every
+    launch with "Cannot find …scummvm.ini" when the file isn't there.  It then
+    starts ScummVM with the game's target: its ``TargetName`` in the module
+    INIs, else its name, which needs a ``[<target>]`` section in that list
+    whose ``path=`` is the game's folder.  After a drive change those paths
+    still name the old drive, and every RocketLauncher check passes.
+
+    For every game on a Main Menu wheel that starts with that module (module
+    INIs read as :meth:`_RomLookup.module_setting` does, ``Games.ini``
+    overrides followed):
+
+    * a missing game list is a WARN naming the file and where its path came
+      from;
+    * a game with no section, or whose ``path=`` is missing or names no
+      folder, is a WARN listing the games.  With ``LaunchMode=ParseIni`` the
+      module reads ``path=`` itself (section name with spaces and parentheses
+      made ``_``) and falls back to ``<Rom_Path>\\<game>``: INFO when that
+      fallback is there.
+
+    Wheels switched off on the Main Menu are capped at INFO.  Diagnosis only:
+    the fix line names the INI and key.
+    """
+    name = "ScummVM game list"
+    if not config.hyperspin_dir or not Path(config.hyperspin_dir).is_dir():
+        return Check(name=name, status=Status.INFO, detail="hyperspin_dir not configured; skipping")
+    if not config.rocketlauncher_dir:
+        return Check(name=name, status=Status.INFO, detail="rocketlauncher_dir not configured; skipping")
+
+    from .rocketlauncher import SKIP_GENERATE_CONFIG
+
+    mm_path = Path(config.hyperspin_dir) / "Databases" / "Main Menu" / "Main Menu.xml"
+    look = _RomLookup(Path(config.rocketlauncher_dir))
+    hidden = _hidden_main_menu_wheels(mm_path)
+    parent = Check(name=name, status=Status.OK)
+    for system in _main_menu_wheels(mm_path):
+        if system in SKIP_GENERATE_CONFIG:
+            continue
+        node = _wheel_scummvm(system, look, config.databases_dir, config.roms_dir)
+        if node is None:
+            continue
+        if system in hidden:
+            node.name = f"{system} (hidden on the Main Menu)"
+            _cap_at_info(node)
+        parent.children.append(node)
+    if not parent.children:
+        return Check(name=name, status=Status.INFO, detail="no wheels start games with the ScummVM module")
+    parent.status = _worst(c.status for c in parent.children)
+    return parent
+
+
 # The "games are in a subfolder" hint only looks at Rom_Path folders with at
 # most this many subfolders (roms\, MultiDisc\, _Gun Games\ and the like).
 _SUBFOLDER_HINT_MAX = 50
@@ -5124,6 +5375,7 @@ def run_health_checks(config: Config, fix: bool = False) -> HealthReport:
     _safe("Match cache", lambda: check_match_cache(config, fix, report.fixes_applied))
     _safe("Global Emulators.ini", lambda: check_global_emulators(config, fix, report.fixes_applied))
     _safe("RocketLauncher settings", lambda: check_rocketlauncher_settings(config))
+    _safe("ScummVM game list", lambda: check_scummvm_game_list(config))
     _safe("Lightguns", lambda: check_lightguns(config))
     _safe("Emulator ROM folders", lambda: check_emulator_rom_paths(config))
     _safe("Daphne keys", lambda: check_daphne_keys(config))

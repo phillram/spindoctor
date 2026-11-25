@@ -124,7 +124,7 @@ These are manual integration checks, not promises that migration rewrites them.
 | ALG Singe | `SingePathUpdate`/`ForcePathUpdate` can perform a one-time path rewrite; inspect both loaded scripts and their `dofile` dependencies, then disable forced rewriting. Preserve writable game configs/high scores. |
 | Dolphin | Use a module compatible with the installed wx/Qt generation. Verify actual window title/class, fullscreen and focus. RVZ is already compressed and must be permitted in effective `Rom_Extension`. |
 | Phoenix Jaguar | The configured XML library's `<Dump>` paths and cartridge selection can remain stale even when RocketLauncher passes the new ROM path. BIOS paths are separate. |
-| ScummVM | Per-game paths inside `scummvm.ini` survive a ROM drive change; update deliberately. |
+| ScummVM | The module reads `scummvm.ini` from `CustomConfig` (module INI, relative to the RocketLauncher folder), else from `%APPDATA%\ScummVM\`; a list kept beside the exe (a portable setup) is read only through `CustomConfig`. Per-game `path=` values inside it survive a ROM drive change; update deliberately. `doctor` checks both. |
 | Virtual-drive systems | Reinstall the correct drive type and update `Virtual_Drive_Path`/drive letter; changing the ROM root alone is insufficient. |
 | Other emulators | Inspect internal ROM/save paths, module INIs, framefiles and per-game overrides after a move. |
 
