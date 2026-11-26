@@ -53,7 +53,7 @@ command-specific; do not delete manifests to silence errors.
 | A 3DS game stops at a message that it is encrypted | Azahar runs decrypted `.3ds` / `.cci` dumps only, and `.cia` files must be installed: [3DS games](nintendo-3ds.md#games). |
 | DS saves are gone after moving from DeSmuME to melonDS | DeSmuME's `.dsv` adds a footer, and melonDS reads `<name>.sav` from its own save folder: [convert them](nintendo-ds.md#saves-from-desmume). |
 | Disc games (Saturn, Neo Geo CD, PC-FX, …) start without their own disc, and DAEMON Tools says “Close all running applications which may use your virtual drive” | An emulator was closed by force while it read the mounted disc, and DAEMON Tools Lite now refuses every mount and unmount, though no program shows a handle on the drive. Restart its “Disc Soft Lite Bus Service” as administrator. That frees the disc but also removes the virtual drive, so add it back (`DTCommandLine.exe --add --type "dt"`) and check its letter (`--get_letter --type "dt" --number 0`): RocketLauncher mounts on SCSI drive 0, else DT drive 0. Close emulators with the exit key, not by ending the process, while a disc is mounted. |
-| The screen freezes when a game starts, and only turning the PC off gets out of it | RocketLauncher waits for the game's script with no time limit, so an error box behind the frontend, or a game that can't start, can leave it waiting: [the cabinet freezes when a game starts](#the-cabinet-freezes-when-a-game-starts-rocketlauncher). |
+| The screen freezes when a game starts, and only turning the PC off gets out of it | RocketLauncher waits for the game's script with no time limit, so an AutoHotkey or Windows error box behind the frontend can leave it waiting: [the cabinet freezes when a game starts](#the-cabinet-freezes-when-a-game-starts-rocketlauncher). |
 
 ### The cabinet freezes when a game starts (RocketLauncher)
 
@@ -63,8 +63,8 @@ key-remap profile from `Profiles\AHK`, added word for word. The profile is the f
 of `<System>\<game>.ahk`, `<System>\<emulator>.ahk`, `<System>.ahk` and
 `_Default.ahk` that exists. RocketLauncher runs the script in its own `AutoHotkey.dll`
 (AutoHotkey_H 1.1.13) with `ahktextdll`, then waits for it with no time limit, so
-whatever stops the script stops the cabinet. Before turning the PC off, try Alt+Tab
-to bring a hidden box to the front. Then check these:
+whatever stops the script stops the cabinet. Before turning the PC off, press Alt+Tab:
+it can show a box hidden behind the frontend. Then check these:
 
 - **An AutoHotkey load error.** One bad line anywhere in the built script, such as
   the same hotkey twice in a profile (“Duplicate hotkey”) or a line this old
@@ -74,18 +74,25 @@ to bring a hidden box to the front. Then check these:
   game that uses it; one in a profile, the games that load that profile. `doctor`'s
   **Keymapper hotkeys** check reads the same profiles for hotkeys that RocketLauncher's
   menu keys switch off.
+- **An AutoHotkey runtime error.** An error while the script runs (its box ends
+  “The current thread will exit”) stops the module, but the script stays loaded for
+  its hotkeys and timers, so RocketLauncher keeps waiting. This box opens behind the
+  frontend too. One of these is “Failed attempt to launch program or document” from
+  PCLauncher: RocketLauncher's `Process.Run()` starts the program by its bare file
+  name inside the start folder, without `UseErrorLevel`, so a `WorkingFolder` that
+  doesn't hold the program fails this way. Set `WorkingFolder` to the program's own
+  folder, or leave it out to get that folder.
 - **A game that can't start.** A program that needs a DLL that isn't there ends at
-  once with exit code `0xC0000135`. Started from Windows, it shows “System Error …
-  was not found”, and Windows logs that box in the System log as event 26 from
-  “Application Popup”. Under RocketLauncher no box appears: AutoHotkey runs with
-  `SEM_FAILCRITICALERRORS`, and the programs it starts inherit that. A module that
-  then waits for the program's window gives up with RocketLauncher's full-screen
-  error screen (`ScriptError` in `Lib\Shared.ahk`). That screen ends by calling
-  `ExitModule()`, and RocketLauncher's own comment there warns that this has a small
-  chance of looping back into `ScriptError` forever. That would fit a cabinet that
-  froze on a game with a missing DLL, but the loop is read from the code and hasn't
-  been caught on a cabinet. To find the missing file, start the game's program from
-  Windows once, or list the boxes Windows logged:
+  once with exit code `0xC0000135`, and Windows shows “System Error … was not found”,
+  also when RocketLauncher started it. On a cabinet that box can sit behind the
+  frontend. Windows logs each such box in the System log as event 26 from
+  “Application Popup”. When a module gives up waiting for a program's window, it
+  shows RocketLauncher's own full-screen error screen (`ScriptError` in
+  `Lib\Shared.ahk`), which ends by calling `ExitModule()`. RocketLauncher's own
+  comment there warns that this has a small chance of looping back into
+  `ScriptError`; that is read from the code, not seen on a cabinet. To find the
+  missing file, start the game's program from Windows once, or list the boxes
+  Windows logged:
 
   ```powershell
   Get-WinEvent -LogName System -FilterXPath "*[System[Provider[@Name='Application Popup'] and (EventID=26)]]" -MaxEvents 20 |
