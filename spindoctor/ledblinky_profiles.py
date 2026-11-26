@@ -459,6 +459,107 @@ def desmume_keymap(folder: Path) -> Optional[Keymap]:
     return km
 
 
+# melonDS 1.x keeps its binds in melonDS.toml as Qt key codes: letters and
+# digits are their ASCII capitals, other keys 0x010000xx.  melonDS adds the
+# modifiers held while binding and Qt's keypad flag, and sets bit 31 for a
+# right-hand Shift / Control / Alt.
+_QT_KEYS = {
+    0x01000000: "ESC", 0x01000001: "TAB", 0x01000003: "BACKSPACE", 0x01000004: "ENTER",
+    0x01000005: "ENTERPAD", 0x01000006: "INSERT", 0x01000007: "DEL",
+    0x01000010: "HOME", 0x01000011: "END", 0x01000012: "LEFT", 0x01000013: "UP",
+    0x01000014: "RIGHT", 0x01000015: "DOWN", 0x01000016: "PGUP", 0x01000017: "PGDN",
+    0x01000020: "LSHIFT", 0x01000021: "LCONTROL", 0x01000023: "LALT",
+    0x20: "SPACE", 0x2C: "COMMA", 0x2D: "MINUS", 0x2E: "STOP", 0x2F: "SLASH", 0x3D: "EQUALS",
+}
+_QT_KEYPAD_KEYS = {**{0x30 + d: f"{d}PAD" for d in range(10)}, 0x01000005: "ENTERPAD",
+                   0x2B: "PLUSPAD", 0x2D: "MINUSPAD", 0x2A: "ASTERISK", 0x2F: "SLASHPAD"}
+_QT_RIGHT = {"LSHIFT": "RSHIFT", "LCONTROL": "RCONTROL", "LALT": "RALT"}
+_QT_RIGHT_BIT = 0x80000000
+_QT_CHORD = 0x1E000000      # Shift / Control / Alt / Meta held with the key
+_QT_KEYPAD = 0x20000000
+_QT_GROUP_SWITCH = 0x40000000
+
+
+def key_from_qt(code: int) -> Optional[str]:
+    """A Qt key code as melonDS saves it -> key code; None if unbound (-1) or a chord."""
+    if code == -1:
+        return None
+    code &= 0xFFFFFFFF
+    right = bool(code & _QT_RIGHT_BIT)
+    code &= ~(_QT_RIGHT_BIT | _QT_GROUP_SWITCH)
+    if code & _QT_CHORD:
+        return None     # one panel button can't press it
+    if code & _QT_KEYPAD:
+        name = _QT_KEYPAD_KEYS.get(code & ~_QT_KEYPAD)
+        return _kc(name) if name else None
+    if 0x41 <= code <= 0x5A or 0x30 <= code <= 0x39:
+        return _kc(chr(code))
+    if 0x01000030 <= code <= 0x0100003B:
+        return _kc(f"F{code - 0x0100002F}")
+    name = _QT_KEYS.get(code)
+    if name and right:
+        name = _QT_RIGHT.get(name, name)
+    return _kc(name) if name else None
+
+
+_TOML_TABLE_RE = re.compile(r"\[\s*([A-Za-z0-9_\-]+(?:\s*\.\s*[A-Za-z0-9_\-]+)*)\s*\]\s*(?:#.*)?$")
+_TOML_KEY_RE = re.compile(r"([A-Za-z0-9_\-]+(?:\s*\.\s*[A-Za-z0-9_\-]+)*)\s*=\s*(.*)$")
+
+
+def _toml_table(path: Path, table: str) -> dict[str, str]:
+    """``key -> raw value`` for one TOML table (Python 3.8 has no ``tomllib``).
+
+    Enough TOML for the files melonDS writes: ``[a.b]`` headers, bare and
+    dotted keys in any order, comments.  Names match exactly, as melonDS reads
+    them.  A ``[[array]]`` header ends the table.  The lines of a multi-line
+    list of strings (melonDS's recent games) start with a quote, so they never
+    read as keys.
+    """
+    want = [p.strip() for p in table.split(".")]
+    out: dict[str, str] = {}
+    cur: Optional[list[str]] = []
+    for line in _read_text(path).splitlines():
+        s = line.strip()
+        if s.startswith("[["):
+            cur = None
+            continue
+        m = _TOML_TABLE_RE.match(s)
+        if m:
+            cur = [p.strip() for p in m.group(1).split(".")]
+            continue
+        m = _TOML_KEY_RE.match(s)
+        if m and cur is not None:
+            parts = [p.strip() for p in m.group(1).split(".")]
+            if cur + parts[:-1] == want:
+                out[parts[-1]] = m.group(2).strip()
+    return out
+
+
+#: melonDS's DS buttons, then the hotkeys a game can need (blowing into the
+#: microphone, closing the lid); unbound ones light nothing.
+_MELONDS_LABELS = {
+    "Y": "Button Y", "X": "Button X", "L": "L Button", "B": "Button B",
+    "A": "Button A", "R": "R Button", "Start": "Start", "Select": "Select",
+    "HK_Mic": "Microphone", "HK_Lid": "Lid"}
+
+
+def melonds_keymap(folder: Path) -> Optional[Keymap]:
+    """melonDS 1.x: the first instance's keyboard binds in ``melonDS.toml``."""
+    toml = _ci_file(folder, "melonDS.toml")
+    if toml is None:
+        return None
+    binds = _toml_table(toml, "Instance0.Keyboard")
+    if not binds:
+        return None
+    km = Keymap(source="melonDS melonDS.toml", labels=dict(_MELONDS_LABELS))
+    for act in km.labels:
+        m = re.match(r"[+-]?\d+(?![\d.xXoObBeE_])", binds.get(act, ""))
+        k = key_from_qt(int(m.group(0))) if m else None
+        if k:
+            km.keys[(1, act)] = [k]
+    return km
+
+
 _SSF_ORDER = ("UP", "DOWN", "LEFT", "RIGHT", "A", "B", "C", "X", "Y", "Z", "L", "R", "Start")
 
 
@@ -811,7 +912,8 @@ class KeymapResolver:
             return km
         if game:
             return None
-        readers = {"desmume": desmume_keymap, "ssf.exe": ssf_keymap, "zinc.exe": zinc_keymap,
+        readers = {"desmume": desmume_keymap, "melonds": melonds_keymap,
+                   "ssf.exe": ssf_keymap, "zinc.exe": zinc_keymap,
                    "demul.exe": demul_keymap, "daphne.exe": daphne_keymap,
                    "pokemini.exe": pokemini_keymap}
         for prefix, reader in readers.items():
