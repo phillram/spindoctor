@@ -70,6 +70,8 @@ melonDS (Nintendo DS) reads the panel and one pad at the same time, but binds th
 SDL's raw joystick numbers: [DS panel and pad](nintendo-ds.md#panel-and-pad).
 PCSX2 2.x (PlayStation 2) reads a keyboard encoder only while its game window has the
 focus, though its SDL pads work in the background: [PS2 panel and pads](playstation-2.md#panel-and-pads).
+BigPEmu (Atari Jaguar) binds a pad by its DirectInput instance GUID and can put the
+Jaguar's keypad behind a held button: [Jaguar panel and pads](atari-jaguar.md#panel-and-pads).
 Dolphin can combine keyboard-encoder and pad inputs, but GameCube keyboard
 bindings need explicit device qualifiers when the selected pad is disconnected.
 Per-game Dolphin profiles can overwrite global controller edits.
