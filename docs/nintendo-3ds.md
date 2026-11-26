@@ -136,3 +136,117 @@ window (an error box instead), close the process.
     (`7z_Games_to_Keep`; see [unpacked games](xbox.md#unpacked-games)).
 
   A kept game starts in seconds. A whole wheel of about 160 games took about 190 GB.
+
+## Miis
+
+Games that let the player pick a Mii, such as Mario Kart 7, Tomodachi Life and Miitopia,
+read the console's Mii list. Games that draw Miis themselves, such as Miitopia, also need
+the console's Mii face data. A new Azahar install has neither: its Mii list is empty, and
+it has only a stand-in for the face data.
+
+### An empty Mii list
+
+The Mii list is Mii Maker's database, `CFL_DB.dat`. In a portable Azahar it is:
+
+```text
+user\nand\data\00000000000000000000000000000000\extdata\00048000\F000000B\user\CFL_DB.dat
+```
+
+A new install's list holds no Miis, so a game's Mii picker shows none. Shared Mii QR codes
+can fill it. The data formats are on 3DBrew's [Mii](https://www.3dbrew.org/wiki/Mii) and
+[Mii Maker](https://www.3dbrew.org/wiki/Mii_Maker) pages; the steps, checked with Azahar
+2127.0:
+
+1. **Read each QR code as bytes, not text.** A 3DS Mii code holds 0x70 bytes: an 8-byte
+   nonce, 0x58 bytes encrypted with AES-CCM, and a 16-byte tag. A QR reader can miss the
+   small codes in a gallery picture until the picture is scaled up.
+2. **Decrypt it** with the AES key Mii Maker uses for its QR codes (open source Mii QR
+   tools carry it): AES-CCM, with the nonce plus 4 zero bytes and the 16-byte tag. Drop
+   any code whose tag doesn't match. The Mii is 0x60 bytes: the first 12 decrypted bytes,
+   then the 8-byte nonce, then the rest. Its last 2 bytes are a CRC16/XMODEM of the 0x5E
+   bytes before them, big-endian: drop any Mii whose CRC is wrong.
+3. **Copy its first 0x5C bytes into a free slot.** The list has 100 slots of 0x5C bytes,
+   starting at offset 0x8. A slot holds a Mii when its Mii ID (the 4 bytes at slot +
+   0xC) isn't 0. That is how Azahar's own Mii picker counts them, so fill only slots
+   whose ID is 0.
+4. **Set its place in Mii Maker's list:** byte 2 of the slot, with the place on the page
+   (0 to 9) in the high 4 bits and the page in the low 4 bits.
+5. **Update the file's checksum:** a CRC16/XMODEM of bytes 0x0 to 0xC81D, stored big-endian
+   at 0xC81E. Leave every other byte as it was.
+
+Close Azahar and back the file up first. A Mii's name is 10 UTF-16 characters at slot +
+0x1A, if you want to give one a name players can read. Shared galleries also hold Miis you
+may not want on a cabinet, so look at them before you add them.
+
+### Mii heads show a red no-entry sign
+
+In a game that draws Miis itself, such as Miitopia, every Mii's head is a red "no entry"
+sign. Azahar's log, `user\log\azahar_log.txt`, says:
+
+```text
+Service.FS <Warning> core\file_sys\archive_ncch.cpp:FileSys::NCCHArchive::OpenFile:179: Mii data file missing. Loading open source replacement from memory
+```
+
+The console's Mii face data isn't installed. It is the shared data title
+`0004009B00010202`, which holds `CFL_Res.dat`. Without it Azahar uses an open source
+stand-in, and Miitopia draws no faces with that.
+
+Get the title from your own 3DS, in one of two ways:
+
+- **Azahar's Artic Setup Tool:** run it on the 3DS, then in Azahar choose
+  **File > Set Up System Files...** and the Old 3DS setup. It installs `CFL_Res.dat` with
+  the other system files Azahar uses. It also installs data unique to that console, so
+  don't share your `user` or `nand` folder afterwards (Azahar's own warning).
+- **GodMode9:** dump the console's own copy of title `0004009B00010202` as a decrypted
+  CIA, then install it in Azahar with **File > Install CIA...**.
+
+Then start the game again: the faces show, and the "Mii data file missing" line is gone
+from the log.
+
+### Old Citra dumps are ignored
+
+A `user` folder from an older Citra setup can hold the face data as a loose RomFS file,
+`nand\00000000000000000000000000000000\title\0004009b\00010202\content\00000000.app.romfs`,
+with no `00000000.app` beside it. Copied into Azahar 2127, it changes nothing: the heads
+stay red and the log still says "Mii data file missing". The log can also say
+`Loaded NCCH ...00000000.app is tainted` for that folder; that doesn't mean the file was
+used.
+
+Azahar reads a `.romfs` file only as an override of a real `00000000.app` beside it. In
+`NCCHArchive::OpenFile`, `GetTitleContent` gives back an empty file when there is no
+`00000000.app`, so `NCCHContainer::Load` fails, and `ReadRomFS` returns before it looks
+for the override. Azahar then uses its stand-in.
+
+Set the title up again from the console (above), or wrap the same RomFS in a decrypted
+NCCH and save it as `00000000.app` in that `content` folder. The `.romfs` file isn't
+needed beside it. The layout, copied from a real decrypted 3DS file (numbers
+little-endian):
+
+| Offset | Value |
+|---|---|
+| 0x100 | `NCCH` |
+| 0x104 | Content size in 0x200-byte units. It must not equal the size in bytes, or Azahar reads the file as a prototype. |
+| 0x108, 0x118 | Partition ID and program ID, both `0004009B00010202` |
+| 0x110, 0x112 | Maker code `00`, NCCH version 2 |
+| 0x180, 0x1A4 | 0: no extended header and no ExeFS, as in any system data title |
+| 0x18C to 0x18F | Platform 1, content type 1 (data), unit size 0, flags 4 (NoCrypto). Azahar refuses an encrypted NCCH, and the NoRomFS flag (2) hides the data. |
+| 0x1B0, 0x1B4 | RomFS offset (8, so 0x1000) and size, in 0x200-byte units |
+| 0x1B8, 0x1E0 | Size of the RomFS hash region (the IVFC header and master hash, rounded up to 0x200) and its SHA-256 |
+| 0x1000 | The RomFS |
+
+The RomFS is laid out as in real files:
+
+- **IVFC header:** `IVFC`, then 0x10000, the master hash size, and three levels (each a
+  logical offset and a size of 8 bytes, then 12, the block size as a power of 2, and 4
+  zero bytes). Logical offsets: level 1 at 0, levels 2 and 3 each after the one before,
+  rounded up to 0x1000. Then 0x5C at 0x54.
+- **Master hash** at 0x60.
+- **Level 3**, the `.romfs` file as it is, at 0x1000; then level 1, then level 2, each
+  starting on a 0x1000 boundary.
+- **Hashes:** level 2 holds a SHA-256 of each 0x1000-byte block of level 3, level 1 one
+  of each block of level 2, and the master hash one of each block of level 1.
+
+Azahar doesn't follow the IVFC levels: it reads the data from the RomFS offset × 0x200 +
+0x1000. So level 3 has to start 0x1000 into the RomFS. Before copying the file in, check
+that the bytes from that point on are the `.romfs` file, byte for byte, and that its file
+table names `CFL_Res.dat`. Then start a game and check the log as above.

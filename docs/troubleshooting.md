@@ -55,6 +55,8 @@ command-specific; do not delete manifests to silence errors.
 | PS2 games on PCSX2 2.x come up small in the middle of the bezel, or RocketLauncher's PCSX2 module waits and errors | The stock module is for PCSX2 1.x, and 2.x's main window is there from the start, only hidden: [wait for the game's window](playstation-2.md#starting-games-from-rocketlauncher). A `.gz` game's first start also builds its index before the window appears. |
 | Atari Jaguar games on BigPEmu open in a small window, or full screen over the bezel | RocketLauncher has no BigPEmu module, and BigPEmu applies a display mode set with `-setcfgprop` only after its window opens: [give the window its place and size](atari-jaguar.md#starting-games-from-rocketlauncher) on the command line. |
 | A Naomi game on Flycast stops with "Cannot open" a ROM, BIOS or `.chd`, though it ran on Demul | Flycast knows sets by their name in a recent MAME and checks every file: sets dumped for older Demul builds, and GD-ROM discs not in a folder named after the set, don't load: [Naomi and Atomiswave sets](sega-dreamcast-naomi.md#naomi-and-atomiswave-sets). |
+| 3DS games on Azahar have no Miis to pick from | A new install's Mii list, `CFL_DB.dat`, is empty: [fill it from shared Mii QR codes](nintendo-3ds.md#an-empty-mii-list). |
+| Miis in a 3DS game (Miitopia) have a red "no entry" sign for a head, and Azahar's log says "Mii data file missing" | The console's Mii face data, system title `0004009B00010202`, isn't installed, and an old Citra `00000000.app.romfs` dump alone is ignored: [Mii face data](nintendo-3ds.md#mii-heads-show-a-red-no-entry-sign). |
 | Disc games (Saturn, Neo Geo CD, PC-FX, …) start without their own disc, and DAEMON Tools says “Close all running applications which may use your virtual drive” | An emulator was closed by force while it read the mounted disc, and DAEMON Tools Lite now refuses every mount and unmount, though no program shows a handle on the drive. Restart its “Disc Soft Lite Bus Service” as administrator. That frees the disc but also removes the virtual drive, so add it back (`DTCommandLine.exe --add --type "dt"`) and check its letter (`--get_letter --type "dt" --number 0`): RocketLauncher mounts on SCSI drive 0, else DT drive 0. Close emulators with the exit key, not by ending the process, while a disc is mounted. |
 | The screen freezes when a game starts, and only turning the PC off gets out of it | RocketLauncher waits for the game's script with no time limit, so an AutoHotkey or Windows error box behind the frontend can leave it waiting: [the cabinet freezes when a game starts](#the-cabinet-freezes-when-a-game-starts-rocketlauncher). |
 
@@ -410,6 +412,9 @@ Check internal emulator paths, not only `Rom_Path`.
   gone or a multi-disc game can't reach its next disc:** Flycast names each game's VMU by
   its product number, and changes discs only from its own menu: [moving to Flycast](sega-dreamcast-naomi.md#moving-from-nulldc-demul-and-redream),
   [multi-disc games](sega-dreamcast-naomi.md#multi-disc-games).
+- **After moving 3DS games from Citra to Azahar, Mii heads show a red "no entry" sign:**
+  Azahar 2127 ignores an old `00000000.app.romfs` system dump with no `00000000.app`
+  beside it: [old Citra dumps](nintendo-3ds.md#old-citra-dumps-are-ignored).
 - **After moving to a newer RetroArch, panel buttons slow the game or start netplay,
   a game-name popup shows at every start, the picture sits off-centre, or saves
   seem gone:** the config came from the older version, and newer versions sort
