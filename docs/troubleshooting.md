@@ -54,6 +54,7 @@ command-specific; do not delete manifests to silence errors.
 | DS saves are gone after moving from DeSmuME to melonDS | DeSmuME's `.dsv` adds a footer, and melonDS reads `<name>.sav` from its own save folder: [convert them](nintendo-ds.md#saves-from-desmume). |
 | PS2 games on PCSX2 2.x come up small in the middle of the bezel, or RocketLauncher's PCSX2 module waits and errors | The stock module is for PCSX2 1.x, and 2.x's main window is there from the start, only hidden: [wait for the game's window](playstation-2.md#starting-games-from-rocketlauncher). A `.gz` game's first start also builds its index before the window appears. |
 | Atari Jaguar games on BigPEmu open in a small window, or full screen over the bezel | RocketLauncher has no BigPEmu module, and BigPEmu applies a display mode set with `-setcfgprop` only after its window opens: [give the window its place and size](atari-jaguar.md#starting-games-from-rocketlauncher) on the command line. |
+| A Naomi game on Flycast stops with "Cannot open" a ROM, BIOS or `.chd`, though it ran on Demul | Flycast knows sets by their name in a recent MAME and checks every file: sets dumped for older Demul builds, and GD-ROM discs not in a folder named after the set, don't load: [Naomi and Atomiswave sets](sega-dreamcast-naomi.md#naomi-and-atomiswave-sets). |
 | Disc games (Saturn, Neo Geo CD, PC-FX, …) start without their own disc, and DAEMON Tools says “Close all running applications which may use your virtual drive” | An emulator was closed by force while it read the mounted disc, and DAEMON Tools Lite now refuses every mount and unmount, though no program shows a handle on the drive. Restart its “Disc Soft Lite Bus Service” as administrator. That frees the disc but also removes the virtual drive, so add it back (`DTCommandLine.exe --add --type "dt"`) and check its letter (`--get_letter --type "dt" --number 0`): RocketLauncher mounts on SCSI drive 0, else DT drive 0. Close emulators with the exit key, not by ending the process, while a disc is mounted. |
 | The screen freezes when a game starts, and only turning the PC off gets out of it | RocketLauncher waits for the game's script with no time limit, so an AutoHotkey or Windows error box behind the frontend can leave it waiting: [the cabinet freezes when a game starts](#the-cabinet-freezes-when-a-game-starts-rocketlauncher). |
 
@@ -262,6 +263,7 @@ Task registration is Windows-only and separate from startup wheel refresh.
 | PS4 pad does nothing in DS games (melonDS) | melonDS binds the pad by SDL's raw joystick numbers, with the D-pad as buttons: [DS panel and pad](nintendo-ds.md#panel-and-pad). |
 | Panel does nothing in PS2 games on PCSX2 2.x, but the PS4 pad works | PCSX2 2.x reads keys only while its game window has the keyboard, and after a start from a frontend the focus can drop to no window: [keep the focus on it](playstation-2.md#panel-and-pads). |
 | Coin or start buttons do odd things in Jaguar games on BigPEmu (press a game button, open a chat box), or a PS4 pad stops working after re-pairing | BigPEmu's default keys are letters a keyboard encoder sends for other buttons, and it binds pads by DirectInput instance GUID: [Jaguar panel and pads](atari-jaguar.md#panel-and-pads). |
+| Panel buttons do odd things in Flycast (open its menu, fast-forward), player 2's controls do nothing, or fighting games feel slow on the stick | Flycast's default keys clash with a keyboard encoder, the keyboard drives one port unless it is set to all ports, and keys move the analog stick over about 0.1 s: [Flycast panel and pads](sega-dreamcast-naomi.md#panel-and-pads). |
 | Saturn keys are right in most games but wrong in a few, or an SSF setting doesn't take for one game | SSF keeps each game's settings, keys included, in its own file once the game has run, and uses it over `SSF.ini`: [SSF per-game settings](cabinet-architecture-reference.md#ssf-per-game-settings). |
 | Panel or pad does nothing in Amiga CD32 games (WinUAE) | WinUAE 3.x drops every custom input bind in a config RocketLauncher loads as it starts it, so the ports fall back to a mouse and the numeric keypad: [Amiga CD32 controls](#amiga-cd32-controls-do-nothing-winuae). |
 | DemulShooter not found | Set its explicit path, verify the installation and run detection. |
@@ -399,6 +401,10 @@ Check internal emulator paths, not only `Rom_Path`.
 - **After moving Atari Jaguar games from Phoenix to BigPEmu, keys and save states don't
   carry over:** BigPEmu has its own settings file and needs no game library or BIOS;
   Phoenix's save states don't load: [moving from Phoenix](atari-jaguar.md#moving-from-phoenix).
+- **After moving Dreamcast games from NullDC, Demul or Redream to Flycast, saves seem
+  gone or a multi-disc game can't reach its next disc:** Flycast names each game's VMU by
+  its product number, and changes discs only from its own menu: [moving to Flycast](sega-dreamcast-naomi.md#moving-from-nulldc-demul-and-redream),
+  [multi-disc games](sega-dreamcast-naomi.md#multi-disc-games).
 - **After moving to a newer RetroArch, panel buttons slow the game or start netplay,
   a game-name popup shows at every start, the picture sits off-centre, or saves
   seem gone:** the config came from the older version, and newer versions sort
