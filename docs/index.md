@@ -19,6 +19,7 @@ CLI examples use `spindoctor` (pip); Windows binaries use `spindoctor-cli`.
 | Run Xbox games | [Cxbx-Reloaded](xbox.md) |
 | Run Nintendo 3DS games | [Azahar](nintendo-3ds.md) |
 | Run Nintendo DS and DSi games | [melonDS](nintendo-ds.md) |
+| Run PlayStation 2 games | [PCSX2 2.x](playstation-2.md) |
 | Configure guns or controllers | [Light guns](lightgun.md), [DS4Windows example](controller-input.md) |
 | Start pinball programs | [Future Pinball and Visual Pinball X](pinball.md) |
 | Show Vectrex games' colour overlays | [Vectrex overlays in MESS](vectrex-overlays.md) |

@@ -68,6 +68,8 @@ Azahar (Nintendo 3DS) binds each button to one source, so a profile is either th
 panel or the pad; its module can [pick one per start](nintendo-3ds.md#panel-and-pads).
 melonDS (Nintendo DS) reads the panel and one pad at the same time, but binds the pad by
 SDL's raw joystick numbers: [DS panel and pad](nintendo-ds.md#panel-and-pad).
+PCSX2 2.x (PlayStation 2) reads a keyboard encoder only while its game window has the
+focus, though its SDL pads work in the background: [PS2 panel and pads](playstation-2.md#panel-and-pads).
 Dolphin can combine keyboard-encoder and pad inputs, but GameCube keyboard
 bindings need explicit device qualifiers when the selected pad is disconnected.
 Per-game Dolphin profiles can overwrite global controller edits.
