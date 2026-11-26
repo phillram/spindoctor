@@ -141,6 +141,37 @@ def test_recursive_scan_junk_file_deprioritised_when_main_exe_present(
     )
 
 
+@pytest.mark.parametrize("junk, game", [
+    # Inno Setup leaves its uninstaller at the top of the install, above a
+    # game that keeps its program in a subfolder.
+    ("unins000.exe", "bin/Sky Raider.exe"),
+    ("uninst.exe", "Sky Raider.exe"),
+    # Unity puts its crash handler beside the game's program.
+    ("UnityCrashHandler64.exe", "Wyvern Wings.exe"),
+])
+def test_recursive_scan_skips_uninstallers_and_crash_handlers(isolated_config, tmp_path, junk, game):
+    roms_dir = tmp_path / "roms"
+    game_dir = roms_dir / "PC Games" / "Sky Raider"
+    (game_dir / game).parent.mkdir(parents=True, exist_ok=True)
+    (game_dir / game).touch()
+    (game_dir / junk).touch()
+    _save_overrides({
+        "PC Games": {"rom_extensions": [".exe"], "recursive_scan": True, "title_strategy": "smart"}
+    })
+    [found] = scan_roms("PC Games", roms_dir).values()
+    assert found.path == game_dir / game
+
+
+def test_audit_junk_list_covers_every_pclauncher_exclusion():
+    """`audit` and the PCLauncher INI writer agree on which programs aren't the game."""
+    from spindoctor.audit import _JUNK_STEM_RE
+    from spindoctor.rocketlauncher import _EXE_EXCLUSION_PREFIXES
+
+    for prefix in _EXE_EXCLUSION_PREFIXES:
+        assert _JUNK_STEM_RE.match(prefix.upper() + "64"), prefix
+    assert not _JUNK_STEM_RE.match("Sky Raider")
+
+
 def test_recursive_scan_root_level_web_url_is_skipped(isolated_config, tmp_path):
     """A root-level .url file whose URL= line is http(s):// is dropped."""
     roms_dir = tmp_path / "roms"

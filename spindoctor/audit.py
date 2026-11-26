@@ -14,13 +14,17 @@ from .config import Config, MEDIA_TYPES, get_rom_extensions, get_system_override
 from .database import GameEntry, load_database
 from .placeholders import PlaceholderIndex, is_list_name, read as read_placeholders
 from .rl_rom_paths import _raw_game_names, _RomLookup
+from .rocketlauncher import _EXE_EXCLUSION_PREFIXES
 from .romutils import clean_display_name, derive_pc_title, _find_best_normalized_match, normalize
 
-# Stems that indicate an installer / helper, not the game itself.
+# Stems that indicate an installer / helper, not the game itself: every prefix
+# the PCLauncher INI writer leaves out (Inno Setup's ``unins000.exe``, Unity's
+# ``UnityCrashHandler64.exe``, ...), plus a few more found in game folders.
 _JUNK_STEM_RE = re.compile(
-    r'^(setup|install|uninstall|uninst|patch|redist|vcredist|vc_redist|'
-    r'dotnet|directx|dxwebsetup|dxsetup|_commonredist|crashpad|'
-    r'crashreport|bugsplat|easyanticheat|uplay|steam_api)',
+    "^(" + "|".join(re.escape(p) for p in _EXE_EXCLUSION_PREFIXES + (
+        "patch", "redist", "dxwebsetup", "_commonredist", "crashreport",
+        "bugsplat", "easyanticheat", "uplay", "steam_api",
+    )) + ")",
     re.IGNORECASE,
 )
 
