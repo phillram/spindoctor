@@ -265,6 +265,13 @@ Check internal emulator paths, not only `Rom_Path`.
   [core setting or build](xbox.md#one-cpu-core-is-full-and-the-game-crawls).
 - **An Azahar setting doesn't take:** its `\default` line still says `true`, so Azahar
   ignores the value: [set both lines](nintendo-3ds.md#a-setting-that-doesnt-take).
+- **After moving to a newer RetroArch, panel buttons slow the game or start netplay,
+  a game-name popup shows at every start, the picture sits off-centre, or saves
+  seem gone:** the config came from the older version, and newer versions sort
+  saves into core folders: [moving to a current RetroArch](cabinet-architecture-reference.md#moving-retroarch-wheels-to-a-current-retroarch).
+- **MSU-1 (SNES CD) games black, or without their CD music, after a RetroArch
+  upgrade:** current cores don't read `.bml` manifests, and bsnes shows these packs
+  black: [MSU-1 packs](cabinet-architecture-reference.md#msu-1-snes-cd-packs).
 - **Restoring to new drive letters:** preview `backup restore --use-current-paths`.
 
 SpinDoctor cannot universally rewrite third-party emulator internals.
