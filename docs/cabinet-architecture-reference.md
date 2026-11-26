@@ -115,7 +115,7 @@ These are manual integration checks, not promises that migration rewrites them.
 
 | Emulator/module | Important boundary |
 |---|---|
-| MAME/HBMAME | Effective `mame.ini`/`hbmame.ini` controls `cfg_directory`, `ctrlr`, `ctrlrpath`. Empty/crash-truncated `default.cfg` can silently reset the panel. Preserve a working map. |
+| MAME/HBMAME | Effective `mame.ini`/`hbmame.ini` controls `cfg_directory`, `ctrlr`, `ctrlrpath`. Empty/crash-truncated `default.cfg` can silently reset the panel. Preserve a working map. Keys a program sends (DS4Windows, AutoHotkey) need `keyboardprovider dinput`; builds before 0.172 can't take them: [PS4 pads](ps4-pads.md#builds-that-ignore-keys-a-program-sends). |
 | Cxbx-Reloaded | `settings.ini` beside `cxbx.exe` (else the user's AppData) holds the core setting, pads and profiles; the module can set them per game. A second build needs its own emulator entry. [Xbox games](xbox.md). |
 | Azahar (3DS) | Portable when `user\` sits beside `azahar.exe`; `user\config\qt-config.ini` ignores any value whose `\default` line says `true`. Hidden helper windows: wait for the game window's title. Decrypted dumps only. [3DS games](nintendo-3ds.md). |
 | melonDS (DS, DSi) | Portable: `melonDS.toml` beside `melonDS.exe`, written back when melonDS closes, so edit it only while it is closed. No stock module; a module sets screen rotation and DS/DSi mode in the file before each start. F9 and Shift+F9 open file boxes: pause-menu save states 1–8 only. [DS games](nintendo-ds.md). |
@@ -192,10 +192,12 @@ one moves.
   When a core is replaced (4DO by Opera for 3DO, for example), copy the old
   options under the new core's names. Opera boots a built-in BIOS unless
   `opera_bios` names the real one in `system\`.
-- **Pads:** with DS4Windows' virtual DualShock 4 pads, the `sdl2` joypad driver and
-  RetroArch's own "PS4 Controller" profile give pad 1 to player 1 and pad 2 to
-  player 2. Leave the pad binds in the system config `nul`, so the profile applies,
-  and keep the panel's keyboard binds beside them.
+- **Pads:** with DS4Windows' virtual DualShock 4 pads, the `dinput` joypad driver and
+  RetroArch's `autoconfig\dinput\DUALSHOCK_4.cfg` profile give pad 1 to player 1 and
+  pad 2 to player 2. The `sdl2` driver of RetroArch 1.22's Windows build (SDL 2.0.14)
+  listed no DS4Windows pads on the cabinet checked. Leave the pad binds in the system
+  config `nul`, so the profile applies, and keep the panel's keyboard binds beside them:
+  [PS4 pads](ps4-pads.md#emulators-and-the-dualshock-4-copies).
 - **Bezels:** overlays named with full paths still point at the old copy's
   `overlays` folder, and so may other emulators that borrow a bezel from it. Copy
   them into the new folder and repoint the module INIs' `Overlay=` lines before
@@ -229,6 +231,8 @@ load `<game>.sfc` and look beside it for `<game>.msu` and `<game>-N.pcm`.
 Keyboard encoders, virtual pads and keymappers are independent layers. Keep one
 intentional menu-mapping path and inspect RocketLauncher User Functions for
 extra mapper launches. [DS4Windows example](controller-input.md).
+Two PS4 pads with DualShock 4 output, HidHide, and pads that press the panel's keys:
+[PS4 pads](ps4-pads.md).
 
 RetroArch can accept keyboard and controller bindings together. Explicit `nul`
 entries disable a binding rather than restoring autodetect; system configs and

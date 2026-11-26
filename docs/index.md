@@ -22,7 +22,7 @@ CLI examples use `spindoctor` (pip); Windows binaries use `spindoctor-cli`.
 | Run PlayStation 2 games | [PCSX2 2.x](playstation-2.md) |
 | Run Atari Jaguar games | [BigPEmu](atari-jaguar.md) |
 | Run Sega Dreamcast, Naomi and Atomiswave games | [Flycast](sega-dreamcast-naomi.md) |
-| Configure guns or controllers | [Light guns](lightgun.md), [DS4Windows example](controller-input.md) |
+| Configure guns or controllers | [Light guns](lightgun.md), [DS4Windows example](controller-input.md), [PS4 pads with HidHide](ps4-pads.md) |
 | Start pinball programs | [Future Pinball and Visual Pinball X](pinball.md) |
 | Show Vectrex games' colour overlays | [Vectrex overlays in MESS](vectrex-overlays.md) |
 | Diagnose failures | [Troubleshooting](troubleshooting.md), [files and storage](spindoctor-files.md) |
