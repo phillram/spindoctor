@@ -101,6 +101,7 @@ HyperSpin's player 2 keys works too.
 | Flycast 2.x | SDL | [Flycast panel and pads](sega-dreamcast-naomi.md#panel-and-pads). |
 | BigPEmu | DirectInput, by instance GUID | [Jaguar panel and pads](atari-jaguar.md#panel-and-pads). |
 | Azahar | SDL; a profile is the panel or the pad | [3DS panel and pads](nintendo-3ds.md#panel-and-pads). |
+| Vita3K | SDL; the touchpad is the front touch screen, the gyro the motion sensor | [Vita panel and pads](playstation-vita.md#panel-and-pads). |
 | Cxbx-Reloaded | The real pads, through SDL (on HidHide's allow list) | [Xbox games](xbox.md#ps4-pads). |
 | Read only Xbox pads, or one input per control | Keys | [Pads as panel keys](#pads-as-panel-keys). |
 
