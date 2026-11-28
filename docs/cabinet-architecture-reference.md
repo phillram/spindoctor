@@ -124,6 +124,7 @@ These are manual integration checks, not promises that migration rewrites them.
 | ALG Singe | `SingePathUpdate`/`ForcePathUpdate` can perform a one-time path rewrite; inspect both loaded scripts and their `dofile` dependencies, then disable forced rewriting. Preserve writable game configs/high scores. |
 | Dolphin | Use a module compatible with the installed wx/Qt generation. Verify actual window title/class, fullscreen and focus. RVZ is already compressed and must be permitted in effective `Rom_Extension`. |
 | Phoenix Jaguar | The configured XML library's `<Dump>` paths and cartridge selection can remain stale even when RocketLauncher passes the new ROM path. BIOS paths are separate. |
+| RetroArch | Many wheels can share one RetroArch, and each can still move on its own through its `Emulators.ini` section and `Modules\RetroArch\<wheel>.ini`. Moving wheels from a 1.7-era RetroArch to a current one changes hotkeys, picture position, save folders and core options: [moving to a current RetroArch](#moving-retroarch-wheels-to-a-current-retroarch). MSU-1 (SNES CD) packs need renaming: [MSU-1 packs](#msu-1-snes-cd-packs). |
 | ScummVM | The module reads `scummvm.ini` from `CustomConfig` (module INI, relative to the RocketLauncher folder), else from `%APPDATA%\ScummVM\`; a list kept beside the exe (a portable setup) is read only through `CustomConfig`. Per-game `path=` values inside it survive a ROM drive change; update deliberately. `doctor` checks both. |
 | SSF (Saturn) | Once a game has run, its own `Setting\Saturn\<product code>_<title>.ini` wins over `SSF.ini`, keys included: [SSF per-game settings](#ssf-per-game-settings). Discs come through the virtual drive. |
 | Virtual-drive systems | Reinstall the correct drive type and update `Virtual_Drive_Path`/drive letter; changing the ROM root alone is insufficient. If DAEMON Tools refuses every mount after an emulator was closed by force: [a stuck virtual drive](troubleshooting.md#library-and-launch-routing). |
@@ -150,6 +151,74 @@ SSF module writes there before each start.
 - **SH-2 cache:** a few games need SH-2 cache emulation, Astal the best known.
   Some setups keep an older SSF build just for it. One build is enough once the
   game's own file has `SH2Cache="1"` (with `SH2enabled=true` in the module INI).
+
+### Moving RetroArch wheels to a current RetroArch
+
+Older cabinets often run several RetroArch copies of different ages (one for most
+wheels, others for a few systems). They can all move to one current RetroArch
+(1.22 when this was written), wheel by wheel, beside the old copies until the last
+one moves.
+
+- **One wheel at a time:** RocketLauncher reads a wheel's own `[<emulator>]` section
+  in `Settings\<wheel>\Emulators.ini` before `Global Emulators.ini`, and
+  `Modules\RetroArch\<wheel>.ini` before the module's own INI. Copy the emulator's
+  global section into the wheel's file and change only `Emu_Path`; set the new
+  `ConfigFolder` and `LibRetro_Core` in the wheel's module INI. The module loads
+  cores from the `cores` folder beside `Emu_Path`, and uses `config\<system>.cfg`,
+  else `config\<core>.cfg`, else `retroarch.cfg`.
+- **Build each config from the new version's own:** a config from a 1.7-era
+  RetroArch lacks the hotkey lines added since, and RetroArch then uses their
+  factory keys, several of which are letters a keyboard encoder sends (slow
+  motion, netplay). Run the new version once with `-c <new file>` and close it
+  normally, so it writes every setting; then copy over the panel binds and picture
+  settings, and set the hotkeys you don't use to `nul`.
+- **Start-up popup:** current versions show the game and core name as a game
+  starts (`menu_show_load_content_animation`) and other notices of their own
+  (`notification_show_*`). Set the ones you don't want to `"false"`.
+- **Picture position:** current versions centre the custom viewport and then add
+  `custom_viewport_x` / `custom_viewport_y`. A module `CustomViewportX` that
+  centred the picture in a 1.7-era RetroArch now shifts it; use `0`.
+- **Saves:** current versions sort saves and states into a folder per core by
+  default. Set `sort_savefiles_enable` and `sort_savestates_enable` to `"false"`
+  to keep the old folders. An older copy of the RetroArch module (2.4.1, kept for
+  one system on some setups) passes `-s` / `-S` on the command line; a current
+  RetroArch then ignores the config's save folders and keeps that system's saves
+  in `saves\` and `states\` beside `retroarch.exe`.
+- **Core options:** each core keeps its own `config\<core name>\<core name>.opt`.
+  When a core is replaced (4DO by Opera for 3DO, for example), copy the old
+  options under the new core's names. Opera boots a built-in BIOS unless
+  `opera_bios` names the real one in `system\`.
+- **Pads:** with DS4Windows' virtual DualShock 4 pads, the `sdl2` joypad driver and
+  RetroArch's own "PS4 Controller" profile give pad 1 to player 1 and pad 2 to
+  player 2. Leave the pad binds in the system config `nul`, so the profile applies,
+  and keep the panel's keyboard binds beside them.
+- **Bezels:** overlays named with full paths still point at the old copy's
+  `overlays` folder, and so may other emulators that borrow a bezel from it. Copy
+  them into the new folder and repoint the module INIs' `Overlay=` lines before
+  archiving the old copy.
+
+#### MSU-1 (SNES CD) packs
+
+MSU-1 packs made for bsnes v0.9x load through a `.bml` manifest that names the ROM
+(`program.rom`), the MSU-1 data file and every track (`track number=N
+name=<file>.pcm`). Current bsnes and Snes9x cores don't read those manifests. They
+load `<game>.sfc` and look beside it for `<game>.msu` and `<game>-N.pcm`.
+
+- **Rename from the manifest:** the ROM it names becomes `<game>.sfc`, its data file
+  `<game>.msu` (an empty one is fine), and each track the `-N.pcm` of its track
+  number. Older `cartridge` manifests have no track lines and use `track-N.pcm`.
+  Tracks a manifest lists but the pack never shipped stay missing, and the game
+  plays its own music there. Copy the manifest's save file (`save.ram`) to the new
+  save folder as `<game>.srm`.
+- **Remove `bml` from the emulator's `Rom_Extension`**, so RocketLauncher picks the
+  `.sfc`.
+- **Use Snes9x:** with RetroArch 1.22's bsnes core, the packs tried streamed
+  their tracks but showed a black picture, and a Cx4-chip game stayed black even
+  with its `cx4.data.rom`. Snes9x showed the picture and played the tracks for
+  all 39 packs checked. Check a screenshot, not only the music.
+- **Checking with the sound off:** while a core streams a track it holds
+  `<game>-N.pcm` open, so opening that file exclusively fails. That shows MSU-1
+  working in a muted or hidden test.
 
 ## Input
 

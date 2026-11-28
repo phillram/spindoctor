@@ -72,6 +72,9 @@ Per-game Dolphin profiles can overwrite global controller edits.
 SSF (Sega Saturn) keeps each game's keys in the game's own settings file once it
 has run, so a layout changed in `SSF.ini` must be copied there too:
 [SSF per-game settings](cabinet-architecture-reference.md#ssf-per-game-settings).
+A current RetroArch reads the virtual pads through its `sdl2` joypad driver and its
+own "PS4 Controller" profile when the system config leaves the pad binds `nul`:
+[moving to a current RetroArch](cabinet-architecture-reference.md#moving-retroarch-wheels-to-a-current-retroarch).
 
 See [cabinet input reference](cabinet-architecture-reference.md#input) and
 [gun/remap precedence](lightgun.md#two-guns-model-3-and-sinden).
