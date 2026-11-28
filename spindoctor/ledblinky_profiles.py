@@ -1040,7 +1040,7 @@ class KeymapResolver:
         self._ra: dict[Path, RetroArchIndex] = {}
         self._mame: dict[Path, MameIndex] = {}
         self._simple: dict[tuple[str, Path], Optional[Keymap]] = {}
-        self._flycast: dict[Path, Optional[Keymap]] = {}
+        self._flycast: dict[tuple[Path, bool], Optional[Keymap]] = {}
         self._mapping_files: dict[Path, dict[str, Path]] = {}
         self._roms: Optional[_RomLookup] = None
 
@@ -1106,9 +1106,13 @@ class KeymapResolver:
         arcade = is_flycast_arcade(system)
         general = flycast_key_file(files, arcade)
         if not game:
-            if general is not None and general not in self._flycast:
-                self._flycast[general] = flycast_keymap(general, arcade)
-            return self._flycast.get(general) if general is not None else None
+            if general is None:
+                return None
+            # An arcade wheel can fall back to SDL_Keyboard.cfg, which then reads as arcade buttons.
+            key = (general, arcade)
+            if key not in self._flycast:
+                self._flycast[key] = flycast_keymap(general, arcade)
+            return self._flycast[key]
         if not arcade or not any(n.startswith("sdl_keyboard_") and n != "sdl_keyboard_arcade.cfg"
                                  for n in files):
             return None

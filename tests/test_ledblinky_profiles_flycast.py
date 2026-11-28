@@ -274,3 +274,14 @@ def test_per_game_maps_are_not_looked_for_without_any(cabinet, monkeypatch):
     assert r.for_launcher(lau, "Sega Naomi", "ggx") is None
     assert calls == []                                                 # no zip opened
     assert r.for_launcher(lau, "Sega Naomi").source == "Flycast mappings\\SDL_Keyboard_arcade.cfg"
+
+
+@pytest.mark.parametrize("order", [("Sega Dreamcast", "Sega Naomi"), ("Sega Naomi", "Sega Dreamcast")])
+def test_shared_key_file_is_read_per_wheel_kind(cabinet, order):
+    # Without SDL_Keyboard_arcade.cfg, Naomi falls back to the Dreamcast file, read as arcade buttons.
+    (Path(cabinet.emulators_dir) / "Flycast" / "mappings" / "SDL_Keyboard_arcade.cfg").unlink()
+    r = lp.KeymapResolver(cabinet)
+    maps = {system: r.for_launcher(r.system_launcher(system), system) for system in order}
+    assert maps["Sega Dreamcast"].get(1, "A") == ["KEYCODE_D"] and maps["Sega Dreamcast"].get(1, "START") == []
+    assert maps["Sega Naomi"].get(1, "BUTTON1") == ["KEYCODE_D"] and maps["Sega Naomi"].get(1, "START") == ["KEYCODE_R"]
+    assert maps["Sega Naomi"].get(1, "A") == []
