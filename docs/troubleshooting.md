@@ -261,6 +261,7 @@ Task registration is Windows-only and separate from startup wheel refresh.
 | Panel or pad does nothing in 3DS games | Azahar binds each button to one source, so its profile is the panel or the pad; the module can pick per start: [3DS panel and pads](nintendo-3ds.md#panel-and-pads). |
 | PS4 pad does nothing in DS games (melonDS) | melonDS binds the pad by SDL's raw joystick numbers, with the D-pad as buttons: [DS panel and pad](nintendo-ds.md#panel-and-pad). |
 | Saturn keys are right in most games but wrong in a few, or an SSF setting doesn't take for one game | SSF keeps each game's settings, keys included, in its own file once the game has run, and uses it over `SSF.ini`: [SSF per-game settings](cabinet-architecture-reference.md#ssf-per-game-settings). |
+| Panel or pad does nothing in Amiga CD32 games (WinUAE) | WinUAE 3.x drops every custom input bind in a config RocketLauncher loads as it starts it, so the ports fall back to a mouse and the numeric keypad: [Amiga CD32 controls](#amiga-cd32-controls-do-nothing-winuae). |
 | DemulShooter not found | Set its explicit path, verify the installation and run detection. |
 | Gun fails after configure | Check target, per-game ROM requirements, native RL gun settings and duplicate User Functions startup. |
 | Gun audit says partial coverage | Only some games/emulators have recognized direct startup. Indirect scripts may work but are not proof for the inspector. |
@@ -300,6 +301,47 @@ public static class FpTypeLib {
 "@
 [FpTypeLib]::Register($exe)
 ```
+
+### Amiga CD32 controls do nothing (WinUAE)
+
+RocketLauncher's WinUAE module starts a CD32 or CDTV game with
+`-f "<emulator>\Configurations\host\cd32host.uae"` (or `cdtvhost.uae`) and
+`-s quickstart=cd32,0`. WinUAE 3.x reads that file before it lists the PC's
+input devices and drops every custom input bind in it: the `joyport0=custom` /
+`joyport1=custom` ports and their `input.4.*` lines, whether the device names in
+them still match or not. Both game ports then fall back to their defaults, a
+mouse in port 1 and keyboard layout A (the numeric keypad) in port 2, so the
+panel, the stick and any pad do nothing. Loading the same file later from
+WinUAE's own Configurations page keeps every bind, so it looks right while you
+set it up.
+
+- **Fix:** use WinUAE 4.x or later. 6.0.3 keeps the binds when it starts with
+  `-f`, and saves them as `joyport0=custom0` with a `joyportcustom0=` line (the
+  same for port 1). The module works unchanged: point `Emu_Path` at
+  `winuae64.exe` in a new folder, with the Kickstart ROMs, `cd32.nvr` (the CD32's
+  saves) and the `Configurations` folder copied over.
+- **Check what WinUAE loaded:** in a game, open its settings window (F12) and
+  save the configuration under a new name. `joyport0=custom0` and
+  `joyportcustom0=` lines mean the binds are in; `joyport0=mouse` and
+  `joyport1=kbd1` mean they were dropped.
+- **Keep `winuae.ini`.** Started with `-portable`, WinUAE keeps its settings and
+  the list of Kickstart ROMs it found in `winuae.ini` beside the program. Without
+  it, every start scans the ROM folder and shows "Scanning ROM image files..."
+  over the game.
+- **Mouse games:** the module starts a game marked `UseMouse=true` in its system
+  file (`Modules\WinUAE\<system>.ini`) with `host\cd32mousehost.uae` instead.
+  If that file doesn't exist, the game starts on WinUAE's defaults with no binds.
+  Create it, or set `UseMouse=false` so the game uses the pad config; CD32 games
+  were made to work with the pad.
+- **PS4 pads through DS4Windows:** WinUAE reads each DualShock 4 copy as a raw
+  HID device named "Wireless Controller" and matches binds by its unique device
+  name, so each pad keeps its own player. Its button numbers: 0 Square, 1 Cross,
+  2 Circle, 3 Triangle, 4 L1, 5 R1, 6 L2, 7 R2, 8 Share, 9 Options. After the
+  14 buttons come the axes as pairs of buttons: 14 to 17 are the left stick's
+  left, right, up and down, and 26 to 29 the D-pad's.
+- **"This software is for an NTSC system":** WinUAE's CD32 is a PAL console.
+  Add `VideoMode=NTSC` under that game's section in the module's system file;
+  the module then adds `-s ntsc=true` for that game only.
 
 ## LEDBlinky
 
