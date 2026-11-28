@@ -11304,7 +11304,8 @@ def ledblinky_profiles(apply_changes, no_backup, verbose):
     \b
       - Consoles: each system's DEFAULT lights the pad's buttons as the
         emulator maps them (RetroArch, DeSmuME, melonDS, SSF, PokeMini, MESS,
-        Flycast, PPSSPP, DuckStation, PCSX2 2.x, Vita3K).
+        Flycast, PPSSPP, DuckStation, PCSX2 2.x, Vita3K, EKA2L1, Cxbx-R,
+        WinUAE, BigPEmu).
       - Wheels whose emulator keys can't be read (PC game launchers, Flash
         players) light the keys each game's AHK keymapper profile remaps.
       - Arcade wheels LEDBlinky doesn't treat as MAME (CPS, Neo Geo, CAVE,
