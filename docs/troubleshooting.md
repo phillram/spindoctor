@@ -55,6 +55,82 @@ command-specific; do not delete manifests to silence errors.
 | A 3DS game stops at a message that it is encrypted | Azahar runs decrypted `.3ds` / `.cci` dumps only, and `.cia` files must be installed: [3DS games](nintendo-3ds.md#games). |
 | DS saves are gone after moving from DeSmuME to melonDS | DeSmuME's `.dsv` adds a footer, and melonDS reads `<name>.sav` from its own save folder: [convert them](nintendo-ds.md#saves-from-desmume). |
 | Disc games (Saturn, Neo Geo CD, PC-FX, …) start without their own disc, and DAEMON Tools says “Close all running applications which may use your virtual drive” | An emulator was closed by force while it read the mounted disc, and DAEMON Tools Lite now refuses every mount and unmount, though no program shows a handle on the drive. Restart its “Disc Soft Lite Bus Service” as administrator. That frees the disc but also removes the virtual drive, so add it back (`DTCommandLine.exe --add --type "dt"`) and check its letter (`--get_letter --type "dt" --number 0`): RocketLauncher mounts on SCSI drive 0, else DT drive 0. Close emulators with the exit key, not by ending the process, while a disc is mounted. |
+| The screen freezes when a game starts, and only turning the PC off gets out of it | RocketLauncher waits for the game's script with no time limit, so an AutoHotkey or Windows error box behind the frontend can leave it waiting: [the cabinet freezes when a game starts](#the-cabinet-freezes-when-a-game-starts-rocketlauncher). |
+
+### The cabinet freezes when a game starts (RocketLauncher)
+
+RocketLauncher 1.2 builds one AutoHotkey script for each launch: its own settings,
+the module, its library files, the User Functions files and, last, the game's
+key-remap profile from `Profiles\AHK`, added word for word. The profile is the first
+of `<System>\<game>.ahk`, `<System>\<emulator>.ahk`, `<System>.ahk` and
+`_Default.ahk` that exists. RocketLauncher runs the script in its own `AutoHotkey.dll`
+(AutoHotkey_H 1.1.13) with `ahktextdll`, then waits for it with no time limit, so
+whatever stops the script stops the cabinet. Before turning the PC off, press Alt+Tab:
+it can show a box hidden behind the frontend. Then check these:
+
+- **An AutoHotkey load error.** One bad line anywhere in the built script, such as
+  the same hotkey twice in a profile (“Duplicate hotkey”) or a line this old
+  AutoHotkey doesn't know, makes it refuse the whole script with an “AutoHotkey.dll”
+  error box. `ahktextdll` doesn't return until that box is closed, and the box opens
+  behind the frontend, so the cabinet looks frozen. A fault in a module hangs every
+  game that uses it; one in a profile, the games that load that profile. `doctor`'s
+  **Keymapper hotkeys** check reads the same profiles for hotkeys that RocketLauncher's
+  menu keys switch off.
+- **An AutoHotkey runtime error.** An error while the script runs (its box ends
+  “The current thread will exit”) stops the module, but the script stays loaded for
+  its hotkeys and timers, so RocketLauncher keeps waiting. This box opens behind the
+  frontend too. One of these is “Failed attempt to launch program or document” from
+  PCLauncher: RocketLauncher's `Process.Run()` starts the program by its bare file
+  name inside the start folder, without `UseErrorLevel`, so a `WorkingFolder` that
+  doesn't hold the program fails this way. Set `WorkingFolder` to the program's own
+  folder, or leave it out to get that folder.
+- **A game that can't start.** A program that needs a DLL that isn't there ends at
+  once with exit code `0xC0000135`, and Windows shows “System Error … was not found”,
+  also when RocketLauncher started it. On a cabinet that box can sit behind the
+  frontend. Windows logs each such box in the System log as event 26 from
+  “Application Popup”. When a module gives up waiting for a program's window, it
+  shows RocketLauncher's own full-screen error screen (`ScriptError` in
+  `Lib\Shared.ahk`), which ends by calling `ExitModule()`. RocketLauncher's own
+  comment there warns that this has a small chance of looping back into
+  `ScriptError`; that is read from the code, not seen on a cabinet. To find the
+  missing file, start the game's program from Windows once, or list the boxes
+  Windows logged:
+
+  ```powershell
+  Get-WinEvent -LogName System -FilterXPath "*[System[Provider[@Name='Application Popup'] and (EventID=26)]]" -MaxEvents 20 |
+      Format-List TimeCreated, Message
+  ```
+
+- **Antivirus took a game file.** Antivirus programs often quarantine `steam_api.dll`,
+  `steam_api64.dll` and similar files from game folders, and the game then can't
+  start (above). Defender's own list (`Get-MpThreatDetection`) can have dropped
+  detections that its event log still holds: events 1116 (found) and 1117 (action
+  taken) in `Microsoft-Windows-Windows Defender/Operational`, with the file after
+  “Path:”. This lists the files it quarantined:
+
+  ```powershell
+  Get-WinEvent -LogName 'Microsoft-Windows-Windows Defender/Operational' -FilterXPath '*[System[(EventID=1117)]]' |
+      Where-Object { $_.Message -match 'Action: Quarantine' } |
+      ForEach-Object { '{0:yyyy-MM-dd HH:mm}  {1}' -f $_.TimeCreated, [regex]::Match($_.Message, 'Path:\s*(.+)').Groups[1].Value.Trim() }
+  ```
+
+  Restore or replace only files you trust: some are named as trojans, not only as
+  cracks.
+- **Finding where it stopped.** Below `Logging_Level=10` (under `[Logging]` in
+  `Settings\RocketLauncher.ini`), RocketLauncher keeps its log lines in memory and
+  writes them to `RocketLauncher.log` only at a few points. One is just before the
+  module starts, so after a forced power-off the log can end at “Main - Running
+  module”, however far the launch got. At level 10 each line is written as it is
+  logged. Set it back afterwards: a high level slows every launch, and `doctor`'s
+  **RocketLauncher settings** check notes level 4 or higher.
+- **A box asking which AutoHotkey version to run.** Once AutoHotkey v2 is installed,
+  `.ahk` files open through its launcher, which picks v1 or v2 from the script and
+  can ask in a box when it can't tell. A box like that over a running game takes its
+  keyboard focus. Give scripts that run on their own `#Requires AutoHotkey v1.1` (or
+  `v2.0`) as their first line, or start them with the right `AutoHotkey.exe`. Never
+  put it in RocketLauncher's modules, profiles or User Functions: AutoHotkey 1.1.13
+  is older than `#Requires` (added in 1.1.33) and refuses the line (“This line does
+  not contain a recognized action”), which is the first cause above.
 
 ## Metadata and scraping
 
