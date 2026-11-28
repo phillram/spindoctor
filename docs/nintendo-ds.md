@@ -167,3 +167,8 @@ DSi wheel. DSi mode needs files dumped from a real DSi, named under `[DSi]`:
 folder). `FirmwarePath` is read only when `[Emu]` `ExternalBIOSEnable = true`. DS mode
 needs none of these: without `ExternalBIOSEnable` it uses melonDS's own BIOS and
 firmware.
+
+DS games and DSi-enhanced cartridges run in DSi mode, but DSiWare (the DSi's download
+games) doesn't: opened like a cartridge, it sits on a white screen, because melonDS runs
+DSiWare only once it is installed into the NAND. For a wheel of DSiWare use RetroArch's
+melonDS DS core: [Nintendo DSi games](nintendo-dsi.md).
