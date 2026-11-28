@@ -90,8 +90,10 @@ The Idle Tour settings section controls limits and skipped wheels.
 
 Manage the enabled pool, add videos, retire/restore selections, swap the current
 intro and register/remove its Windows-logon task. **Console start-up logos** lists
-the emulators that can play a console's own logo before each game and turns it on
-or off, for the selected rows or all ([start-up logos](start-up-logos.md)).
+the emulators whose console start-up logo can be turned on and off now (their boot
+ROM or BIOS is there), with each logo's current state, and switches the selected
+rows or all of them ([start-up logos](start-up-logos.md)). An emulator still
+missing its file is only named below the list.
 
 ![Intro Video](screenshots/08-intro-video.png)
 

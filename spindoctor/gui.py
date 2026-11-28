@@ -14641,29 +14641,31 @@ class _SpinDoctorGUI:
         logos_lf.pack(fill="both", expand=True, pady=(0, 8))
         self._help_text(
             logos_lf,
-            text="Emulators that can play a console's own start-up logo (Game Boy, PlayStation, GameCube…) before each game. Turning one on needs that console's boot ROM or BIOS; an emulator without it is left as it is and the missing file is named in Output. Close the emulators first.",
+            text="The emulators here can play a console's own start-up logo (Game Boy, PlayStation, Dreamcast…) before each game and have the boot ROM or BIOS it needs, so the logo can be turned on and off. An emulator still missing that file isn't listed: 'boot-intros list' in Console names the file. Close the emulators first.",
         ).pack(fill="x", padx=6, pady=(6, 6))
         logos_frame = self.ttk.Frame(logos_lf)
         logos_frame.pack(fill="both", expand=True, padx=6, pady=(0, 4))
         logos_frame.columnconfigure(0, weight=1)
         logos_frame.rowconfigure(0, weight=1)
         logos_tree = self.ttk.Treeview(
-            logos_frame, columns=("consoles", "logo", "needs"),
+            logos_frame, columns=("consoles", "logo"),
             show="tree headings", height=8, selectmode="extended",
         )
         logos_tree.heading("#0", text="Emulator")
         logos_tree.heading("consoles", text="Consoles")
-        logos_tree.heading("logo", text="Logo")
-        logos_tree.heading("needs", text="Boot ROM / BIOS")
-        logos_tree.column("#0", width=self._px(260))
-        logos_tree.column("consoles", width=self._px(240))
-        logos_tree.column("logo", width=self._px(70), anchor="center")
-        logos_tree.column("needs", width=self._px(200))
+        logos_tree.heading("logo", text="Start-up logo now")
+        logos_tree.column("#0", width=self._px(300))
+        logos_tree.column("consoles", width=self._px(300))
+        logos_tree.column("logo", width=self._px(130), anchor="center")
         logos_scroll = self._vertical_scrollbar(logos_frame, logos_tree)
         logos_tree.grid(row=0, column=0, sticky="nsew")
         logos_scroll.grid(row=0, column=1, sticky="ns")
         self._boot_intros_tree = logos_tree
         self._boot_intros_names: dict[str, str] = {}
+        self._boot_intros_note = self.ttk.Label(
+            logos_lf, text="", foreground=_FG_DIM, wraplength=self._px(860), justify="left",
+        )
+        self._boot_intros_note.pack(anchor="w", padx=6, pady=(0, 4))
         logos_btns = self.ttk.Frame(logos_lf)
         logos_btns.pack(anchor="w", padx=6, pady=(0, 8))
         self.ttk.Button(
@@ -14697,44 +14699,43 @@ class _SpinDoctorGUI:
             return
         tree.delete(*tree.get_children())
         self._boot_intros_names = {}
+        note = getattr(self, "_boot_intros_note", None)
+        if note is not None:
+            note.configure(text="")
         from .boot_intros import survey
 
         try:
             found = survey(load_config())
         except Exception as exc:  # a broken settings file must not break the page
-            tree.insert("", "end", text=f"Could not read emulator settings: {exc}",
-                        values=("", "", ""))
+            tree.insert("", "end", text=f"Could not read emulator settings: {exc}", values=("", ""))
             return
-        if not found.targets:
-            tree.insert("", "end", text="No emulator with a start-up logo setting found",
-                        values=("", "", ""))
-            return
-        for t in found.targets:
-            if t.problem:
-                logo = "?"
-            else:
-                logo = {True: "on", False: "off", None: "mixed"}[t.state]
-            if not t.setting.has_needs:
-                needs = "nothing extra"
-            elif not t.missing:
-                needs = "found"
-            else:
-                needs = "missing " + ", ".join(t.missing_short())
-            iid = tree.insert("", "end", text=t.label, values=(t.setting.consoles, logo, needs))
+        # Only what can be switched both ways now; the rest waits for a file.
+        shown = [t for t in found.targets if t.switchable]
+        waiting = [t for t in found.targets if not t.switchable]
+        if not shown:
+            tree.insert("", "end", text="No emulator here can turn its start-up logo on and off",
+                        values=("", ""))
+        for t in shown:
+            logo = {True: "On", False: "Off", None: "Mixed"}[t.state]
+            iid = tree.insert("", "end", text=t.label, values=(t.setting.consoles, logo))
             # The name 'boot-intros on/off' takes for exactly this row: the
             # core in its RetroArch, or the emulator's own folder.
             self._boot_intros_names[iid] = t.label if t.setting.retroarch else t.program
+        if waiting and note is not None:
+            note.configure(text=f"{len(waiting)} more need a boot ROM or BIOS file first: "
+                                + ", ".join(t.label for t in waiting) + ".")
 
     def _boot_intros_set(self, turn_on: bool, *, selected: bool) -> None:
         args = ["boot-intros", "on" if turn_on else "off"]
-        if selected:
-            tree = getattr(self, "_boot_intros_tree", None)
-            names = [self._boot_intros_names[i] for i in (tree.selection() if tree else ())
-                     if i in self._boot_intros_names]
-            if not names:
-                self._flash_validation("Pick one or more emulators in the list first.")
-                return
-            args += names
+        tree = getattr(self, "_boot_intros_tree", None)
+        rows = (tree.selection() if tree else ()) if selected else list(self._boot_intros_names)
+        names = [self._boot_intros_names[i] for i in rows if i in self._boot_intros_names]
+        if not names:
+            self._flash_validation("Pick one or more emulators in the list first." if selected
+                                   else "No emulator here can turn its start-up logo on and off.")
+            return
+        # "All" means the rows listed, never an emulator still missing its file.
+        args += names
         if self._global_apply_var.get():
             args.append("--apply")
         self._run_cli(

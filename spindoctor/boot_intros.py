@@ -911,6 +911,11 @@ class Target:
             return bool(self.found)
         return not self.missing
 
+    @property
+    def switchable(self) -> bool:
+        """Whether the logo can be turned both on and off here right now."""
+        return not self.problem and not self.blocked and self.can_turn_on
+
     def matches(self, name: str) -> bool:
         n = name.strip().lower()
         return n in (self.setting.id, self.setting.name.lower(), self.program.lower(),

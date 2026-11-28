@@ -39,9 +39,12 @@ spindoctor boot-intros off melonds-ds --game-files --apply
   without the logo.
 - **Close the emulators first.** RetroArch, melonDS, PCSX2 and others write their
   settings back when they close, over a change made while they ran.
-- **In the GUI:** the Intro Video page's **Console start-up logos** list, with
-  **Turn on / Turn off selected** and **All on / All off**. The Apply switch decides
-  between a preview and writing, as everywhere else.
+- **In the GUI:** the Intro Video page's **Console start-up logos** list shows only
+  the emulators whose logo can be turned both on and off now, each with its current
+  state (**Start-up logo now**), and **Turn on / Turn off selected** and **All on /
+  All off** switch them. An emulator still missing its boot ROM or BIOS is only
+  named below the list. The Apply switch decides between a preview and writing, as
+  everywhere else.
 
 Emulators are found from the `Emu_Path` of every section in RocketLauncher's
 `Global Emulators.ini` and the wheels' own `Emulators.ini`, as `doctor` reads them.

@@ -477,6 +477,58 @@ def test_list_names_the_files_an_emulator_with_its_own_check_misses(saved, tmp_p
     assert "IPL, JAP" in result.output     # the table may wrap the cell
 
 
+class _Tree:
+    """Just enough of a ttk.Treeview for the GUI's start-up logos list."""
+    def __init__(self):
+        self.rows = []
+        self.picked = ()
+
+    def get_children(self):
+        return [iid for iid, _text, _values in self.rows]
+
+    def delete(self, *_iids):
+        self.rows = []
+
+    def insert(self, _parent, _index, text, values):
+        iid = f"I{len(self.rows)}"
+        self.rows.append((iid, text, values))
+        return iid
+
+    def selection(self):
+        return self.picked
+
+
+class _Note:
+    text = ""
+
+    def configure(self, text=""):
+        self.text = text
+
+
+def test_gui_lists_only_logos_that_can_be_switched_with_their_state(saved, tmp_path, monkeypatch):
+    from spindoctor import gui
+
+    emus = tmp_path / "Emulators"
+    _put(emus / "Dolphin" / "Dolphin.exe", b"MZ")
+    _put(emus / "Dolphin" / "portable.txt", "")
+    _put(emus / "Dolphin" / "User" / "Config" / "Dolphin.ini", "[Core]\nCPUThread = True\n")
+    _register(tmp_path / "RocketLauncher", "Dolphin", "Dolphin\\Dolphin.exe")
+
+    app = gui._SpinDoctorGUI.__new__(gui._SpinDoctorGUI)
+    app._boot_intros_tree, app._boot_intros_note = _Tree(), _Note()
+    app._refresh_boot_intros_list()
+    # DuckStation can be switched (logo on now); Dolphin has no IPL.bin; SSF has no setting.
+    assert [(text, values) for _iid, text, values in app._boot_intros_tree.rows] == [
+        ("DuckStation", ("PlayStation", "On"))]
+    assert app._boot_intros_note.text == "1 more need a boot ROM or BIOS file first: Dolphin."
+
+    ran = []
+    app._global_apply_var = type("Var", (), {"get": lambda self: False})()
+    app._run_cli = lambda prog, args, on_complete=None: ran.append(args)
+    app._boot_intros_set(False, selected=False)          # "All off": the rows listed only
+    assert ran == [["boot-intros", "off", "DuckStation"]]
+
+
 def test_unknown_name_exits_1_and_lists_the_names(saved):
     result = CliRunner().invoke(cli, ["boot-intros", "on", "nosuch"])
     assert result.exit_code == 1
