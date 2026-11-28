@@ -994,6 +994,54 @@ def _hs_settings_ini(config: Config) -> Optional[Path]:
     return Path(config.hyperspin_dir) / "Settings" / "Settings.ini"
 
 
+def wheel_section_name(system: str) -> str:
+    """The ``<emulator emuname>`` LedBlinky looks wheel *system* up by.
+
+    Spaces become ``_``, and the name is cut at its last dot, as if that
+    were a file extension: ``Nokia N-Gage 2.0`` -> ``Nokia_N-Gage_2``,
+    ``Tiger Game.com`` -> ``Tiger_Game`` (``UnknownGames.dat`` lists games
+    under the cut name).  Game names keep their dots.  LedBlinky upper-cases
+    both sides, so case doesn't matter.
+    """
+    name = system.strip()
+    if "." in name:
+        name = name.rsplit(".", 1)[0]
+    return name.replace(" ", "_")
+
+
+def unreachable_sections(config: Config) -> "list[dict[str, str]]":
+    """``<emulator>`` sections with a dot in their name that no wheel reaches.
+
+    A wheel's name is cut at its last dot before LedBlinky looks it up, so a
+    section named after the whole name (``Tiger_Game.com``) is never used:
+    the wheel's games light nothing of their own.  A dotted section is
+    reached only by a wheel with a second dot (``A.B.C`` -> ``A.B``).  Each
+    entry: ``emuname``, the Main Menu ``wheel`` it was named after ("" if
+    none) and the name LedBlinky asks for instead (``use``).  Read-only.
+    """
+    xml = _controls_xml_path(config)
+    if xml is None or not xml.is_file():
+        return []
+    names = re.findall(r'<emulator\b[^>]*\bemuname="([^"]*)"', _read_editable_text(xml))
+    dotted = [n for n in names if "." in n]
+    if not dotted:
+        return []
+    wheels: list[str] = []
+    menu = config.databases_dir / "Main Menu" / "Main Menu.xml" if config.hyperspin_dir else None
+    if menu is not None and menu.is_file():
+        wheels = re.findall(r'<game\b[^>]*\bname="([^"]*)"', _read_editable_text(menu))
+    reached = {wheel_section_name(w).upper() for w in wheels}
+    by_full = {w.strip().replace(" ", "_").upper(): w for w in wheels}
+    out = []
+    for name in dotted:
+        if name.upper() in reached:
+            continue
+        wheel = by_full.get(name.upper(), "")
+        out.append({"emuname": name, "wheel": wheel,
+                    "use": wheel_section_name(wheel) if wheel else ""})
+    return out
+
+
 # ─── INI scanning / patching ──────────────────────────────────────────────────
 
 _HOOK_LINE_RE = re.compile(
@@ -1048,8 +1096,9 @@ def _comment_out_hooks(text: str) -> tuple[str, int]:
 def scan(config: Config, menus: Optional[list[str]] = None) -> dict:
     """Audit the current setup for LedBlinky hooks in HyperSpin's special menus.
 
-    Read-only. Always safe to run. ``LEDBlinkyControls.xml`` is only checked
-    for being there: LedBlinky never looks these menus up in it.
+    Read-only. Always safe to run. ``LEDBlinkyControls.xml`` is not checked
+    for these menus (LedBlinky never looks them up in it), only for
+    ``<emulator>`` sections no wheel can reach (:func:`unreachable_sections`).
     """
     menus = menus or [SEARCH_MENU_NAMES[0]]   # default: Search
 
@@ -1092,6 +1141,21 @@ def scan(config: Config, menus: Optional[list[str]] = None) -> dict:
                 f"({info['path']}). It starts or stops LEDBlinky.exe when the menu opens or closes."
             )
 
+    # A wheel name is cut at its last dot before LedBlinky matches it.
+    unreachable = unreachable_sections(config) if controls_xml_exists else []
+    for sec in unreachable:
+        if sec["wheel"]:
+            issues.append(
+                f"LEDBlinkyControls.xml section '{sec['emuname']}' is never used: LedBlinky cuts the "
+                f"wheel name '{sec['wheel']}' at its last dot and looks it up as '{sec['use']}'. "
+                f"Rename the section emuname=\"{sec['use']}\" (`ledblinky profiles --apply` does)."
+            )
+        else:
+            issues.append(
+                f"LEDBlinkyControls.xml section '{sec['emuname']}' has a dot in its name, so no wheel "
+                "reaches it: LedBlinky cuts wheel names at their last dot before matching."
+            )
+
     return {
         "ledblinky_dir_set": bool(config.ledblinky_dir),
         "ledblinky_dir_exists": bool(config.ledblinky_dir) and Path(config.ledblinky_dir).exists(),
@@ -1100,6 +1164,7 @@ def scan(config: Config, menus: Optional[list[str]] = None) -> dict:
         "menu_inis": menu_inis,
         "global_settings_ini": global_ini,
         "global_settings_has_hooks": global_has_hooks,
+        "unreachable_sections": unreachable,
         "issues": issues,
         "ok": not issues,
     }

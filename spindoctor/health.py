@@ -750,6 +750,20 @@ def check_ledblinky(config: Config) -> Check:
                 name="Search/Genre/Favorites", status=Status.OK,
                 detail="no LedBlinky hooks in the menus' Settings.ini",
             ))
+        # LedBlinky cuts a wheel name at its last dot before matching, so a
+        # section named after the whole name (Tiger_Game.com) is never used.
+        unreachable = scan_res.get("unreachable_sections") or []
+        if unreachable:
+            named = [s for s in unreachable if s["wheel"]]
+            parent.children.append(Check(
+                name="Wheel sections", status=Status.WARN,
+                detail=(f"{len(unreachable)} LEDBlinkyControls.xml section(s) no wheel reaches "
+                        f"(LedBlinky cuts wheel names at the last dot): "
+                        + ", ".join(s["emuname"] for s in unreachable)),
+                fix=("rename " + ", ".join(f"{s['emuname']} -> {s['use']}" for s in named)
+                     + " (spindoctor ledblinky profiles --apply does)") if named
+                    else "spindoctor ledblinky check",
+            ))
 
     parent.status = _worst(c.status for c in parent.children)
     return parent

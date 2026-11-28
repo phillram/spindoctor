@@ -10416,13 +10416,15 @@ def preview_cmd(system, all_systems, output_dir, fmt, columns,
 @click.option("--menus", default="Search",
               help="Comma-separated special menus to check. Default: Search.")
 def ledblinky_check(menus):
-    """Find LedBlinky process hooks in HyperSpin's Search / Genre / Favorites menu settings.
+    """Find LedBlinky process hooks in HyperSpin's menu settings, and wheel sections it can't reach.
 
     \b
     Looks in <hyperspin_dir>\\Menu\\<MenuName>\\Settings.ini for
     Start_Hyperspin_Process / Exit_Hyperspin_Process lines that start or stop
-    LEDBlinky.exe when the menu opens or closes. LEDBlinkyControls.xml is only
-    checked for being there: LedBlinky never looks these menus up in it.
+    LEDBlinky.exe when the menu opens or closes. LedBlinky never looks these
+    menus up in LEDBlinkyControls.xml; that file is checked for <emulator>
+    sections no wheel reaches: LedBlinky cuts a wheel name at its last dot
+    (Tiger Game.com -> Tiger_Game), so a Tiger_Game.com section is never used.
     """
     from . import ledblinky as lb
 
@@ -10444,6 +10446,14 @@ def ledblinky_check(menus):
         f"{_status(result['controls_xml_exists'])} "
         f"{result['controls_xml_path'] or '[dim]—[/dim]'}",
     )
+    if result["controls_xml_exists"]:
+        unreachable = result.get("unreachable_sections") or []
+        tbl.add_row(
+            "Wheel sections",
+            f"[red]{len(unreachable)} never used[/red]: "
+            + ", ".join(s["emuname"] for s in unreachable)
+            if unreachable else "[green]none unreachable[/green]",
+        )
 
     for info in result["menu_inis"]:
         hooks = info["has_hooks"]
@@ -11305,6 +11315,9 @@ def ledblinky_profiles(apply_changes, no_backup, verbose):
         where it disagrees with MAME's.
       - Favorites / Most Played / Recently Played copy each game's source
         profile.
+      - A wheel's section is named as LEDBlinky looks it up, cut at the last
+        dot (Nokia_N-Gage_2 for Nokia N-Gage 2.0); one under the whole name
+        is renamed, its groups kept.
 
     \b
     Examples:

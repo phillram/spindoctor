@@ -311,7 +311,7 @@ Options: `--help`.
   - `ledblinky admin-leds set`: Set uniform in-game admin colors/state across all games (default mode). Options: `--exit`, `--pause`, `--select`, `--search-off`, `--lmouse-off`, `--rmouse-off`, `--search-on`, `--lmouse-on`, `--rmouse-on`, `--emulator`, `--apply`, `--no-backup`, `--help`.
   - `ledblinky admin-leds show`: Print which admin buttons light in-game, and in what colors. Options: `--emulator`, `--by-console`, `--help`.
 - `ledblinky audit`: Show LEDBlinky coverage of the wheel games: covered / can be added / no data. Options: `--system/-s`, `--all-roms`, `--report`, `--help`.
-- `ledblinky check`: Find LedBlinky process hooks in HyperSpin's Search / Genre / Favorites menu settings. Options: `--menus`, `--help`.
+- `ledblinky check`: Find LedBlinky process hooks in HyperSpin's menu settings, and wheel sections it can't reach. Options: `--menus`, `--help`.
 - `ledblinky colors`: Manage named color definitions in Color-RGB.ini. Options: `--help`.
   - `ledblinky colors add NAME`: Add a brand-new named color to Color-RGB.ini. Options: `--hex`, `--rgb`, `--apply`, `--no-backup`, `--help`.
   - `ledblinky colors brightness`: Set all Color-RGB.ini colors to a uniform brightness level. Options: `--scale`, `--apply`, `--no-backup`, `--verbose`, `--help`.
