@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **`ledblinky profiles` reads a Nintendo DS wheel's keys from melonDS too.** It knew only DeSmuME's `desmume.ini`, so a wheel moved to melonDS got no keymap: it kept its old profile, or one that lit only the admin buttons. It now reads `[Instance0.Keyboard]` from the `melonDS.toml` beside `melonDS.exe` (melonDS 1.x), turns melonDS's Qt key codes into LEDBlinky key codes, and lights the DS buttons, Start, Select, and the microphone and lid hotkeys when they are bound. A small reader handles the TOML, as Python 3.8 has no `tomllib`. [docs/nintendo-ds.md](docs/nintendo-ds.md) says what it reads.
+
 ### Documentation
 
 - **SSF's per-game settings files and a DAEMON Tools drive that refuses every disc are documented.** Once SSF 0.12 (Sega Saturn) has run a game, it keeps that game's settings, keys included, in `Setting\Saturn\<product code>_<title>.ini` and uses them over `SSF.ini`. So a panel layout fixed in `SSF.ini` never reaches the games already played, and the RocketLauncher module's per-game options (such as `SH2enabled`, which Astal needs) change only `SSF.ini`. [docs/cabinet-architecture-reference.md](docs/cabinet-architecture-reference.md#ssf-per-game-settings) says what to change, and when to use the module's `DeleteCachedSettings`. And when an emulator is closed by force while it reads a mounted disc, DAEMON Tools Lite can refuse every later mount and unmount ("Close all running applications which may use your virtual drive"), so every disc system starts without its own disc; restarting its service frees it but removes the virtual drive, which then has to be added back. The troubleshooting tables and the controller guide link to both.
