@@ -44,7 +44,9 @@ not the emulator or the games.
 
 Save ScreenScraper credentials and/or a TheGamesDB key in Setup; test them
 before scraping. `auto` uses configured sources, combining them when both are
-available. Steam media is a separate per-game workflow.
+available. LaunchBox's database needs no account, and sources can be asked in
+turn: see [media sources](media-sources.md). Steam media is a separate per-game
+workflow.
 
 - [Custom wheels and helpers](standalone-tools.md)
 - [LEDBlinky commands](commands.md#ledblinky) and [light guns](lightgun.md)

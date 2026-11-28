@@ -692,6 +692,12 @@ _CRED_FIELDS: tuple[tuple[str, str, bool], ...] = (
 # it as "saved" misleads the user into thinking everything is wired up.
 _CRED_PLACEHOLDER_VALUES: frozenset = frozenset({"SpinDoctor"})
 
+# Metadata / media "Source" choices; the first word is passed as --source.
+_SOURCE_CHOICES: tuple[str, ...] = (
+    "both (SS primary)", "screenscraper", "thegamesdb", "launchbox",
+    "launchbox,thegamesdb (LaunchBox first)",
+)
+
 
 def _format_secret_hint(value: str, key: str = "") -> str:
     """Render a status hint next to a saved credential field.
@@ -8283,8 +8289,8 @@ class _SpinDoctorGUI:
         self._meta_source_var = self.tk.StringVar(value="both (SS primary)")
         self.ttk.Combobox(
             meta_opts_row, textvariable=self._meta_source_var,
-            values=["both (SS primary)", "screenscraper", "thegamesdb"],
-            state="readonly", width=18,
+            values=list(_SOURCE_CHOICES),
+            state="readonly", width=24,
         ).pack(side="left", padx=6)
         self.ttk.Label(meta_opts_row, text="Threshold").pack(
             side="left", padx=(10, 0),
@@ -8337,8 +8343,8 @@ class _SpinDoctorGUI:
         self._media_source_var = self.tk.StringVar(value="both (SS primary)")
         self.ttk.Combobox(
             media_opts_row, textvariable=self._media_source_var,
-            values=["both (SS primary)", "screenscraper", "thegamesdb"],
-            state="readonly", width=18,
+            values=list(_SOURCE_CHOICES),
+            state="readonly", width=24,
         ).pack(side="left", padx=6)
         self._meta_overwrite_var = self.tk.BooleanVar(value=False)
         self.ttk.Checkbutton(

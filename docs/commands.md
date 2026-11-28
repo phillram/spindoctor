@@ -119,7 +119,7 @@ Options: `--help`.
 - `config system`: Per-system overrides for ROM extensions, scraper IDs, layout, emulator. Options: `--help`.
   - `config system clear SYSTEM_NAME`: Remove all overrides for SYSTEM_NAME (falls back to built-in defaults). Options: `--help`.
   - `config system list`: Show all per-system overrides. Options: `--help`.
-  - `config system set SYSTEM_NAME`: Add or update overrides for SYSTEM_NAME. Options: `--screenscraper-id`, `--thegamesdb-id`, `--rom-extensions`, `--layout`, `--emulator`, `--rom-path`, `--help`.
+  - `config system set SYSTEM_NAME`: Add or update overrides for SYSTEM_NAME. Options: `--screenscraper-id`, `--thegamesdb-id`, `--rom-extensions`, `--layout`, `--emulator`, `--rom-path`, `--launchbox-platform`, `--help`.
 - `config verify-credentials`: Probe ScreenScraper and TheGamesDB to check the configured credentials. Options: `--ss-user`, `--ss-pass`, `--ss-devid`, `--ss-devpassword`, `--tgdb-key`, `--json`, `--help`.
 
 ## `curate`
@@ -295,6 +295,15 @@ Options: `--help`.
 - `introvideo restore FILENAMES`: Put one or more disabled videos back into rotation. Options: `--apply`, `--help`.
 - `introvideo swap`: Pick a random enabled video and copy it over intro_video_target. Options: `--apply`, `--help`.
 - `introvideo uninstall-autorun`: Remove the Windows logon task registered by 'install-autorun'. Options: `--apply`, `--help`.
+
+## `launchbox-db`
+
+The local copy of the LaunchBox Games Database (--source launchbox).
+
+Options: `--help`.
+
+- `launchbox-db status`: Show the local copy, and LaunchBox's current one. Options: `--offline`, `--help`.
+- `launchbox-db update`: Download LaunchBox's Metadata.zip and index it for --source launchbox. Options: `--force`, `--apply`, `--help`.
 
 ## `ledblinky`
 
