@@ -309,6 +309,7 @@ class Config:
     #         "title_strategy": "smart",       # "smart" | "stem" | "parent_folder"
     #         "lightgun": True,                # System uses Sinden / DemulShooter
     #         "launchbox_platform": "Sony PSP",  # str or list[str], searched in order
+    #         "libretro_system": "Sony_-_PlayStation_Portable",  # str or list[str]
     #     }
     #   }
     system_overrides: dict[str, dict] = field(default_factory=dict)

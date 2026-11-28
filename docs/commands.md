@@ -119,7 +119,7 @@ Options: `--help`.
 - `config system`: Per-system overrides for ROM extensions, scraper IDs, layout, emulator. Options: `--help`.
   - `config system clear SYSTEM_NAME`: Remove all overrides for SYSTEM_NAME (falls back to built-in defaults). Options: `--help`.
   - `config system list`: Show all per-system overrides. Options: `--help`.
-  - `config system set SYSTEM_NAME`: Add or update overrides for SYSTEM_NAME. Options: `--screenscraper-id`, `--thegamesdb-id`, `--rom-extensions`, `--layout`, `--emulator`, `--rom-path`, `--launchbox-platform`, `--help`.
+  - `config system set SYSTEM_NAME`: Add or update overrides for SYSTEM_NAME. Options: `--screenscraper-id`, `--thegamesdb-id`, `--rom-extensions`, `--layout`, `--emulator`, `--rom-path`, `--launchbox-platform`, `--libretro-system`, `--help`.
 - `config verify-credentials`: Probe ScreenScraper and TheGamesDB to check the configured credentials. Options: `--ss-user`, `--ss-pass`, `--ss-devid`, `--ss-devpassword`, `--tgdb-key`, `--json`, `--help`.
 
 ## `curate`

@@ -47,7 +47,7 @@ audio. Automatic repair copies video and re-encodes audio to AAC when needed.
 | `screenscraper_user`, `screenscraper_pass` | Optional ScreenScraper account |
 | `screenscraper_devid`, `screenscraper_devpassword` | App credentials; override only with an issued developer pair (ScreenScraper issues them on request through its forum; it refuses the bundled `SpinDoctor` value) |
 | `thegamesdb_key` | Optional TheGamesDB API key |
-| `default_metadata_source` | `auto`: combine configured providers when both exist; or select `screenscraper`, `thegamesdb`, `launchbox`, `both`, or a comma list asked in order (`launchbox,thegamesdb`); see [media sources](media-sources.md) |
+| `default_metadata_source` | `auto`: combine configured providers when both exist; or select `screenscraper`, `thegamesdb`, `launchbox`, `libretro`, `both`, or a comma list asked in order (`launchbox,thegamesdb`); see [media sources](media-sources.md) |
 | `max_concurrent_downloads` | `4` |
 | `match_threshold`, `interactive_matching` | `0.80`, `true` |
 | `metadata_cache_enabled`, `metadata_cache_ttl_days` | `true`, `30` |
@@ -69,7 +69,8 @@ spindoctor config system clear "MAME (Vector)"
 
 Optional flags set only supplied values: `--screenscraper-id`, `--thegamesdb-id`,
 `--rom-extensions` (CSV), `--layout` (`flat`, `per-game-folder`, `multi-disc-m3u`),
-`--emulator`, `--rom-path` and `--launchbox-platform` (repeatable, searched in order).
+`--emulator`, `--rom-path`, `--launchbox-platform` and `--libretro-system` (both
+repeatable, searched in order).
 Emulator names must match RocketLauncher's registry.
 Existing launcher choices are not universally overwritten by config generation.
 

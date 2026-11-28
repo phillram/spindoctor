@@ -358,7 +358,7 @@ def config_set(key: str, value: str):
       screenscraper_user        ScreenScraper username
       screenscraper_pass        ScreenScraper password
       thegamesdb_key            TheGamesDB API key
-      default_metadata_source   auto | screenscraper | thegamesdb | launchbox | both,
+      default_metadata_source   auto | screenscraper | thegamesdb | launchbox | libretro | both,
                                 or a comma list asked in that order
                                 (e.g. launchbox,thegamesdb). Default auto: both
                                 when both are configured, else whichever is
@@ -679,8 +679,13 @@ def config_system_group():
               help="LaunchBox platform name(s) to search for this wheel, in order "
                    "(e.g. \"Sony PSP Minis\"). Repeatable. Default: the wheel's own "
                    "name, then SpinDoctor's known aliases.")
+@click.option("--libretro-system", "libretro_systems", multiple=True,
+              help="libretro-thumbnails repository for this wheel, in order "
+                   "(e.g. \"Nintendo - Nintendo DS\"). Repeatable. Default: "
+                   "SpinDoctor's table, then \"<Maker> - <Rest>\" of the wheel's name.")
 def config_system_set(system_name, screenscraper_id, thegamesdb_id,
-                      rom_extensions, layout, emulator, rom_path, launchbox_platforms):
+                      rom_extensions, layout, emulator, rom_path, launchbox_platforms,
+                      libretro_systems):
     """Add or update overrides for SYSTEM_NAME.
 
     \b
@@ -721,12 +726,15 @@ def config_system_set(system_name, screenscraper_id, thegamesdb_id,
     if launchbox_platforms:
         names = [p.strip() for p in launchbox_platforms if p.strip()]
         entry["launchbox_platform"] = names[0] if len(names) == 1 else names
+    if libretro_systems:
+        names = [p.strip() for p in libretro_systems if p.strip()]
+        entry["libretro_system"] = names[0] if len(names) == 1 else names
 
     if not entry:
         err_console.print(
             "[red]Nothing to set.[/red] Pass at least one of "
             "--screenscraper-id / --thegamesdb-id / --rom-extensions / --layout / "
-            "--emulator / --rom-path / --launchbox-platform."
+            "--emulator / --rom-path / --launchbox-platform / --libretro-system."
         )
         sys.exit(1)
 
@@ -5932,7 +5940,7 @@ class _SourceParam(click.ParamType):
     name = "source"
 
     def get_metavar(self, param, ctx=None):  # click < 8.2 passes no ctx
-        return "[screenscraper|thegamesdb|launchbox|both|A,B,...]"
+        return "[screenscraper|thegamesdb|launchbox|libretro|both|A,B,...]"
 
     def convert(self, value, param, ctx):
         from .scraper import SINGLE_SOURCES, SOURCE_ALIASES, parse_source_list
