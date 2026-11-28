@@ -238,6 +238,7 @@ public static class FpTypeLib {
 | One board blinks constantly | Possible onboard flash speeds; reset-button-lights is a live PAC-LED64 operation. |
 | Controls/colors wrong | Check emulator/ROM names, file schema and the physical input map; run audit/profiles/calibration as appropriate. |
 | Coin/Start dark after remapping | Regenerate profiles with current AHK-remap handling and inspect effective keys. |
+| A PC game or Flash wheel lights only Exit and Pause | Its emulator's keys can't be read, so `ledblinky profiles` lights the keys the game's AHK keymapper profile remaps or binds. RocketLauncher loads one file only, the first it finds: `Profiles\AHK\<wheel>\<game>.ahk` (the wheel's game name exactly), `<wheel>\<emulator>.ahk`, `<wheel>.ahk`, `_Default.ahk`. Check that the right one exists and that the wheel's `Keymapper_AHK_Method` is on. With the Internal method a plain hotkey on a menu navigation key (`w::Send {Up}`) never fires and stays dark; `*w::` works. |
 | LEDs/ServoStik start late | Inspect LEDBlinky startup log/config workload and duplicate startup, not only SpinDoctor. |
 
 Pruned custom controls live in `.spindoctor/ledblinky_library`; preserve them.
