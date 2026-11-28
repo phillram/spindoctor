@@ -462,6 +462,21 @@ def test_off_previews_then_writes_with_a_backup(saved):
     assert "already off: DuckStation" in again.output
 
 
+def test_list_names_the_files_an_emulator_with_its_own_check_misses(saved, tmp_path):
+    emus = tmp_path / "Emulators"
+    dol = emus / "Dolphin"
+    _put(dol / "Dolphin.exe", b"MZ")
+    _put(dol / "portable.txt", "")
+    _put(dol / "User" / "Config" / "Dolphin.ini", "[Core]\nCPUThread = True\n")
+    _put(dol / "User" / "GC" / "USA" / "IPL.bin")
+    _register(tmp_path / "RocketLauncher", "Dolphin", "Dolphin\\Dolphin.exe")
+    result = CliRunner().invoke(cli, ["boot-intros", "list"])
+    assert result.exit_code == 0, result.output
+    row = next(line for line in result.output.splitlines() if "dolphin" in line)
+    assert "missing GameCube IPL, EUR" in row and "nothing extra" not in row
+    assert "IPL, JAP" in result.output     # the table may wrap the cell
+
+
 def test_unknown_name_exits_1_and_lists_the_names(saved):
     result = CliRunner().invoke(cli, ["boot-intros", "on", "nosuch"])
     assert result.exit_code == 1

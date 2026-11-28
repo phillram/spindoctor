@@ -3217,11 +3217,11 @@ def _boot_intro_state(target) -> str:
 
 
 def _boot_intro_needs(target) -> str:
-    if not target.setting.needs:
+    if not target.setting.has_needs:
         return "[dim]nothing extra[/dim]"
     if not target.missing:
         return "[green]found[/green]"
-    missing = ", ".join(m.split(" (", 1)[0] for m in target.missing)
+    missing = ", ".join(target.missing_short())
     if target.found:
         return f"[yellow]missing {missing}[/yellow]"
     return f"[red]missing {missing}[/red]"

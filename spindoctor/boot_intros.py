@@ -886,6 +886,17 @@ class Target:
         """The logo as the emulator (or the core's own options file) has it."""
         return self.state_of(self.files)
 
+    def missing_short(self) -> list[str]:
+        """The missing files' names (their description where names repeat)."""
+        names = [m.split(" (", 1)[0] for m in self.missing]
+        out = []
+        for name, text in zip(names, self.missing):
+            if names.count(name) > 1 and " (" in text:
+                name = text.split(" (", 1)[1].split(")", 1)[0]
+            if name not in out:
+                out.append(name)
+        return out
+
     def games_off_on(self) -> tuple[list[Path], list[Path]]:
         """The core's game files with the logo off, and with it on."""
         off = [p for p in self.game_files if self.state_of([p]) is False]

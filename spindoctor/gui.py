@@ -14714,12 +14714,12 @@ class _SpinDoctorGUI:
                 logo = "?"
             else:
                 logo = {True: "on", False: "off", None: "mixed"}[t.state]
-            if not t.setting.needs:
+            if not t.setting.has_needs:
                 needs = "nothing extra"
             elif not t.missing:
                 needs = "found"
             else:
-                needs = "missing " + ", ".join(m.split(" (", 1)[0] for m in t.missing)
+                needs = "missing " + ", ".join(t.missing_short())
             iid = tree.insert("", "end", text=t.label, values=(t.setting.consoles, logo, needs))
             # The name 'boot-intros on/off' takes for exactly this row: the
             # core in its RetroArch, or the emulator's own folder.
