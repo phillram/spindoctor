@@ -27,7 +27,8 @@ spindoctor boot-intros off melonds-ds --game-files --apply
 - **`on` and `off`** change every emulator in the list, or only the ones named. A
   name is the **Name** column (`gambatte`, `duckstation`), the emulator's or core's
   name, its folder, or a RocketLauncher emulator name. `Gambatte (RetroArch 1.22.2)`,
-  as the list shows it, picks one core in one RetroArch.
+  as the list shows it, picks one core in one RetroArch. A Name or label picks only
+  that emulator: `dolphin` is the standalone Dolphin, `dolphin-core` the RetroArch core.
 - **Both preview** what they would change, file by file, until `--apply`. Each file
   is backed up first (`<file>.<date>_<time>.bak`, or under `backup_dir\Emulators`)
   while `backup_before_modify` is on, and only the one setting changes: the rest of

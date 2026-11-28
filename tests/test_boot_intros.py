@@ -200,6 +200,33 @@ def test_a_new_core_file_starts_from_the_old_shared_options_file(tmp_path):
                                                   'mgba_skip_bios = "ON"\n')
 
 
+def test_a_missing_core_file_reads_the_old_shared_options_file(tmp_path):
+    # Until the core's own .opt exists, RetroArch takes the core's values from
+    # retroarch-core-options.cfg, so the logo is what that file says.
+    cfg, rl, emus = _cabinet(tmp_path, backup_before_modify=False)
+    ra = _retroarch(emus, rl, cores=("gambatte_libretro", "genesis_plus_gx_libretro"))
+    _put(ra / "retroarch-core-options.cfg",
+         'gambatte_gb_bootloader = "disabled"\ngenesis_plus_gx_bios = "enabled"\n')
+    _put(ra / "system" / "gb_bios.bin")
+    _put(ra / "system" / "bios_MD.bin")
+
+    found = boot_intros.survey(cfg)
+    gambatte, genesis = _only(found, "gambatte"), _only(found, "genesis-plus-gx")
+    assert not gambatte.files[0].exists() and gambatte.state is False   # default: on
+    assert not genesis.files[0].exists() and genesis.state is True      # default: off
+
+    result = boot_intros.plan([gambatte], turn_on=True)
+    assert [(c.key, c.old, c.new) for c in result.changes] == [
+        ("gambatte_gb_bootloader", "disabled", "enabled")]
+    [w] = boot_intros.write_plan(result, cfg)
+    assert w.created and w.file.read_text(encoding="utf-8") == 'gambatte_gb_bootloader = "enabled"\n'
+    assert _only(boot_intros.survey(cfg), "gambatte").state is True
+
+    result = boot_intros.plan([genesis], turn_on=False)
+    assert [(c.key, c.old, c.new) for c in result.changes] == [
+        ("genesis_plus_gx_bios", "enabled", "disabled")]
+
+
 def test_global_core_options_mode_edits_the_shared_file(tmp_path):
     cfg, rl, emus = _cabinet(tmp_path, backup_before_modify=False)
     ra = _retroarch(emus, rl, cores=("genesis_plus_gx_libretro",),
@@ -419,6 +446,29 @@ def test_select_by_name_folder_or_rocketlauncher_name(tmp_path):
     assert "SSF: no such setting" in str(err.value) and "gambatte, mgba" in str(err.value)
 
 
+def test_a_standalone_emulators_name_does_not_pick_the_core_of_the_same_name(tmp_path):
+    cfg, rl, emus = _cabinet(tmp_path)
+    _retroarch(emus, rl, cores=("flycast_libretro", "dolphin_libretro"))
+    _put(emus / "Flycast" / "flycast.exe", b"MZ")
+    _put(emus / "Flycast" / "emu.cfg", "[config]\nrend.vsync = yes\n")
+    _register(rl, "Flycast", "Flycast\\flycast.exe")
+    _put(emus / "Dolphin-x64" / "Dolphin.exe", b"MZ")
+    _put(emus / "Dolphin-x64" / "portable.txt", "")
+    _put(emus / "Dolphin-x64" / "User" / "Config" / "Dolphin.ini", "[Core]\nCPUThread = True\n")
+    _register(rl, "Dolphin", "Dolphin-x64\\Dolphin.exe")
+    found = boot_intros.survey(cfg)
+
+    def ids(*names):
+        return sorted(t.setting.id for t in boot_intros.select(found, names))
+
+    assert ids("flycast") == ids("Flycast") == ["flycast"]
+    assert ids("dolphin") == ids("Dolphin") == ids("Dolphin-x64") == ["dolphin"]
+    assert ids("Dolphin (Dolphin-x64)") == ["dolphin"]
+    assert ids("flycast-core") == ids("Flycast (RetroArch)") == ["flycast-core"]
+    assert ids("dolphin-core") == ids("Dolphin (RetroArch)") == ["dolphin-core"]
+    assert ids("RetroArch") == ["dolphin-core", "flycast-core"]
+
+
 # ── the command ───────────────────────────────────────────────────────────────
 
 @pytest.fixture
@@ -527,6 +577,34 @@ def test_gui_lists_only_logos_that_can_be_switched_with_their_state(saved, tmp_p
     app._run_cli = lambda prog, args, on_complete=None: ran.append(args)
     app._boot_intros_set(False, selected=False)          # "All off": the rows listed only
     assert ran == [["boot-intros", "off", "DuckStation"]]
+
+
+def test_gui_rows_name_only_their_own_emulator(saved, tmp_path):
+    from spindoctor import gui
+
+    emus, rl = tmp_path / "Emulators", tmp_path / "RocketLauncher"
+    _put(emus / "Flycast" / "flycast.exe", b"MZ")
+    _put(emus / "Flycast" / "emu.cfg", "[config]\nrend.vsync = yes\n")
+    _put(emus / "Flycast" / "data" / "dc_boot.bin")
+    _register(rl, "Flycast", "Flycast\\flycast.exe")
+    _retroarch(emus, rl, cores=("flycast_libretro",))    # no Dreamcast BIOS: not listed
+
+    app = gui._SpinDoctorGUI.__new__(gui._SpinDoctorGUI)
+    app._boot_intros_tree, app._boot_intros_note = _Tree(), _Note()
+    app._refresh_boot_intros_list()
+    rows = app._boot_intros_tree.rows
+    assert [text for _iid, text, _values in rows] == ["DuckStation", "Flycast"]
+    assert app._boot_intros_note.text == "1 more need a boot ROM or BIOS file first: Flycast (RetroArch)."
+
+    ran = []
+    app._global_apply_var = type("Var", (), {"get": lambda self: False})()
+    app._run_cli = lambda prog, args, on_complete=None: ran.append(args)
+    app._boot_intros_set(False, selected=False)
+    app._boot_intros_tree.picked = (rows[1][0],)
+    app._boot_intros_set(True, selected=True)
+    found = boot_intros.survey(config_mod.load_config())
+    picked = [sorted(t.setting.id for t in boot_intros.select(found, args[2:])) for args in ran]
+    assert picked == [["duckstation", "flycast"], ["flycast"]]
 
 
 def test_unknown_name_exits_1_and_lists_the_names(saved):

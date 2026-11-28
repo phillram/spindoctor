@@ -14718,9 +14718,8 @@ class _SpinDoctorGUI:
         for t in shown:
             logo = {True: "On", False: "Off", None: "Mixed"}[t.state]
             iid = tree.insert("", "end", text=t.label, values=(t.setting.consoles, logo))
-            # The name 'boot-intros on/off' takes for exactly this row: the
-            # core in its RetroArch, or the emulator's own folder.
-            self._boot_intros_names[iid] = t.label if t.setting.retroarch else t.program
+            # The label is what 'boot-intros on/off' picks this row alone by.
+            self._boot_intros_names[iid] = t.label
         if waiting and note is not None:
             note.configure(text=f"{len(waiting)} more need a boot ROM or BIOS file first: "
                                 + ", ".join(t.label for t in waiting) + ".")

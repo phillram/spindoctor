@@ -916,6 +916,10 @@ class Target:
         """Whether the logo can be turned both on and off here right now."""
         return not self.problem and not self.blocked and self.can_turn_on
 
+    def names_exactly(self, name: str) -> bool:
+        """Whether *name* is this target's own Name column or shown label."""
+        return name.strip().lower() in (self.setting.id, self.label.lower())
+
     def matches(self, name: str) -> bool:
         n = name.strip().lower()
         return n in (self.setting.id, self.setting.name.lower(), self.program.lower(),
@@ -940,11 +944,15 @@ def _read_values(target: Target) -> None:
     s = target.setting
     for path in target.files + target.game_files:
         text = ""
-        if path.is_file():
-            try:
+        try:
+            if path.is_file():
                 text = read_editable_text(path)
-            except (OSError, UnicodeDecodeError) as e:
-                target.problem = f"can't read {path}: {e}"
+            elif s.retroarch and path in target.files:
+                # RetroArch reads a core's values from the old shared options
+                # file until the core's own .opt exists (write_plan seeds it).
+                text = _ra_seed(s, path, target.layouts)
+        except (OSError, UnicodeDecodeError) as e:
+            target.problem = f"can't read {path}: {e}"
         for key in s.keys:
             target.values[(path, key)] = read_value(text, key, s.section, s.fmt) if text else None
         for key, _value, _ok in s.also_on:
@@ -1105,7 +1113,9 @@ def select(found: Survey, names: Iterable[str]) -> list[Target]:
 
     A name is a setting name from ``boot-intros list`` (``gambatte``), an
     emulator or core name, an emulator folder name or a RocketLauncher
-    emulator name, in any case.
+    emulator name, in any case.  A name that is a target's own Name or label
+    picks only that target, so ``dolphin`` (or ``Flycast``) never also picks
+    the RetroArch core with the same emulator name.
     """
     names = [n for n in names if n.strip()]
     if not names:
@@ -1113,7 +1123,8 @@ def select(found: Survey, names: Iterable[str]) -> list[Target]:
     picked: list[Target] = []
     unknown = []
     for name in names:
-        hits = [t for t in found.targets if t.matches(name)]
+        hits = ([t for t in found.targets if t.names_exactly(name)]
+                or [t for t in found.targets if t.matches(name)])
         if not hits:
             unknown.append(name)
         for t in hits:
