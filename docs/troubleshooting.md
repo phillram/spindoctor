@@ -51,6 +51,7 @@ command-specific; do not delete manifests to silence errors.
 | Visual Pinball X won't start, or ignores its settings file | The stock module is for versions 8 and 9, and 10.8.0 reads an INI beside the program only with `-Ini`: [Visual Pinball X](pinball.md#visual-pinball-x). |
 | Panel buttons move BAM's camera or open its menu in Future Pinball | Its default keys are letters: [change them in `bam.cfg`](pinball.md#future-pinball-with-bam). |
 | A 3DS game stops at a message that it is encrypted | Azahar runs decrypted `.3ds` / `.cci` dumps only, and `.cia` files must be installed: [3DS games](nintendo-3ds.md#games). |
+| DS saves are gone after moving from DeSmuME to melonDS | DeSmuME's `.dsv` adds a footer, and melonDS reads `<name>.sav` from its own save folder: [convert them](nintendo-ds.md#saves-from-desmume). |
 | Disc games (Saturn, Neo Geo CD, PC-FX, …) start without their own disc, and DAEMON Tools says “Close all running applications which may use your virtual drive” | An emulator was closed by force while it read the mounted disc, and DAEMON Tools Lite now refuses every mount and unmount, though no program shows a handle on the drive. Restart its “Disc Soft Lite Bus Service” as administrator. That frees the disc but also removes the virtual drive, so add it back (`DTCommandLine.exe --add --type "dt"`) and check its letter (`--get_letter --type "dt" --number 0`): RocketLauncher mounts on SCSI drive 0, else DT drive 0. Close emulators with the exit key, not by ending the process, while a disc is mounted. |
 
 ## Metadata and scraping
@@ -180,6 +181,7 @@ Task registration is Windows-only and separate from startup wheel refresh.
 | Daphne volume key pauses/quits | A zero key slot in `dapinput.ini` can match unmapped media keys. Assign valid deliberate SDL keys; back up first. |
 | PS4 pads do nothing in Xbox games | Cxbx-R misses a virtual Xbox pad that appears as it starts: [bind the real pads](xbox.md#ps4-pads). |
 | Panel or pad does nothing in 3DS games | Azahar binds each button to one source, so its profile is the panel or the pad; the module can pick per start: [3DS panel and pads](nintendo-3ds.md#panel-and-pads). |
+| PS4 pad does nothing in DS games (melonDS) | melonDS binds the pad by SDL's raw joystick numbers, with the D-pad as buttons: [DS panel and pad](nintendo-ds.md#panel-and-pad). |
 | Saturn keys are right in most games but wrong in a few, or an SSF setting doesn't take for one game | SSF keeps each game's settings, keys included, in its own file once the game has run, and uses it over `SSF.ini`: [SSF per-game settings](cabinet-architecture-reference.md#ssf-per-game-settings). |
 | DemulShooter not found | Set its explicit path, verify the installation and run detection. |
 | Gun fails after configure | Check target, per-game ROM requirements, native RL gun settings and duplicate User Functions startup. |
@@ -265,6 +267,10 @@ Check internal emulator paths, not only `Rom_Path`.
   [core setting or build](xbox.md#one-cpu-core-is-full-and-the-game-crawls).
 - **An Azahar setting doesn't take:** its `\default` line still says `true`, so Azahar
   ignores the value: [set both lines](nintendo-3ds.md#a-setting-that-doesnt-take).
+- **A melonDS setting doesn't take, or a pause-menu save slot opens a file box:**
+  melonDS writes `melonDS.toml` back when it closes, screen smoothing is now a
+  per-window setting, and F9 opens a file box: [melonDS settings](nintendo-ds.md#settings),
+  [save states](nintendo-ds.md#starting-games-from-rocketlauncher).
 - **After moving to a newer RetroArch, panel buttons slow the game or start netplay,
   a game-name popup shows at every start, the picture sits off-centre, or saves
   seem gone:** the config came from the older version, and newer versions sort
