@@ -20,7 +20,7 @@ CLI examples use `spindoctor` (pip); Windows binaries use `spindoctor-cli`.
 | Run Nintendo 3DS games | [Azahar](nintendo-3ds.md) |
 | Run Nintendo DS and DSi games | [melonDS](nintendo-ds.md) |
 | Run DSiWare (Nintendo DSi download games) | [RetroArch's melonDS DS core](nintendo-dsi.md) |
-| Run Nokia N-Gage games | [EKA2L1](nokia-ngage.md) |
+| Run Nokia N-Gage and N-Gage 2.0 games | [EKA2L1](nokia-ngage.md) |
 | Run PlayStation 2 games | [PCSX2 2.x](playstation-2.md) |
 | Run Atari Jaguar games | [BigPEmu](atari-jaguar.md) |
 | Run Sega Dreamcast, Naomi and Atomiswave games | [Flycast](sega-dreamcast-naomi.md) |

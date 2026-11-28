@@ -3,8 +3,9 @@
 SpinDoctor doesn't install emulators or supply games or system files. These notes are
 about running Nokia N-Gage games from RocketLauncher in [EKA2L1](https://github.com/EKA2L1/EKA2L1),
 the Symbian emulator. Checked with EKA2L1's automatic build of 2026-11-27 (commit
-`c1d921a`, shown as 0.0.9) on Windows 10, with a ROM dump of a classic N-Gage (NEM-4):
-check again after an upgrade, on a copy first.
+`c1d921a`, shown as 0.0.9) on Windows 10, with a ROM dump of a classic N-Gage (NEM-4)
+and, for [N-Gage 2.0 games](#n-gage-20-games), a dump of a Nokia N85 (RM-333): check
+again after an upgrade, on a copy first.
 
 ## Install
 
@@ -132,6 +133,73 @@ HIDAPI only) listed none of DS4Windows' DualShock 4 copies; SDL 2.30's lists the
 an `SDL2.dll` from SDL 2.30 beside `eka2l1_qt.exe` lets the pads work (SDL2 keeps its
 interface between versions). See [PS4 pads](ps4-pads.md).
 
+## N-Gage 2.0 games
+
+N-Gage 2.0 (2008-2009) was an app for Symbian S60 3rd Edition phones: its games came
+as `.n-gage` files from the app's shop, and the app installed and started them. In
+EKA2L1 it needs one of those phones, installed from a dump of the phone (its `SYM.ROM`
+and Z: drive); this section was checked with a Nokia N85 (`RM-333`, S60 3rd Edition
+Feature Pack 2).
+
+**The app can't run them now.** The N-Gage app (v1.40) installs and opens, then stops on
+"There was an error validating your certificate. Please make sure that date and time are
+set correctly in your device": its certificate ran out in 2009. EKA2L1 sets the phone's
+clock from the PC's at every start. Started with a date in June 2009, the app lists the
+games but calls each `.n-gage` file "File is corrupted. Delete Now?": EKA2L1 doesn't open
+the protected (DRM) content the app installs a game from.
+
+**The game package runs on its own.** A `.n-gage` file is a MIME multipart bundle of
+three parts, each with a `Content-ID` header: the shop's details (`RetailerInfo`, XML), a
+metadata package (`Metadata`, `.sis`) and the game package (`Game`, `.sis`). Installed
+straight onto the phone, the game package puts the game's program in `E:\sys\bin\` and its
+data in `E:\private\<UID>\`, and `--run` starts that program without the app, at today's
+date:
+
+```text
+eka2l1_qt.exe --device RM-333 --run E:\sys\bin\<program>.exe --fullscreen
+```
+
+- **Splitting the file.** The parts are separated by boundary lines (`--KBoundary` in
+  the files tried). A part's headers end at its first blank line; its body runs to the
+  line break before the next boundary. For example, in Python:
+
+  ```python
+  import re
+  from pathlib import Path
+
+  data = Path("Game Name.n-gage").read_bytes()
+  for part in data.split(b"--KBoundary")[1:]:
+      head, blank, body = part.partition(b"\r\n\r\n")
+      name = re.search(rb"Content-ID:\s*<([^>]+)>", head)
+      if blank and name:
+          if body.endswith(b"\r\n"):
+              body = body[:-2]
+          ext = ".sis" if b"sis" in head.lower() else ".xml"
+          Path(name.group(1).decode() + ext).write_bytes(body)
+  ```
+
+- **Installing the game package** (`Game.sis`): like any `.sis` package in EKA2L1, or on
+  a test copy through the [test API](#testing) (`POST /v1/apps` with `{"path": "<file>"}`;
+  give it a path without accented letters, which it reads wrongly). EKA2L1 may install
+  every option block of a package, because it doesn't evaluate some of their conditions.
+- **The program** is the `.exe` the package puts in `sys\bin`, other than its small
+  `AS_<UID>.exe` helper. A module needs one name per game, for example from its own INI.
+- **Keep the N-Gage app installed.** The games load its libraries (`ngi*.dll`, `NAF*.dll`,
+  `playclient*.dll`, `ArenaEnv.dll` and more). On a phone without them, `EKA2L1.log` says
+  `Can't load <program>.exe: imported DLL ArenaEnv.dll not found`, and EKA2L1 shows its
+  phone menu in a window instead of the game.
+- **Not every game runs.** Of 26 games tried this way, 23 played (two of them close right
+  after starting in some runs: start them again), and 3 didn't (a scrambled screen,
+  garbled text, a crash at start). A few games that play show some of their text
+  garbled.
+- **Keys.** These games confirm with OK (the phone's centre key, a tick on screen), where
+  the classic N-Gage games use 5: Block Breaker Deluxe ignores 5 in its menus and on
+  "Press ✓ to start". Put OK (167) on the main panel button and the pad's Cross.
+- **A separate EKA2L1 for this wheel.** The phones in one EKA2L1 share its C: and E:
+  drives (`devices.yml`: `isolated-drives: false`), and every phone uses the same key
+  file. A second portable copy of EKA2L1 for the N-Gage 2.0 wheel keeps the N85, its
+  installed games and its keys apart from the classic N-Gage's.
+
 ## Testing
 
 `--debug-control-port <port>` opens a loopback HTTP API, useful on a test copy: `GET
@@ -141,3 +209,8 @@ interface between versions). See [PS4 pads](ps4-pads.md).
 API). That can boot every card on a wheel and save a picture of each, also on a hidden
 desktop, where a window capture can't see EKA2L1's OpenGL picture. Keep the port off on
 the cabinet itself.
+
+A game started with `--run` has no API session, so `GET /v1/screenshot` refuses it. Starting
+a phone app that shows no window through the API afterwards (on the N85, `AcControl`,
+`POST /v1/apps/0x2000A2AA/launch`) opens one, and the screenshots then show the game, which
+stays in front.
