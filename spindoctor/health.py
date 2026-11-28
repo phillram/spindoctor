@@ -1561,6 +1561,23 @@ def _pc_program_target(value: str) -> Optional[str]:
     return value
 
 
+def _bare_file_name(value: str) -> bool:
+    """Whether a program key names just a file (``setup.exe``), no folder."""
+    from pathlib import PureWindowsPath
+
+    pw = PureWindowsPath(value)
+    return not pw.drive and not pw.root and len(pw.parts) == 1
+
+
+def _on_unmounted_drive(value: str, look: _RomLookup) -> bool:
+    """Whether *value* is on a drive that can't be listed now: one with no
+    disc in it, or a virtual drive letter that exists only while mounted."""
+    from pathlib import PureWindowsPath
+
+    drive = PureWindowsPath(value).drive
+    return bool(drive) and look.listing(Path(drive + "\\")) is None
+
+
 def _wheel_pc_programs(
     system: str, look: _RomLookup, databases_dir: Path, search: Optional[_DllSearch],
 ) -> Optional[Check]:
@@ -1588,6 +1605,7 @@ def _wheel_pc_programs(
     absent: list[_PcProgram] = []
     misplaced: list[tuple[_PcProgram, str, Path, Optional[Path]]] = []  # (program, WorkingFolder, folder, its INI)
     other = 0           # Steam / URL / script (.ahk, .bat): no import table to read
+    on_disc = 0         # on a DiscImage that is only there once PCLauncher mounts it
     unity = 0
     uncheckable = False
     for name in games:
@@ -1608,7 +1626,8 @@ def _wheel_pc_programs(
         work = _resolve_rom_path(folder, look.rl_dir) if folder else None
         # Origin starts the game itself, and a DiscImage game's program may be
         # on the mounted disc: neither goes through the plain start below.
-        plain = not setting["OriginGame"][0] and not setting["DiscImage"][0]
+        disc = bool(setting["DiscImage"][0])
+        plain = not setting["OriginGame"][0] and not disc
         read_any = False
         for key in _PCLAUNCHER_PROGRAM_KEYS:
             value, ini = setting[key]
@@ -1619,6 +1638,11 @@ def _wheel_pc_programs(
                 if value and key == "Application":
                     other += 1
                 continue
+            if disc and key == "Application" and _bare_file_name(target):
+                # PCLauncher takes a bare Application name as the root of the
+                # mounted image, not the RocketLauncher folder.
+                on_disc += 1
+                continue
             full = _resolve_rom_path(target, look.rl_dir)
             if full is None:
                 uncheckable = True
@@ -1627,7 +1651,12 @@ def _wheel_pc_programs(
             if key == "Application" and _is_uninstaller(full):
                 uninstallers.append(program)
             if not look.exists(full):
-                absent.append(program)
+                if disc and _on_unmounted_drive(target, look):
+                    # PCLauncher mounts DiscImage before it looks for its
+                    # programs, so one on the virtual drive is there by then.
+                    on_disc += 1
+                else:
+                    absent.append(program)
                 continue
             if key == "Application" and plain and work is not None:
                 # RocketLauncher's Process.Run() starts it as
@@ -1736,11 +1765,13 @@ def _wheel_pc_programs(
         notes.append(f"{total} game(s) read")
     if other:
         notes.append(f"{other} start through Steam, a URL or a script (no import table to read)")
+    if on_disc:
+        notes.append(f"{on_disc} program(s) are on a disc image PCLauncher mounts first (not read)")
     if search is None:
         notes.append("no Windows folder (SystemRoot), so DLLs weren't looked for")
     if uncheckable:
         notes.append("some paths use Windows drive letters; can't check them on this OS")
-    if not total and not node.children and not other:
+    if not total and not node.children and not other and not on_disc:
         node.status = Status.INFO
         notes.append("no programs to read")
     node.detail = "; ".join(notes)
@@ -1777,7 +1808,9 @@ def check_pc_game_programs(config: Config) -> Check:
     * an ``Application`` that is an uninstaller (``unins*.exe``) is a WARN.
 
     URLs, Steam (``SteamID``, ``steam://``) and scripts (``.ahk``, ``.bat``,
-    which have no import table) are skipped.  DLLs a program loads only while
+    which have no import table) are skipped, and so is a program on a
+    ``DiscImage`` that isn't there until PCLauncher mounts it (a bare file
+    name, or a drive that can't be listed now).  DLLs a program loads only while
     running (delay-loaded, or with ``LoadLibrary``) can't be seen.  Wheels
     switched off on the Main Menu are capped at INFO.  Diagnosis only.
     """
