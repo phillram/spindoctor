@@ -3,6 +3,8 @@
 This is an adaptable PS4-pad example, not automatic SpinDoctor configuration.
 Use one mapping path: keyboard output while HyperSpin is focused, virtual
 Xbox/XInput output in games.
+For DualShock 4 output in games instead, with HidHide so that each pad shows up
+once, see [PS4 pads with DS4Windows and HidHide](ps4-pads.md).
 
 ## Profiles
 
@@ -80,9 +82,12 @@ Per-game Dolphin profiles can overwrite global controller edits.
 SSF (Sega Saturn) keeps each game's keys in the game's own settings file once it
 has run, so a layout changed in `SSF.ini` must be copied there too:
 [SSF per-game settings](cabinet-architecture-reference.md#ssf-per-game-settings).
-A current RetroArch reads the virtual pads through its `sdl2` joypad driver and its
-own "PS4 Controller" profile when the system config leaves the pad binds `nul`:
+A current RetroArch reads DS4Windows' DualShock 4 copies through its `dinput` joypad
+driver and its `DUALSHOCK_4.cfg` profile when the system config leaves the pad binds
+`nul`; its `sdl2` driver may list none:
 [moving to a current RetroArch](cabinet-architecture-reference.md#moving-retroarch-wheels-to-a-current-retroarch).
+Emulators that hold one input per control, or read only Xbox pads, can get the pads as
+the panel's keys: [pads as panel keys](ps4-pads.md#pads-as-panel-keys).
 
 See [cabinet input reference](cabinet-architecture-reference.md#input) and
 [gun/remap precedence](lightgun.md#two-guns-model-3-and-sinden).
