@@ -3,7 +3,9 @@
 LEDBlinky picks a profile for a launched game in this order (confirmed against
 ``Debug.log`` on the cabinet):
 
-* The emulator name is the HyperSpin wheel name, upper-cased, spaces -> ``_``.
+* The emulator name is the HyperSpin wheel name, upper-cased, spaces -> ``_``,
+  cut at its last dot (``Nokia N-Gage 2.0`` -> ``NOKIA_N-GAGE_2``).  Game
+  names keep their dots.
 * Emulators with ``MAME`` in the name use ``Controls.ini`` / ``Colors.ini`` and
   take each control's key from MAME's own cfg.
 * Everything else: ``<emulator>/<game>`` group -> ``<emulator>/DEFAULT`` ->
@@ -39,6 +41,7 @@ from .ledblinky import (
     CONTROLS_XML_NAME,
     _backup,
     _config_backup_dir,
+    wheel_section_name,
 )
 from .ledblinky_library import Library, RawIni, find_community_controls, render_section
 from .rl_rom_paths import _RomLookup
@@ -58,6 +61,15 @@ def is_mame_named(system: str) -> bool:
 def emu_key(system: str) -> str:
     """LEDBlinky's emulator / game key: upper-case, spaces -> underscores."""
     return system.strip().upper().replace(" ", "_")
+
+
+def system_key(system: str) -> str:
+    """The key of the ``<emulator>`` section LEDBlinky uses for wheel *system*.
+
+    Unlike a game's name, a wheel's is cut at its last dot first
+    (``wheel_section_name``), so ``Tiger Game.com`` is ``TIGER_GAME``.
+    """
+    return emu_key(wheel_section_name(system))
 
 
 def group_name(game: str) -> str:
@@ -1311,14 +1323,24 @@ class ControlsXmlDoc:
                 return m
         return None
 
-    def upsert_groups(self, system: str, groups: Iterable[GroupXml],
-                      remove: Iterable[str] = ()) -> None:
-        """Replace (or add) whole control groups under the emulator for *system*."""
-        groups = list(groups)
-        key = emu_key(system)
+    def rename_emulator(self, key: str, emuname: str) -> bool:
+        """Give the section *key* the ``emuname`` *emuname*; its groups stay as they are."""
         m = self._emu_span(key)
         if m is None:
-            block = (f"  <emulator emuname={quoteattr(system.replace(' ', '_'))} emuDesc=\"\">\n"
+            return False
+        block = re.sub(r'(<emulator\b[^>]*?\bemuname=)"[^"]*"', lambda t: t.group(1) + quoteattr(emuname),
+                       m.group(0), count=1)
+        self.text = self.text[:m.start()] + block + self.text[m.end():]
+        return True
+
+    def upsert_groups(self, system: str, groups: Iterable[GroupXml],
+                      remove: Iterable[str] = ()) -> None:
+        """Replace (or add) whole control groups under the emulator for wheel *system*."""
+        groups = list(groups)
+        key = system_key(system)
+        m = self._emu_span(key)
+        if m is None:
+            block = (f"  <emulator emuname={quoteattr(wheel_section_name(system))} emuDesc=\"\">\n"
                      f"  </emulator>\n")
             anchor = re.search(r'[ \t]*<emulator\b[^>]*emuname="OTHER"', self.text)
             pos = anchor.start() if anchor else self.text.rfind("</dat>")
@@ -1609,7 +1631,7 @@ class ProfileBuilder:
     # -- helpers --------------------------------------------------------------
 
     def _default_block(self, system: str) -> tuple[Optional[ET.Element], str]:
-        emu = self.doc.emulators().get(emu_key(system))
+        emu = self.doc.emulators().get(system_key(system))
         blocks = self.doc.groups(emu).get("DEFAULT") if emu else None
         if blocks:
             return parse_group(blocks[0])
@@ -1859,7 +1881,7 @@ class ProfileBuilder:
         """
         games = {g.name for g in load_db(self.config, system) or []}
         groups = []
-        old_groups = self.doc.groups(self.doc.emulators().get(emu_key(system), ""))
+        old_groups = self.doc.groups(self.doc.emulators().get(system_key(system), ""))
         # Only remove groups we created, never unrelated hand-authored profiles.
         obsolete = {k for k, blocks in old_groups.items() if _GENERATED_OVERRIDE in blocks[0]}
         overridden = {g.lower() for g in self.resolver.rl.game_overrides(system)}
@@ -1919,7 +1941,7 @@ class ProfileBuilder:
         """Per-game groups for an arcade wheel LEDBlinky doesn't treat as MAME."""
         launcher = self.resolver.system_launcher(system)
         player0 = self._default_block(system)[1] or self._admin_player0()
-        existing_emu = self.doc.emulators().get(emu_key(system), "")
+        existing_emu = self.doc.emulators().get(system_key(system), "")
         existing_groups = self.doc.groups(existing_emu)
         default_el = self._default_block(system)[0]
         default_colors = {c.get("name"): c.get("color") for c in _existing_controls(default_el)}
@@ -1977,7 +1999,7 @@ class ProfileBuilder:
         km = self.resolver.for_launcher(launcher, system)
         if km is None or not km.keys:
             km = arcade_layout_keymap()
-        emu_block = self.doc.emulators().get(emu_key(system))
+        emu_block = self.doc.emulators().get(system_key(system))
         if not emu_block:
             return
         db = load_db(self.config, system) or []
@@ -1999,7 +2021,7 @@ class ProfileBuilder:
         self.result.actions.append(SystemAction(system, "re-keyed existing arcade groups", fixed, source,
                                                 "" if km.verified else "keys assumed from cabinet arcade layout"))
         # Games with no group of their own but with controls data get one.
-        have = self.doc.groups(self.doc.emulators().get(emu_key(system), ""))
+        have = self.doc.groups(self.doc.emulators().get(system_key(system), ""))
         default_el, player0 = self._default_block(system)
         default_colors = {c.get("name"): c.get("color") for c in _existing_controls(default_el)}
         new = []
@@ -2023,7 +2045,7 @@ class ProfileBuilder:
         """Carry an old emulator section's groups over to a renamed wheel, re-keyed."""
         emus = self.doc.emulators()
         old = emus.get(emu_key(legacy_emu))
-        if not old or emu_key(system) in emus:
+        if not old or system_key(system) in emus:
             return
         games = {emu_key(g.name) for g in load_db(self.config, system) or []} | {"DEFAULT"}
         km = arcade_layout_keymap()
@@ -2031,13 +2053,37 @@ class ProfileBuilder:
         for key, bl in self.doc.groups(old).items():
             if key in games:
                 blocks.append(self._ensure_admin(rekey_arcade_group(bl[0], km, self.panel) or bl[0]))
-        block = (f"  <emulator emuname={quoteattr(system.replace(' ', '_'))} emuDesc=\"\">\n"
+        block = (f"  <emulator emuname={quoteattr(wheel_section_name(system))} emuDesc=\"\">\n"
                  + "".join(b if b.endswith("\n") else b + "\n" for b in blocks) + "  </emulator>\n")
         anchor = re.search(r'[ \t]*<emulator\b[^>]*emuname="OTHER"', self.doc.text)
         pos = anchor.start() if anchor else self.doc.text.rfind("</dat>")
         self.doc.text = self.doc.text[:pos] + block + self.doc.text[pos:]
         self.result.actions.append(SystemAction(system, f"groups carried over from {legacy_emu}", len(blocks),
                                                 km.source, "keys assumed from cabinet arcade layout"))
+
+    def rename_dotted_section(self, system: str) -> None:
+        """Move a section named after the whole of a dotted wheel name to the name LEDBlinky asks for.
+
+        LEDBlinky cuts a wheel's name at its last dot, so a ``Tiger_Game.com``
+        section is never used for the ``Tiger Game.com`` wheel; ``Tiger_Game``
+        is.  The section keeps its groups.  When both are there, neither is
+        touched: the cut one is in use already.
+        """
+        full, cut = emu_key(system), system_key(system)
+        emus = self.doc.emulators()
+        if full == cut or full not in emus:
+            return
+        old_name = _unescape(re.search(r'emuname="([^"]*)"', emus[full]).group(1))
+        if cut in emus:
+            self.result.warnings.append(
+                f"{system}: section '{old_name}' is never used (LEDBlinky looks this wheel up as "
+                f"'{wheel_section_name(system)}', which is there too); delete it by hand")
+            return
+        self.doc.rename_emulator(full, wheel_section_name(system))
+        self.result.actions.append(SystemAction(
+            system, f"section {old_name} renamed {wheel_section_name(system)}",
+            len(self.doc.groups(self.doc.emulators()[cut])), "",
+            "LEDBlinky cuts a wheel name at its last dot"))
 
     # -- collections ----------------------------------------------------------
 
@@ -2071,7 +2117,7 @@ class ProfileBuilder:
             km = self.resolver.for_game(system, rom) or arcade_layout_keymap()
             return build_arcade_group(rom, ctl, self.colors_for(rom), km, self.panel,
                                       set_primary_joystick(self._admin_player0(), joystick), voices)
-        emu = self.doc.emulators().get(emu_key(system))
+        emu = self.doc.emulators().get(system_key(system))
         if not emu:
             return None
         groups = self.doc.groups(emu)
@@ -2095,7 +2141,7 @@ class ProfileBuilder:
             else:
                 raw.append(re.sub(r'groupName="[^"]*"', f"groupName={quoteattr(group_name(target))}", g, count=1))
         # Rebuild the collection's emulator section from scratch: members change.
-        key = emu_key(system)
+        key = system_key(system)
         m = self.doc._emu_span(key)
         if m is not None:
             self.doc.text = self.doc.text[:m.start()] + self.doc.text[m.end():]
@@ -2215,9 +2261,11 @@ def plan_profiles(config: Config) -> ProfileBuilder:
         if system in systems:
             b.migrate_legacy_section(system, legacy)
     for system in systems:
+        b.rename_dotted_section(system)
+    for system in systems:
         if is_mame_named(system) or system in COLLECTION_SYSTEMS:
             continue
-        if system in LEGACY_SECTIONS and emu_key(system) in b.doc.emulators():
+        if system in LEGACY_SECTIONS and system_key(system) in b.doc.emulators():
             continue
         launcher = b.resolver.system_launcher(system)
         exe = launcher.exe.lower() if launcher else ""
@@ -2226,7 +2274,7 @@ def plan_profiles(config: Config) -> ProfileBuilder:
         elif exe.startswith(("zinc", "demul", "daphne", "emulator_multicpu", "supermodel", "aae")) \
                 or system in ("Sega Model 3", "Sega Triforce", "Taito Type X") \
                 or (exe.startswith("flycast") and is_flycast_arcade(system)):
-            if system in ("Zinc", "Sega Hikaru") or emu_key(system) not in b.doc.emulators():
+            if system in ("Zinc", "Sega Hikaru") or system_key(system) not in b.doc.emulators():
                 b.arcade_wheel(system)
             else:
                 b.rekey_existing_arcade(system)
