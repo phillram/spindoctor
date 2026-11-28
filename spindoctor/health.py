@@ -1844,6 +1844,158 @@ def check_pc_game_programs(config: Config) -> Check:
     return parent
 
 
+# ─── Emulator programs ───────────────────────────────────────────────────────
+#
+# The same missing-DLL failure for the emulators RocketLauncher starts
+# (Emu_Path): an emulator built with an older Visual C++ or DirectX needs that
+# runtime installed, and a newer Visual C++ runtime doesn't replace an older
+# one.  Every game on the wheel then stops at Windows' "System Error ... was
+# not found" box.
+
+# Modules that never start their emulator section's Emu_Path (it names a
+# placeholder; the module starts each game's own program).
+_EMU_PATH_UNUSED_MODULES = (_PCLAUNCHER_MODULE, "casual games.ahk")
+
+# DLL name prefix -> the Microsoft download it comes with.
+_VC_RUNTIME_YEARS = {"71": "2003", "80": "2005", "90": "2008", "100": "2010", "110": "2012",
+                     "120": "2013", "140": "2015-2022"}
+
+
+def _runtime_of(dll: str, bits: int) -> str:
+    """The package that installs *dll*, for a *bits*-bit program ("" when not
+    a known runtime)."""
+    import re
+
+    low = dll.lower()
+    arch = "x86" if bits == 32 else "x64"
+    m = re.match(r"(?:msvc[rp]|mfcm?|vcomp|vcruntime|concrt|atl)(\d{2,3})", low)
+    if m and m.group(1) in _VC_RUNTIME_YEARS:
+        return f"Microsoft Visual C++ {_VC_RUNTIME_YEARS[m.group(1)]} Redistributable ({arch})"
+    # The June 2010 DirectX runtime's D3DX, compiler 33-43, XInput 1.1-1.3 and
+    # XAudio 2.0-2.7 (later ones, such as d3dcompiler_47 and xinput1_4, are Windows' own).
+    if re.match(r"(?:d3dx9_|d3dx10_|d3dx11_|d3dcompiler_(?:3\d|4[0-3])\.|xinput1_[123]\.|x3daudio1_|"
+                r"xaudio2_[0-7]\.|xactengine)", low):
+        return "the DirectX End-User Runtime (June 2010)"
+    if low == "openal32.dll":
+        return "OpenAL"
+    if low == "xlive.dll":
+        return "Games for Windows Live"
+    return ""
+
+
+def check_emulator_programs(config: Config) -> Check:
+    """Will each emulator RocketLauncher starts run?  FAIL when its program
+    needs a DLL that isn't there, or one of the other bitness.
+
+    For every Main Menu wheel, the emulators its games launch with (the
+    wheel's ``Default_Emulator`` and the ``Emulator=`` / ``System=`` overrides
+    in its ``Games.ini``) are followed to the ``Emu_Path`` RocketLauncher reads
+    (:meth:`_RomLookup.game_source`, relative to the RocketLauncher folder).  Each
+    program is read once, the way :func:`check_pc_game_programs` reads a PC
+    game's (:class:`_DllSearch`), and a FAIL names the wheels that use it and,
+    for a known runtime, the package that installs the DLL.  Emulators whose
+    program is missing are left to the wheel and ROM checks; PCLauncher and
+    Casual Games never start their ``Emu_Path``.  An emulator only hidden
+    wheels use is capped at INFO.  DLLs an emulator loads later (RetroArch's
+    cores, plugins) aren't read.  Diagnosis only.
+    """
+    name = "Emulator programs"
+    if not config.hyperspin_dir or not Path(config.hyperspin_dir).is_dir():
+        return Check(name=name, status=Status.INFO, detail="hyperspin_dir not configured; skipping")
+    if not config.rocketlauncher_dir:
+        return Check(name=name, status=Status.INFO, detail="rocketlauncher_dir not configured; skipping")
+    windows = _windows_dir()
+    if windows is None:
+        return Check(name=name, status=Status.INFO,
+                     detail="no Windows folder (SystemRoot), so DLLs can't be looked for")
+
+    from .rocketlauncher import SKIP_GENERATE_CONFIG
+
+    mm_path = Path(config.hyperspin_dir) / "Databases" / "Main Menu" / "Main Menu.xml"
+    look = _RomLookup(Path(config.rocketlauncher_dir))
+    search = _DllSearch(look, windows)
+    hidden = _hidden_main_menu_wheels(mm_path)
+    # program (normcase) -> (program, emulator, settings section, wheels in Main Menu order)
+    found: dict[str, tuple[Path, str, str, list[str]]] = {}
+    uncheckable = False
+    for system in _main_menu_wheels(mm_path):
+        if system in SKIP_GENERATE_CONFIG:
+            continue
+        # The source each game on the wheel launches through: its Games.ini
+        # Emulator=/System= override, else the wheel's Default_Emulator.  An
+        # override whose game is no longer on the wheel, and a default every
+        # game overrides, never start, so neither is read.
+        games, _raw = _wheel_games(system, config.databases_dir)
+        overrides = look.game_overrides(system)
+        for game in games:
+            src, _other = look.game_source(system, game, overrides)
+            if src is None or src.stops or not src.emu_path:
+                continue
+            module = look.module_file(src)
+            if module is not None and module.name.lower() in _EMU_PATH_UNUSED_MODULES:
+                continue
+            program = _resolve_rom_path(src.emu_path, look.rl_dir)
+            if program is None:
+                uncheckable = True
+                continue
+            if not look.exists(program):
+                continue  # "emulator not found": the wheel and ROM checks say so
+            key = os.path.normcase(str(program))
+            entry = found.setdefault(key, (program, src.emulator, src.emu_where, []))
+            if system not in entry[3]:
+                entry[3].append(system)
+
+    parent = Check(name=name, status=Status.OK)
+    read = 0
+    for program, emulator, where, wheels in found.values():
+        image = search.image(program)
+        if image is None:
+            continue  # a script or launcher with no import table
+        read += 1
+        prog = _PcProgram(emulator, "Emu_Path", program, None, bits=image.bits)
+        search.check(prog, image)
+        if not prog.missing and not prog.wrong_bits:
+            continue
+        shown = [w for w in wheels if w not in hidden]
+        problems = []
+        if prog.missing:
+            problems.append(f"needs {', '.join(prog.missing)}, which isn't there (0xC0000135)")
+        if prog.wrong_bits:
+            problems.append(f"is {image.bits}-bit, but {', '.join(prog.wrong_bits)} (0xC000007B)")
+        runtimes = []
+        for dll in prog.missing:
+            runtime = _runtime_of(dll.split(" ", 1)[0], image.bits)
+            if runtime and runtime not in runtimes:
+                runtimes.append(runtime)
+        step = (f"Install {' and '.join(runtimes)}" if runtimes
+                else f"Put the missing DLL in {program.parent}, from the emulator's own download")
+        node = Check(
+            name=emulator if shown else f"{emulator} (only wheels hidden on the Main Menu)",
+            status=Status.FAIL,
+            detail=(f"{program.name} {'; and '.join(problems)}, so Windows stops it with a \"System Error\" "
+                    f"box and none of its games start. Used by {_some(shown or wheels, 4)} ({where})"),
+            fix=(f"{step}. Newer Visual C++ runtimes don't replace older ones: see "
+                 "docs/windows-10-migration.md, \"Restore cabinet dependencies\""),
+        )
+        if not shown:
+            _cap_at_info(node)
+        parent.children.append(node)
+
+    notes = []
+    if not read:
+        notes.append("no emulator programs to read")
+        parent.status = Status.INFO
+    elif not parent.children:
+        notes.append(f"{read} emulator program(s) OK")
+    else:
+        notes.append(f"{len(parent.children)} of {read} emulator program(s) can't start")
+        parent.status = _worst(c.status for c in parent.children)
+    if uncheckable:
+        notes.append("some Emu_Paths use Windows drive letters; can't check them on this OS")
+    parent.detail = "; ".join(notes)
+    return parent
+
+
 # ─── Casual Games (PopCap / Big Fish Games) ──────────────────────────────────
 #
 # RocketLauncher's Casual Games module starts each game's own .exe: gamePath
@@ -6193,6 +6345,7 @@ def run_health_checks(config: Config, fix: bool = False) -> HealthReport:
     _safe("Casual Games", lambda: check_casual_games(config))
     _safe("PCLauncher INI text", lambda: check_pclauncher_ini_text(config))
     _safe("PC game programs", lambda: check_pc_game_programs(config))
+    _safe("Emulator programs", lambda: check_emulator_programs(config))
     _safe("ROM paths", lambda: check_rom_paths(config))
     _safe("HyperSpin ROMs only", lambda: check_hyperspin_roms_only(config))
     _safe("Video redirects", lambda: check_video_redirects(config))
