@@ -695,8 +695,9 @@ _CRED_PLACEHOLDER_VALUES: frozenset = frozenset({"SpinDoctor"})
 # Metadata / media "Source" choices; the first word is passed as --source.
 _SOURCE_CHOICES: tuple[str, ...] = (
     "both (SS primary)", "screenscraper", "thegamesdb", "launchbox", "libretro",
-    "launchbox,thegamesdb (LaunchBox first)",
+    "arcadedb", "launchbox,thegamesdb (LaunchBox first)",
     "launchbox,libretro,thegamesdb (free sources first)",
+    "arcadedb,launchbox (arcade wheels)",
 )
 
 

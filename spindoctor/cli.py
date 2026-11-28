@@ -358,7 +358,8 @@ def config_set(key: str, value: str):
       screenscraper_user        ScreenScraper username
       screenscraper_pass        ScreenScraper password
       thegamesdb_key            TheGamesDB API key
-      default_metadata_source   auto | screenscraper | thegamesdb | launchbox | libretro | both,
+      default_metadata_source   auto | screenscraper | thegamesdb | launchbox | libretro |
+                                arcadedb | both,
                                 or a comma list asked in that order
                                 (e.g. launchbox,thegamesdb). Default auto: both
                                 when both are configured, else whichever is
@@ -5940,7 +5941,7 @@ class _SourceParam(click.ParamType):
     name = "source"
 
     def get_metavar(self, param, ctx=None):  # click < 8.2 passes no ctx
-        return "[screenscraper|thegamesdb|launchbox|libretro|both|A,B,...]"
+        return "[screenscraper|thegamesdb|launchbox|libretro|arcadedb|both|A,B,...]"
 
     def convert(self, value, param, ctx):
         from .scraper import SINGLE_SOURCES, SOURCE_ALIASES, parse_source_list

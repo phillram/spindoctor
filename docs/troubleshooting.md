@@ -171,6 +171,10 @@ Logs redact some secrets, not all identifying data.
   as named at github.com/libretro-thumbnails), or the system may have no folder for
   that type (many have no logos). After GitHub's anonymous limit of 60 listings an
   hour, only exact file names are found until the hour is up.
+- **`--source arcadedb` finds nothing:** it asks only for games named like a MAME
+  set (`pacman`); a wheel whose database uses titles ("Pac-Man (Midway)") sends
+  nothing. Check the set at `adb.arcadeitalia.net/?mame=<set>`: some machines (many
+  Naomi discs) have no video there.
 - **Matched game, no media URL:** provider search results can be sparse.
   Use the current release, check the detailed provider lookup, try another
   configured source or import local media. Not every provider supplies videos/themes.
