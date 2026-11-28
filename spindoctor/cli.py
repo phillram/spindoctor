@@ -3191,6 +3191,165 @@ def introvideo_uninstall_autorun(apply_changes):
         console.print(f"[dim]{result.output}[/dim]")
 
 
+@cli.group("boot-intros")
+def boot_intros_group():
+    """Turn consoles' own start-up logos on or off, emulator by emulator.
+
+    \b
+    A console's start-up logo (the Game Boy's "Nintendo", the PlayStation
+    logo, the GameCube cube) comes from its boot ROM or BIOS, and each
+    emulator has its own setting for playing it before a game. 'list' shows
+    every emulator RocketLauncher starts that has such a setting; 'on' and
+    'off' change it for all of them, or only for the ones named. Both
+    preview until --apply. Turning a logo on is refused where the boot ROM
+    or BIOS it needs isn't found, and the missing file is named instead.
+    Close the emulators first: some write their settings back on exit.
+    """
+
+
+def _boot_intro_state(target) -> str:
+    if target.problem:
+        return "[yellow]?[/yellow]"
+    state = target.state
+    if state is None:
+        return "[yellow]mixed[/yellow]"
+    return "[green]on[/green]" if state else "[dim]off[/dim]"
+
+
+def _boot_intro_needs(target) -> str:
+    if not target.setting.has_needs:
+        return "[dim]nothing extra[/dim]"
+    if not target.missing:
+        return "[green]found[/green]"
+    missing = ", ".join(target.missing_short())
+    if target.found:
+        return f"[yellow]missing {missing}[/yellow]"
+    return f"[red]missing {missing}[/red]"
+
+
+@boot_intros_group.command("list")
+def boot_intros_list():
+    """List the emulators with a start-up logo setting, and whether it is on."""
+    from .boot_intros import survey
+
+    found = survey(_cfg())
+    if not found.targets and not found.no_setting:
+        console.print("[dim]No emulators found. Check rocketlauncher_dir (or emulators_dir) "
+                      "with 'spindoctor config show'.[/dim]")
+        return
+    if found.targets:
+        tbl = Table(title="Console start-up logos", box=box.ROUNDED)
+        tbl.add_column("Name", style="cyan")
+        tbl.add_column("Emulator")
+        tbl.add_column("Consoles")
+        tbl.add_column("Logo")
+        tbl.add_column("Boot ROM / BIOS")
+        for t in found.targets:
+            tbl.add_row(t.setting.id, t.label, t.setting.consoles,
+                        _boot_intro_state(t), _boot_intro_needs(t))
+        console.print(tbl)
+        for t in found.targets:
+            if t.problem:
+                console.print(f"[yellow]{t.label}:[/yellow] {t.problem}")
+            off, on = t.games_off_on()
+            if off or on:
+                console.print(f"[dim]{t.label}: {len(t.game_files)} game(s) have their own options "
+                              f"file, which RetroArch reads instead ({len(on)} on, {len(off)} off)[/dim]")
+    if found.no_setting:
+        console.print("[dim]No start-up logo setting: "
+                      + ", ".join(sorted({n.name for n in found.no_setting})) + "[/dim]")
+    console.print("[dim]Change them with 'boot-intros on' / 'boot-intros off' "
+                  "(all, or NAME ...), then --apply.[/dim]")
+
+
+def _boot_intros_set(names, apply_changes: bool, turn_on: bool, game_files: bool) -> None:
+    from .boot_intros import BootIntroError, plan, select, survey, write_plan
+
+    config = _cfg()
+    try:
+        targets = select(survey(config), names)
+    except BootIntroError as exc:
+        err_console.print(f"[red]{exc}[/red]")
+        sys.exit(1)
+    if not targets:
+        console.print("[dim]No emulator with a start-up logo setting found.[/dim]")
+        return
+    result = plan(targets, turn_on, game_files=game_files)
+    word = "on" if turn_on else "off"
+    for t in result.targets():
+        console.print(f"[cyan]{t.label}[/cyan] [dim]({t.setting.consoles})[/dim]")
+        for c in (c for c in result.changes if c.target is t):
+            was = "not set" if c.old is None else c.old
+            verb = "Set" if apply_changes else "Would set"
+            console.print(f"  {verb} {c.key} = {c.new} (now {was}) in {c.file}")
+        if turn_on and t.missing:
+            console.print(f"  [yellow]note:[/yellow] not found, so those games start without "
+                          f"it: {'; '.join(t.missing)}")
+    for t in result.already:
+        console.print(f"[dim]already {word}: {t.label}[/dim]")
+    for t, why in result.refused:
+        console.print(f"[yellow]not changed:[/yellow] {t.label}: {why}")
+    for t, paths in result.kept:
+        state = "off" if turn_on else "on"
+        console.print(f"[dim]kept {state} by their own options file ({t.label}; --game-files "
+                      f"changes them too): {', '.join(p.stem for p in paths)}[/dim]")
+    if not result.changes:
+        return
+    if not apply_changes:
+        console.print("[dim]Re-run with --apply to commit.[/dim]")
+        return
+    failed = False
+    for w in write_plan(result, config):
+        if w.error:
+            failed = True
+            err_console.print(f"[red]Could not write {w.file}:[/red] {w.error}")
+        elif w.backup:
+            console.print(f"[green]✓[/green] {w.file} [dim](backup: {w.backup.name})[/dim]")
+        else:
+            console.print(f"[green]✓[/green] {w.file}")
+    if failed:
+        sys.exit(1)
+
+
+_GAME_FILES_HELP = ("Also change the per-game and per-folder .opt files beside a RetroArch "
+                    "core's own. RetroArch reads those instead of the core's file, and one "
+                    "can keep a game the console BIOS refuses off it, so by default they "
+                    "keep their own setting.")
+
+
+@boot_intros_group.command("on")
+@click.argument("names", nargs=-1)
+@click.option("--game-files", is_flag=True, help=_GAME_FILES_HELP)
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Write the settings. Without this flag, only a preview is printed.")
+def boot_intros_on(names, game_files, apply_changes):
+    """Play the consoles' start-up logos (all emulators, or the NAMEs given).
+
+    \b
+    NAME is a name from 'boot-intros list' (gambatte, duckstation, ...),
+    an emulator folder or a RocketLauncher emulator name. An emulator whose
+    boot ROM or BIOS isn't found is left as it is, and the file is named.
+    Like the real consoles, a BIOS can refuse some games: the Genesis TMSS
+    ROM locks up a cartridge without "SEGA" in its header.
+    """
+    _boot_intros_set(names, apply_changes, turn_on=True, game_files=game_files)
+
+
+@boot_intros_group.command("off")
+@click.argument("names", nargs=-1)
+@click.option("--game-files", is_flag=True, help=_GAME_FILES_HELP)
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Write the settings. Without this flag, only a preview is printed.")
+def boot_intros_off(names, game_files, apply_changes):
+    """Skip the consoles' start-up logos (all emulators, or the NAMEs given).
+
+    \b
+    NAME is a name from 'boot-intros list' (gambatte, duckstation, ...),
+    an emulator folder or a RocketLauncher emulator name.
+    """
+    _boot_intros_set(names, apply_changes, turn_on=False, game_files=game_files)
+
+
 @cli.group("stats-report", invoke_without_command=True)
 @click.option("--system", default=None,
               help="Restrict the view to one source system.")

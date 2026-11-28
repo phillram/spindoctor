@@ -156,6 +156,12 @@ If logon swap fails, test `introvideo swap` manually (preview, then Apply),
 check the task's stored EXE path and regenerate autorun after moves/upgrades.
 Task registration is Windows-only and separate from startup wheel refresh.
 
+A console's own start-up logo (Game Boy, PlayStation, GameCube) is the emulator's
+setting, not HyperSpin's. `boot-intros list` shows it for each emulator. If it is
+on but no logo plays, the boot ROM or BIOS isn't where the emulator looks (the
+**Boot ROM / BIOS** column names it); if it changes back by itself, the emulator was
+running and wrote its settings on exit. See [start-up logos](start-up-logos.md).
+
 ## Launch tests
 
 - **Ranked wheels refuse unfinished test:** run `test --recover`; do not erase
