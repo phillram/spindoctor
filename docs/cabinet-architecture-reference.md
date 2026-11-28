@@ -267,7 +267,8 @@ spaces as `_`, cut at its last dot (`Nokia N-Gage 2.0` is `Nokia_N-Gage_2`,
 `Tiger Game.com` is `Tiger_Game`); game group names keep their dots.
 PPSSPP, DuckStation, PCSX2 2.x and Vita3K keys come from their portable
 folders (`memstick\PSP\SYSTEM\controls.ini`, `settings.ini`, `inis\PCSX2.ini`,
-`config.yml`).
+`config.yml`), and so do EKA2L1's (`bindings\*.yml`), Cxbx-R's (`settings.ini`),
+WinUAE's (`Configurations\host\*.uae`) and BigPEmu's (`UserData\BigPEmuConfig.bigpcfg`).
 Flycast's keys come from its `mappings\SDL_Keyboard*.cfg` files.
 Color brightness commands normalize/scale named colors, not Windows display
 brightness.

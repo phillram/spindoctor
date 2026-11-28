@@ -861,6 +861,221 @@ def vita3k_keymap(folder: Path) -> Optional[Keymap]:
     return km
 
 
+def _ci_path(folder: Path, *parts: str) -> Optional[Path]:
+    """``folder / parts...`` with each part matched in any case (Windows names); None if missing."""
+    cur = folder
+    for part in parts:
+        nxt = cur / part
+        if not nxt.exists():
+            low = part.lower()
+            nxt = next((q for q in cur.iterdir() if q.name.lower() == low), None) if cur.is_dir() else None
+            if nxt is None:
+                return None
+        cur = nxt
+    return cur
+
+
+def _add_key(km: Keymap, slot: tuple[int, str], key: Optional[str]) -> None:
+    if key:
+        keys = km.keys.setdefault(slot, [])
+        if key not in keys:
+            keys.append(key)
+
+
+# EKA2L1 (Nokia N-Gage, Symbian phones) -----------------------------------------
+
+#: Symbian key codes EKA2L1 binds keys to (``target``), with the phone's names.
+_SYMBIAN_KEYS = {**{48 + d: f"Key {d}" for d in range(10)}, 42: "Key *", 127: "Key #",
+                 164: "Left soft key", 165: "Right soft key", 167: "OK", 180: "Call key",
+                 181: "End key", 14: "Left", 15: "Right", 16: "Up", 17: "Down"}
+
+
+def eka2l1_keymap(folder: Path) -> Optional[Keymap]:
+    """EKA2L1: the keyboard binds of its current profile, ``bindings\\<profile>.yml``.
+
+    The profile is ``current-keybind-profile`` in ``config.yml`` (``default``).
+    Each bind is a list entry: ``source`` (``type: key``, ``data: keycode:``
+    a Qt key code) and ``target``, a Symbian key code.  Controller binds
+    (``type: controller``) light nothing.
+    """
+    profile = "default"
+    cfg = _ci_file(folder, "config.yml")
+    if cfg is not None:
+        m = re.search(r"^current-keybind-profile:\s*['\"]?([^'\"\r\n#]+?)['\"]?\s*$", _read_text(cfg), re.M)
+        profile = m.group(1) if m else profile
+    yml = _ci_path(folder, "bindings", f"{profile}.yml")
+    if yml is None or not yml.is_file():
+        return None
+    km = Keymap(source=f"EKA2L1 bindings\\{yml.name}",
+                labels={str(t): name for t, name in _SYMBIAN_KEYS.items()},
+                system_actions={"164", "165", "180", "181"})
+    kind = code = None
+    for line in _read_text(yml).splitlines():
+        s = line.strip()
+        if s.startswith("- "):
+            kind = code = None
+            s = s[2:].strip()
+        m = re.fullmatch(r"(type|keycode|target):\s*['\"]?(-?\w+)['\"]?", s)
+        if not m:
+            continue
+        if m.group(1) == "type":
+            kind = m.group(2).lower()
+        elif m.group(1) == "keycode" and m.group(2).lstrip("-").isdigit():
+            code = int(m.group(2))
+        elif m.group(1) == "target" and kind == "key" and code is not None and m.group(2).isdigit():
+            if int(m.group(2)) in _SYMBIAN_KEYS:
+                _add_key(km, (1, m.group(2)), key_from_qt(code))
+    return km
+
+
+# Cxbx-Reloaded (Xbox) ------------------------------------------------------------
+
+#: An Xbox pad's buttons, as Cxbx-R names them in ``settings.ini``.
+_XBOX_LABELS = {"X": "X", "Y": "Y", "Black": "Black", "L Trigger": "Left Trigger",
+                "A": "A", "B": "B", "White": "White", "R Trigger": "Right Trigger",
+                "L Thumb": "Left Thumb", "R Thumb": "Right Thumb", "Start": "Start", "Back": "Back",
+                "D Pad Up": "D-pad Up", "D Pad Down": "D-pad Down",
+                "D Pad Left": "D-pad Left", "D Pad Right": "D-pad Right"}
+_DINPUT_NAMES = {"return": "ENTER", "space": "SPACE", "escape": "ESC", "tab": "TAB", "back": "BACKSPACE",
+                 "up": "UP", "down": "DOWN", "left": "LEFT", "right": "RIGHT", "lshift": "LSHIFT",
+                 "rshift": "RSHIFT", "lcontrol": "LCONTROL", "rcontrol": "RCONTROL", "lmenu": "LALT",
+                 "rmenu": "RALT", "numpadenter": "ENTER_PAD", "comma": "COMMA", "period": "STOP",
+                 "slash": "SLASH", "minus": "MINUS", "equals": "EQUALS"}
+
+
+def key_from_dinput_name(name: str) -> Optional[str]:
+    """A DirectInput key name as Cxbx-R saves it: ``A``, ``1``, ``F2``, ``RETURN``, ``NUMPAD1``."""
+    low = name.strip().lower()
+    if re.fullmatch(r"[a-z0-9]", low) or re.fullmatch(r"f\d{1,2}", low):
+        return _kc(low.upper())
+    m = re.fullmatch(r"numpad(\d)", low)
+    if m:
+        return _kc(m.group(1) + "_PAD")
+    return _kc(_DINPUT_NAMES[low]) if low in _DINPUT_NAMES else None
+
+
+def cxbxr_keymap(folder: Path) -> Optional[Keymap]:
+    """Cxbx-R: the keyboard input profiles in ``settings.ini`` beside the exe.
+
+    Player *n* uses the profile ``[input-port-<n-1>]`` names when that is a
+    keyboard profile (``DeviceName = DInput/0/KeyboardMouse``).  A port set
+    to a pad's profile takes the next keyboard profile instead, in file
+    order: the one a cabinet switches to when no pad is on.
+    """
+    ini = _ci_file(folder, "settings.ini")
+    if ini is None:
+        return None
+    sections = _read_ini_loose(ini)
+    profiles: dict[str, dict[str, str]] = {}
+    for name, keys in sections.items():
+        if re.fullmatch(r"input-profile-\d+", name.lower()):
+            pname = keys.get("ProfileName", "").strip().strip('"')
+            profiles.setdefault(pname, keys)
+    keyboard = [p for p, keys in profiles.items() if "keyboard" in keys.get("DeviceName", "").lower()]
+    if not keyboard:
+        return None
+    km = Keymap(source="Cxbx-R settings.ini", labels=dict(_XBOX_LABELS), system_actions={"Back"})
+    used: list[str] = []
+    for player in (1, 2):
+        port = sections.get(f"input-port-{player - 1}", {}).get("ProfileName", "").strip().strip('"')
+        pick = port if port in keyboard and port not in used else next((p for p in keyboard if p not in used), None)
+        if pick is None:
+            break
+        used.append(pick)
+        for button in _XBOX_LABELS:
+            _add_key(km, (player, button), key_from_dinput_name(profiles[pick].get(button, "")))
+    km.source += " (" + ", ".join(used) + ")"
+    return km
+
+
+# WinUAE (Amiga, CD32, CDTV) ------------------------------------------------------
+
+#: WinUAE's joystick events (``JOY2_`` is the joystick port, player 1; ``JOY1_`` player 2).
+_UAE_EVENTS = {"FIRE_BUTTON": "Fire", "2ND_BUTTON": "2nd Button", "3RD_BUTTON": "3rd Button",
+               "CD32_RED": "Red", "CD32_BLUE": "Blue", "CD32_GREEN": "Green", "CD32_YELLOW": "Yellow",
+               "CD32_RWD": "Reverse", "CD32_FFW": "Forward", "CD32_PLAY": "Play"}
+
+
+def winuae_host_config(folder: Path, system: str) -> Optional[Path]:
+    """The host config RocketLauncher's WinUAE module starts a wheel's games with.
+
+    ``Configurations\\host\\cd32host.uae`` (CD32), ``cdtvhost.uae`` (CDTV),
+    ``amigacdhost.uae`` (Amiga CD) or ``amigahost.uae``.  A game with its own
+    ``Configurations\\<game>.uae`` starts with that instead.
+    """
+    low = system.lower()
+    host = ("cd32host.uae" if "cd32" in low else "cdtvhost.uae" if "cdtv" in low
+            else "amigacdhost.uae" if "amiga cd" in low else "amigahost.uae")
+    return _ci_path(folder, "Configurations", "host", host)
+
+
+def winuae_keymap(path: Path) -> Keymap:
+    """The keyboard binds of a WinUAE config: ``input.<n>.keyboard.<k>.button.<DIK>.<KEY>=<event>``.
+
+    The set read is ``input.config``'s (0, Game Ports, keeps custom binds in
+    set 4).  Events ``JOY2_*`` are the joystick port (player 1), ``JOY1_*``
+    the mouse port (player 2); ``EVENT.<flags>.<slot>`` may repeat, comma-separated.
+    """
+    text = _read_text(path)
+    m = re.search(r"^input\.config\s*=\s*(\d+)", text, re.M)
+    want = "4" if not m or m.group(1) == "0" else m.group(1)
+    km = Keymap(source=f"WinUAE {path.name}", labels=dict(_UAE_EVENTS), system_actions={"CD32_PLAY"})
+    for line in text.splitlines():
+        b = re.fullmatch(r"input\.(\d+)\.keyboard\.\d+\.button\.(\d+)\.[^=]*=(.*)", line.strip())
+        if not b or b.group(1) != want:
+            continue
+        for event in b.group(3).split(","):
+            e = re.match(r"JOY([12])_(\w+?)(?:\.|$)", event.strip())
+            if e and e.group(2) in _UAE_EVENTS:
+                _add_key(km, (2 if e.group(1) == "1" else 1, e.group(2)), key_from_dik(int(b.group(2))))
+    return km
+
+
+# BigPEmu (Atari Jaguar) -----------------------------------------------------------
+
+#: BigPEmu's Jaguar pad inputs, by their place in a device's ``Bindings`` list.
+_JAGUAR_INPUTS = ["C", "B", "A", "Pause", "Option", "Up", "Down", "Left", "Right",
+                  *[f"Keypad {d}" for d in range(10)], "Keypad *", "Keypad #"]
+_JAGUAR_LABELS = {**{n: f"Button {n}" for n in "ABC"}, "Pause": "Pause", "Option": "Option",
+                  **{n: n for n in _JAGUAR_INPUTS[9:]}}
+
+
+def bigpemu_keymap(folder: Path) -> Optional[Keymap]:
+    """BigPEmu (``-localdata``): the keyboard triggers in ``UserData\\BigPEmuConfig.bigpcfg``.
+
+    A JSON file; ``BigPEmuConfig.Input.Device0`` / ``Device1`` are players
+    1 and 2, each a ``Bindings`` list in the Jaguar pad's input order (C, B,
+    A, Pause, Option, the D-pad, keypad 0-9, *, #).  A trigger with
+    ``B_KB: true`` is a keyboard key, ``B_ID`` its DirectInput scan code; one
+    with a held modifier (``M_ID``) is a combination and isn't lit.  Only
+    standard Jaguar pads (``DeviceType`` 0) are read.
+    """
+    import json
+
+    cfg = _ci_path(folder, "UserData", "BigPEmuConfig.bigpcfg")
+    if cfg is None or not cfg.is_file():
+        return None
+    try:
+        data = json.loads(_read_text(cfg))
+        devices = data["BigPEmuConfig"]["Input"]
+    except (ValueError, KeyError, TypeError):
+        return None
+    labels = {name: _JAGUAR_LABELS[name] for name in ["A", "B", "C", "Pause", "Option"] + _JAGUAR_INPUTS[9:]}
+    km = Keymap(source="BigPEmu BigPEmuConfig.bigpcfg", labels=labels, system_actions={"Pause"})
+    for player in (1, 2):
+        dev = devices.get(f"Device{player - 1}") if isinstance(devices, dict) else None
+        if not isinstance(dev, dict) or dev.get("DeviceType", 0) != 0:
+            continue
+        for i, binding in enumerate(dev.get("Bindings") or []):
+            if i >= len(_JAGUAR_INPUTS) or not isinstance(binding, dict):
+                continue
+            for t in binding.get("Triggers") or []:
+                if isinstance(t, dict) and t.get("B_KB") is True and "M_ID" not in t \
+                        and isinstance(t.get("B_ID"), int):
+                    _add_key(km, (player, _JAGUAR_INPUTS[i]), key_from_dik(t["B_ID"]))
+    return km
+
+
 _SSF_ORDER =("UP", "DOWN", "LEFT", "RIGHT", "A", "B", "C", "X", "Y", "Z", "L", "R", "Start")
 
 
@@ -1234,6 +1449,7 @@ class KeymapResolver:
         self._simple: dict[tuple[str, Path], Optional[Keymap]] = {}
         self._flycast: dict[tuple[Path, bool], Optional[Keymap]] = {}
         self._mapping_files: dict[Path, dict[str, Path]] = {}
+        self._uae: dict[Path, Keymap] = {}
         self._roms: Optional[_RomLookup] = None
 
     def for_launcher(self, launcher: Optional[Launcher], system: str,
@@ -1268,6 +1484,8 @@ class KeymapResolver:
             return km
         if exe.startswith("flycast"):
             return self._flycast_keymap(folder / "mappings", system, game, launcher.emulator)
+        if exe.startswith("winuae"):
+            return self._winuae_keymap(folder, system, game)
         if game:
             return None
         readers = {"desmume": desmume_keymap, "melonds": melonds_keymap,
@@ -1275,7 +1493,8 @@ class KeymapResolver:
                    "demul.exe": demul_keymap, "daphne.exe": daphne_keymap,
                    "pokemini.exe": pokemini_keymap, "ppsspp": ppsspp_keymap,
                    "duckstation": duckstation_keymap, "pcsx2": pcsx2_keymap,
-                   "vita3k": vita3k_keymap}
+                   "vita3k": vita3k_keymap, "eka2l1": eka2l1_keymap, "cxbx": cxbxr_keymap,
+                   "bigpemu": bigpemu_keymap}
         for prefix, reader in readers.items():
             if exe.startswith(prefix):
                 key = (prefix, folder)
@@ -1283,6 +1502,22 @@ class KeymapResolver:
                     self._simple[key] = reader(folder)
                 return self._simple[key]
         return None
+
+    def _winuae_keymap(self, folder: Path, system: str, game: Optional[str]) -> Optional[Keymap]:
+        """WinUAE: with *game*, its own ``Configurations\\<game>.uae`` (else None); without, the host config."""
+        if game:
+            confs = _ci_path(folder, "Configurations")
+            if confs is not None and confs not in self._mapping_files:
+                self._mapping_files[confs] = ({p.name.lower(): p for p in confs.iterdir() if p.is_file()}
+                                              if confs.is_dir() else {})
+            path = self._mapping_files.get(confs, {}).get(f"{game}.uae".lower()) if confs else None
+        else:
+            path = winuae_host_config(folder, system)
+        if path is None or not path.is_file():
+            return None
+        if path not in self._uae:
+            self._uae[path] = winuae_keymap(path)
+        return self._uae[path]
 
     def _flycast_keymap(self, mappings: Path, system: str, game: Optional[str],
                         emulator: str) -> Optional[Keymap]:
