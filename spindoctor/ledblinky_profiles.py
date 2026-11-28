@@ -681,6 +681,186 @@ def naomi_boot_title(rom: Path) -> Optional[str]:
     return None
 
 
+# Sony emulators: PPSSPP, DuckStation, PCSX2 2.x, Vita3K ------------------------
+
+# Android key codes, which PPSSPP uses for every device.
+_ANDROID_NAMED = {19: "UP", 20: "DOWN", 21: "LEFT", 22: "RIGHT", 55: "COMMA", 56: "STOP",
+                  57: "LALT", 58: "RALT", 59: "LSHIFT", 60: "RSHIFT", 61: "TAB", 62: "SPACE",
+                  66: "ENTER", 67: "BACKSPACE", 69: "MINUS", 70: "EQUALS", 76: "SLASH",
+                  111: "ESC", 113: "LCONTROL", 114: "RCONTROL", 160: "ENTER_PAD"}
+
+
+def key_from_android(code: int) -> Optional[str]:
+    """Android key codes (PPSSPP): 7-16 0-9, 29-54 A-Z, 131-142 F1-F12, 144-153 keypad."""
+    if 29 <= code <= 54:
+        return _kc(chr(ord("A") + code - 29))
+    if 7 <= code <= 16:
+        return _kc(str(code - 7))
+    if 131 <= code <= 142:
+        return _kc(f"F{code - 130}")
+    if 144 <= code <= 153:
+        return _kc(f"{code - 144}_PAD")
+    return _kc(_ANDROID_NAMED[code]) if code in _ANDROID_NAMED else None
+
+
+#: The PSP's buttons, as PPSSPP names them in ``[ControlMapping]``.
+_PSP_LABELS = {"Square": "Square", "Triangle": "Triangle", "L": "L Button", "Cross": "Cross",
+               "Circle": "Circle", "R": "R Button", "Start": "Start", "Select": "Select"}
+_PPSSPP_KEYBOARD = 1      # PPSSPP's DEVICE_ID_KEYBOARD
+
+
+def ppsspp_keymap(folder: Path) -> Optional[Keymap]:
+    """PPSSPP: the keyboard binds in ``memstick\\PSP\\SYSTEM\\controls.ini`` (portable install).
+
+    ``Cross = 1-32,10-189``: each bind is ``<device>-<Android key code>``,
+    device 1 the keyboard.  ``1-29:1-30`` is a key combination, which one
+    panel button can't press.  Hotkeys (fast-forward, save states) aren't lit.
+    """
+    ini = folder / "memstick" / "PSP" / "SYSTEM" / "controls.ini"
+    if not ini.is_file():
+        return None
+    km = Keymap(source="PPSSPP controls.ini", labels=dict(_PSP_LABELS))
+    section = ""
+    for line in _read_text(ini).splitlines():
+        s = line.strip()
+        m = re.fullmatch(r"\[(.+)\]", s)
+        if m:
+            section = m.group(1).strip().lower()
+            continue
+        m = re.fullmatch(r"([^=]+?)\s*=\s*(.*)", s)
+        if section != "controlmapping" or not m or m.group(1) not in km.labels:
+            continue
+        keys: list[str] = []
+        for bind in m.group(2).split(","):
+            b = re.fullmatch(r"\s*(\d+)-(\d+)\s*", bind)
+            k = key_from_android(int(b.group(2))) if b and int(b.group(1)) == _PPSSPP_KEYBOARD else None
+            if k and k not in keys:
+                keys.append(k)
+        if keys:
+            km.keys[(1, m.group(1))] = keys
+    return km
+
+
+#: ``Keyboard/<name>`` names DuckStation and PCSX2 2.x write for keys other than letters and digits.
+_KEYBOARD_NAMES = {"return": "ENTER", "enter": "ENTER", "space": "SPACE", "escape": "ESC",
+                   "tab": "TAB", "backspace": "BACKSPACE", "up": "UP", "down": "DOWN",
+                   "left": "LEFT", "right": "RIGHT", "shift": "LSHIFT", "control": "LCONTROL",
+                   "alt": "LALT", "comma": "COMMA", "period": "STOP", "slash": "SLASH",
+                   "minus": "MINUS", "equal": "EQUALS"}
+
+
+def key_from_keyboard_name(name: str) -> Optional[str]:
+    """A ``Keyboard/<name>`` bind (DuckStation, PCSX2 2.x): ``A``, ``1``, ``F2``, ``Return``."""
+    n = name.strip()
+    low = n.lower()
+    if re.fullmatch(r"[a-z0-9]", low) or re.fullmatch(r"f\d{1,2}", low):
+        return _kc(n.upper())
+    m = re.fullmatch(r"(?:numpad|keypad)(\d)", low)
+    if m:
+        return _kc(m.group(1) + "_PAD")
+    return _kc(_KEYBOARD_NAMES[low]) if low in _KEYBOARD_NAMES else None
+
+
+#: PlayStation pad buttons, as DuckStation and PCSX2 name them in ``[Pad1]`` / ``[Pad2]``.
+_PS_PAD_LABELS = {"Square": "Square", "Triangle": "Triangle", "L1": "L1", "L2": "L2",
+                  "Cross": "Cross", "Circle": "Circle", "R1": "R1", "R2": "R2",
+                  "L3": "L3", "R3": "R3", "Start": "Start", "Select": "Select", "Analog": "Analog"}
+
+
+def pad_ini_keymap(ini: Path, source: str) -> Optional[Keymap]:
+    """The ``[Pad1]`` / ``[Pad2]`` keyboard binds of a DuckStation or PCSX2 2.x settings file.
+
+    A bind is a line ``Cross = Keyboard/D``.  A name comes once per device
+    (``Cross = SDL-0/A`` on the next line), and ``Keyboard/A & Keyboard/B``
+    is a key combination, which one panel button can't press.  A pad whose
+    ``Type`` is ``None`` is unplugged.  None when the file has no pad section.
+    """
+    km = Keymap(source=source, labels=dict(_PS_PAD_LABELS))
+    player, found, unplugged = 0, False, set()
+    for line in _read_text(ini).splitlines():
+        s = line.strip()
+        m = re.fullmatch(r"\[(.+)\]", s)
+        if m:
+            pm = re.fullmatch(r"pad([12])", m.group(1).strip().lower())
+            player = int(pm.group(1)) if pm else 0
+            found |= bool(pm)
+            continue
+        m = re.fullmatch(r"(\w+)\s*=\s*(.*)", s)
+        if not player or not m:
+            continue
+        name, value = m.group(1), m.group(2).strip()
+        if name.lower() == "type" and value.lower() == "none":
+            unplugged.add(player)
+        if name not in km.labels or "&" in value or not value.lower().startswith("keyboard/"):
+            continue
+        k = key_from_keyboard_name(value.split("/", 1)[1])
+        keys = km.keys.setdefault((player, name), [])
+        if k and k not in keys:
+            keys.append(k)
+    if not found:
+        return None
+    km.keys = {slot: keys for slot, keys in km.keys.items() if keys and slot[0] not in unplugged}
+    return km
+
+
+def duckstation_keymap(folder: Path) -> Optional[Keymap]:
+    """DuckStation (portable): ``settings.ini`` beside the exe."""
+    ini = _ci_file(folder, "settings.ini")
+    return pad_ini_keymap(ini, "DuckStation settings.ini") if ini else None
+
+
+def pcsx2_keymap(folder: Path) -> Optional[Keymap]:
+    """PCSX2 2.x (portable): ``inis\\PCSX2.ini``.  1.x keeps its keys elsewhere and isn't read."""
+    ini = _ci_file(folder / "inis", "PCSX2.ini")
+    return pad_ini_keymap(ini, "PCSX2 inis\\PCSX2.ini") if ini else None
+
+
+#: Vita buttons, as Vita3K's ``config.yml`` names them (``keyboard-button-<name>``).
+_VITA_LABELS = {"square": "Square", "triangle": "Triangle", "l1": "L Button", "l2": "L2",
+                "l3": "L3", "cross": "Cross", "circle": "Circle", "r1": "R Button", "r2": "R2",
+                "r3": "R3", "start": "Start", "select": "Select", "psbutton": "PS Button",
+                "up": "D-pad Up", "down": "D-pad Down", "left": "D-pad Left", "right": "D-pad Right"}
+_WEB_KEY_NAMES = {"enter": "ENTER", "numpadenter": "ENTER_PAD", "space": "SPACE", "escape": "ESC",
+                  "tab": "TAB", "backspace": "BACKSPACE", "arrowup": "UP", "arrowdown": "DOWN",
+                  "arrowleft": "LEFT", "arrowright": "RIGHT", "shiftleft": "LSHIFT",
+                  "shiftright": "RSHIFT", "controlleft": "LCONTROL", "controlright": "RCONTROL",
+                  "altleft": "LALT", "altright": "RALT", "comma": "COMMA", "period": "STOP",
+                  "slash": "SLASH", "minus": "MINUS", "equal": "EQUALS"}
+
+
+def key_from_vita3k(value: str) -> Optional[str]:
+    """A Vita3K key: a name (``KeyA``, ``Digit1``, ``Numpad1``, ``F2``, ``Enter``) or an SDL scancode."""
+    v = value.strip().strip("'\"")
+    if re.fullmatch(r"\d+", v):
+        return key_from_sdl_scancode(int(v))     # older Vita3K builds save scancodes
+    m = re.fullmatch(r"(?:Key([A-Za-z])|Digit(\d))", v)
+    if m:
+        return _kc((m.group(1) or m.group(2)).upper())
+    m = re.fullmatch(r"Numpad(\d)", v)
+    if m:
+        return _kc(m.group(1) + "_PAD")
+    if re.fullmatch(r"[Ff]\d{1,2}", v):
+        return _kc(v.upper())
+    return _kc(_WEB_KEY_NAMES[v.lower()]) if v.lower() in _WEB_KEY_NAMES else None
+
+
+def vita3k_keymap(folder: Path) -> Optional[Keymap]:
+    """Vita3K: ``keyboard-button-<button>[-alt]: <key>`` in ``portable\\config.yml`` or ``config.yml``."""
+    cfg = _ci_file(folder / "portable", "config.yml") or _ci_file(folder, "config.yml")
+    if cfg is None:
+        return None
+    where = "portable\\config.yml" if cfg.parent != folder else "config.yml"
+    km = Keymap(source=f"Vita3K {where}", labels=dict(_VITA_LABELS))
+    for line in _read_text(cfg).splitlines():
+        m = re.fullmatch(r"keyboard-button-([a-z0-9]+?)(?:-alt)?\s*:\s*(\S+)\s*(?:#.*)?", line.strip())
+        k = key_from_vita3k(m.group(2)) if m and m.group(1) in km.labels else None
+        if k:
+            keys = km.keys.setdefault((1, m.group(1)), [])
+            if k not in keys:
+                keys.append(k)
+    return km
+
+
 _SSF_ORDER =("UP", "DOWN", "LEFT", "RIGHT", "A", "B", "C", "X", "Y", "Z", "L", "R", "Start")
 
 
@@ -1093,7 +1273,9 @@ class KeymapResolver:
         readers = {"desmume": desmume_keymap, "melonds": melonds_keymap,
                    "ssf.exe": ssf_keymap, "zinc.exe": zinc_keymap,
                    "demul.exe": demul_keymap, "daphne.exe": daphne_keymap,
-                   "pokemini.exe": pokemini_keymap}
+                   "pokemini.exe": pokemini_keymap, "ppsspp": ppsspp_keymap,
+                   "duckstation": duckstation_keymap, "pcsx2": pcsx2_keymap,
+                   "vita3k": vita3k_keymap}
         for prefix, reader in readers.items():
             if exe.startswith(prefix):
                 key = (prefix, folder)
@@ -1399,7 +1581,17 @@ def build_console_group(name: str, keymap: Keymap, panel: dict[str, str],
                         existing: Optional[ET.Element], player0: str) -> GroupXml:
     """A console profile: one control per keymap action that reaches a panel LED."""
     old = _existing_controls(existing)
-    old_color_by_voice = {(c.get("voice") or "").lower(): c.get("color") or "" for c in old}
+    # Each player's own colour for a voice first, then the first player's that has
+    # one: keyed by voice alone, player 2's colours replaced player 1's on a rerun.
+    old_color_by_voice: dict[tuple[int, str], str] = {}
+    for pl in ([] if existing is None else existing.iter("player")):
+        num = pl.get("number") or ""
+        if not num.isdigit() or num == "0":
+            continue
+        for c in pl.iter("control"):
+            voice_key = (c.get("voice") or "").lower()
+            for who in (int(num), 0):
+                old_color_by_voice.setdefault((who, voice_key), c.get("color") or "")
     old_color_by_key = {}
     for c in old:
         for k in (c.get("inputCodes") or "").split("|"):
@@ -1429,7 +1621,8 @@ def build_console_group(name: str, keymap: Keymap, panel: dict[str, str],
             else:
                 n += 1
                 cname = f"P{p}_BUTTON{n}"
-            color = old_color_by_voice.get(voice.lower()) or old_color_by_key.get(keys[0]) or ""
+            color = (old_color_by_voice.get((p, voice.lower())) or old_color_by_voice.get((0, voice.lower()))
+                     or old_color_by_key.get(keys[0]) or "")
             ctl = ControlXml(p, cname, voice, color, keys)
             if is_system_button:
                 ctl.color = color or "Black"   # the cabinet's dim white for Start / Select
