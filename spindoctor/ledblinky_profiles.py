@@ -18,7 +18,9 @@ buttons a game can use light up.
 
 RocketLauncher's AHK keymapper can swap keys while a game runs (``r::1``: the
 panel's R reaches the emulator as 1).  Where it is on, each key is mapped back
-through the game's AHK profile to the panel keys that really send it.
+through the game's AHK profile to the panel keys that really send it.  Where
+the emulator's own keys can't be read (a PC game launcher, a Flash player),
+the keys the game's profile remaps or binds are lit instead.
 """
 from __future__ import annotations
 
@@ -172,6 +174,8 @@ class Keymap:
     #: Actions in display order with the console's own button names.
     labels: dict[str, str] = field(default_factory=dict)
     verified: bool = True
+    #: Actions lit as Start / Coin / Select, besides the ones named so.
+    system_actions: set[str] = field(default_factory=set)
 
     def get(self, player: int, action: str) -> list[str]:
         return self.keys.get((player, action), [])
@@ -179,7 +183,7 @@ class Keymap:
     def remapped(self, remap: KeyRemap) -> Keymap:
         """The same actions, keyed by the panel keys that reach them through *remap*."""
         km = Keymap(source=f"{self.source} + AHK {remap.source}", labels=dict(self.labels),
-                    verified=self.verified)
+                    verified=self.verified, system_actions=set(self.system_actions))
         for slot, keys in self.keys.items():
             out: list[str] = []
             for k in keys:
@@ -753,6 +757,32 @@ def read_ahk_remap(path: Path, source: str = "") -> KeyRemap:
     return remap
 
 
+def ahk_profile_keymap(keys: Iterable, source: str, panel: dict[str, str],
+                       always_lit: Iterable[str] = ()) -> Keymap:
+    """An AHK profile's keys (``keymapper_hotkeys.profile_keys``) as a keymap.
+
+    For an emulator whose own key config can't be read (a PC game launcher, a
+    Flash player), the profile is all that says which buttons a game uses.
+    One action per panel key, named by what the key does (``a::Space``:
+    "Space"); the player and Start / Coin / Select come from the key's port
+    label in *panel*.  Keys with no LED (the joystick, the mouse) are left out,
+    and so are *always_lit* keys, which the admin block lights anyway (Exit,
+    Pause).
+    """
+    km = Keymap(source=f"AHK {source}")
+    skip = set(always_lit)
+    for pk in keys:
+        code = key_from_ahk(pk.key)
+        if code is None or code not in panel or code in km.labels or code in skip:
+            continue
+        port = panel[code].upper()
+        km.keys[(2 if port.startswith("P2") else 1, code)] = [code]
+        km.labels[code] = pk.does or pk.key.upper()
+        if any(word in port for word in ("START", "COIN", "SELECT")):
+            km.system_actions.add(code)
+    return km
+
+
 @dataclass
 class Launcher:
     emulator: str
@@ -771,8 +801,11 @@ class RocketLauncherIndex:
         self.ahk_dir = (Path(str(profiles)) if profiles.is_absolute()
                         else self.rl_dir.joinpath(*profiles.parts)) / "AHK"
         self._ahk_on: dict[str, bool] = {}
+        self._ahk_internal: dict[str, bool] = {}
         self._ahk_files: dict[Path, dict[str, Path]] = {}
         self._remaps: dict[Path, KeyRemap] = {}
+        self._profile_keys: dict[tuple[Path, bool], list] = {}
+        self._navigation: Optional[dict[str, tuple[str, str]]] = None
         self._games: dict[str, dict[str, tuple[str, str]]] = {}
         self._games_lower: dict[str, dict[str, tuple[str, str]]] = {}
         self._system_inis: dict[str, dict[str, dict[str, str]]] = {}
@@ -837,6 +870,7 @@ class RocketLauncherIndex:
             if method is None or method.lower() == "use_global":
                 method = _ini_value(self.settings / "Global RocketLauncher.ini", *key)
             self._ahk_on[system] = (method or "").lower() in ("internal", "external")
+            self._ahk_internal[system] = (method or "").lower() == "internal"
         return self._ahk_on[system]
 
     def _ahk_folder(self, folder: Path) -> dict[str, Path]:
@@ -861,14 +895,36 @@ class RocketLauncherIndex:
                 return files[f"{name}.ahk".lower()]
         return None
 
+    def _ahk_source(self, path: Path) -> str:
+        return path.name if path.parent == self.ahk_dir else f"{path.parent.name}\\{path.name}"
+
     def ahk_remap(self, system: str, game: Optional[str], emulator: str) -> Optional[KeyRemap]:
         path = self.ahk_profile(system, game, emulator)
         if path is None:
             return None
         if path not in self._remaps:
-            src = path.name if path.parent == self.ahk_dir else f"{path.parent.name}\\{path.name}"
-            self._remaps[path] = read_ahk_remap(path, src)
+            self._remaps[path] = read_ahk_remap(path, self._ahk_source(path))
         return self._remaps[path]
+
+    def ahk_profile_keys(self, system: str, game: Optional[str],
+                         emulator: str) -> Optional[tuple[str, list]]:
+        """(source, keys it acts on) of the AHK profile *game* loads, or None.
+
+        With the Internal keymapper, plain hotkeys on RocketLauncher's menu
+        navigation keys are left out: its ``Hotkey`` commands take them over.
+        """
+        path = self.ahk_profile(system, game, emulator)
+        if path is None:
+            return None
+        # keymapper_hotkeys imports this module, so it is imported here.
+        from .keymapper_hotkeys import navigation_keys, profile_keys
+        internal = self._ahk_internal[system]
+        if (path, internal) not in self._profile_keys:
+            if self._navigation is None:
+                self._navigation = navigation_keys(self.settings)
+            self._profile_keys[(path, internal)] = profile_keys(
+                _read_text(path), self._navigation if internal else {})
+        return self._ahk_source(path), self._profile_keys[(path, internal)]
 
 
 class KeymapResolver:
@@ -952,6 +1008,21 @@ class KeymapResolver:
             return km
         remap = self.rl.ahk_remap(system, game, launcher.emulator if launcher else "")
         return km.remapped(remap) if remap is not None and remap.sends else km
+
+    def profile_keymap(self, system: str, game: Optional[str], panel: dict[str, str],
+                       always_lit: Iterable[str] = ()) -> Optional[Keymap]:
+        """The AHK keymapper profile *game* launches with, as its keymap.
+
+        For an emulator whose own keys can't be read; None when no profile
+        applies.  Without *game*: the profile of a game with no file of its own.
+        """
+        if game:
+            emulator, other = self.rl.game_override(system, game)
+            emulator = emulator or self.rl.default_emulator(other or system)
+        else:
+            emulator = self.rl.default_emulator(system)
+        found = self.rl.ahk_profile_keys(system, game, emulator)
+        return ahk_profile_keymap(found[1], found[0], panel, always_lit) if found else None
 
 
 # ── Controls.ini / Colors.ini ─────────────────────────────────────────────────
@@ -1143,6 +1214,16 @@ def _routed(keys: list[str], panel: dict[str, str]) -> bool:
     return any(k in panel for k in keys)
 
 
+def _always_lit(player0: str) -> set[str]:
+    """Key codes an admin block (``<player number="0">``) lights at all times."""
+    out: set[str] = set()
+    for tag in re.findall(r"<control\b[^>]*/>", player0):
+        codes = re.search(r'inputCodes="([^"]*)"', tag)
+        if 'alwaysActive="1"' in tag and codes:
+            out.update(c for c in codes.group(1).split("|") if c)
+    return out
+
+
 def _existing_controls(group: Optional[ET.Element]) -> list[ET.Element]:
     return [] if group is None else [c for p in group.iter("player")
                                      if p.get("number") != "0" for c in p.iter("control")]
@@ -1174,7 +1255,8 @@ def build_console_group(name: str, keymap: Keymap, panel: dict[str, str],
             if not keys or not _routed(keys, panel):
                 continue
             voice = labels.get(act) or f"Button {act.upper()}"
-            is_system_button = act.lower() in ("start", "select", "coin", "power", "mode", "run", "option")
+            is_system_button = (act.lower() in ("start", "select", "coin", "power", "mode", "run", "option")
+                                or act in keymap.system_actions)
             if is_system_button:
                 extra_n += 1
                 cname = f"P{p}_BUTTON{extra_n}"
@@ -1594,7 +1676,13 @@ class ProfileBuilder:
         launcher = self.resolver.system_launcher(system)
         base = self.resolver.for_launcher(launcher, system)
         keymap = self.resolver.through_remap(base, system, None, launcher)
+        # An emulator whose keys can't be read (a PC game launcher, a Flash
+        # player): the AHK keymapper profiles are all that say what a game uses.
+        profiles = keymap is None
         existing, player0 = self._default_block(system)
+        if profiles:
+            keymap = self.resolver.profile_keymap(system, None, self.panel,
+                                                  _always_lit(player0 or self._admin_player0()))
         if keymap is None:
             emu = launcher.emulator if launcher else "(none)"
             if existing is None:
@@ -1602,6 +1690,10 @@ class ProfileBuilder:
             else:
                 self.result.actions.append(SystemAction(system, "kept existing DEFAULT", 0, "",
                                                         f"keymap for {emu} not readable"))
+            if self.resolver.rl.ahk_keymapper_on(system):
+                # Games with a profile of their own still light from it.
+                existing, player0 = self._default_block(system)
+                self._game_overrides(system, Keymap(source=""), existing, player0, profiles=True)
             return
         self._note_unroutable(keymap, system)
         grp = build_console_group("DEFAULT", keymap, self.panel, existing, player0 or self._admin_player0())
@@ -1612,25 +1704,34 @@ class ProfileBuilder:
         lit = sorted({self.panel[k] for c in grp.controls for k in c.input_codes if k in self.panel})
         self.result.actions.append(SystemAction(system, "DEFAULT from keymap", 1, keymap.source,
                                                 "lights " + (", ".join(lit) if lit else "nothing (pad-only)")))
-        self._game_overrides(system, keymap, existing, player0)
+        self._game_overrides(system, keymap, existing, player0, profiles=profiles)
 
     def _game_overrides(self, system: str, sys_keymap: Keymap,
-                        existing: Optional[ET.Element], player0: str) -> None:
-        """Per-game groups using only the emulator/config actually launched."""
+                        existing: Optional[ET.Element], player0: str, profiles: bool = False) -> None:
+        """Per-game groups using only the emulator/config actually launched.
+
+        *profiles*: the wheel's emulator keys can't be read, so a game whose
+        own keys can't be read either lights from its AHK keymapper profile.
+        """
         games = {g.name for g in load_db(self.config, system) or []}
         groups = []
         old_groups = self.doc.groups(self.doc.emulators().get(emu_key(system), ""))
         # Only remove groups we created, never unrelated hand-authored profiles.
         obsolete = {k for k, blocks in old_groups.items() if _GENERATED_OVERRIDE in blocks[0]}
         overridden = {g.lower() for g in self.resolver.rl.game_overrides(system)}
+        always_lit = _always_lit(player0 or self._admin_player0())
         for game in sorted(games):
             km = self.resolver.for_game(system, game)
+            if km is None and profiles:
+                km = self.resolver.profile_keymap(system, game, self.panel, always_lit)
             if km is None:
                 obsolete.discard(emu_key(game))
-                if game.lower() in overridden:
+                if game.lower() in overridden and not profiles:
                     self.result.warnings.append(f"{system}: '{game}' keymap isn't readable — kept system DEFAULT")
                 continue
-            if km.keys == sys_keymap.keys and game.lower() not in overridden:
+            # Profiles light the same keys with different voices ("Space", "Enter").
+            same = km.keys == sys_keymap.keys and (not profiles or km.labels == sys_keymap.labels)
+            if same and game.lower() not in overridden:
                 continue
             km.labels = km.labels or sys_keymap.labels
             old = old_groups.get(emu_key(game))

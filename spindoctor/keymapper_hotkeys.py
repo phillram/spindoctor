@@ -8,6 +8,8 @@ that command takes over an existing hotkey of the same name: a plain
 ``w::`` or ``~w::`` in the profile then never fires.  ``*w::`` (any
 modifiers) is a different hotkey, and so are remaps such as ``w::c``, which
 AutoHotkey builds as wildcard hotkeys.
+
+``profile_keys`` lists the keys a profile does act on, for button lights.
 """
 from __future__ import annotations
 
@@ -117,6 +119,89 @@ def _is_remap(target: str) -> bool:
 def replaced_hotkeys(text: str, navigation: dict[str, tuple[str, str]]) -> list[ReplacedHotkey]:
     """Plain hotkeys in *text* that RocketLauncher's navigation keys take over."""
     return [ReplacedHotkey(h, *navigation[h.key]) for h in plain_hotkeys(text) if h.key in navigation]
+
+
+@dataclass(frozen=True)
+class ProfileKey:
+    """A key an AHK profile remaps or binds while a game runs."""
+
+    line: int
+    key: str
+    #: What it sends or runs (``Space``, ``Enter+Space``, ``Run``), for a button light's voice.
+    does: str
+
+
+_SEND_RE = re.compile(r"Send(?:Input|Play|Event|Raw)?\b\s*,?\s*(.*)", re.I)
+_SEND_KEY_RE = re.compile(r"\{([^}]*)\}|([^{}\s])")
+_SEND_MODES = {"blind", "raw", "text"}
+
+
+def _does(body: str) -> str:
+    """``Send {Enter}{Space}`` -> ``Enter+Space``; any other command -> its name."""
+    send = _SEND_RE.match(body)
+    if not send:
+        command = re.match(r"[A-Za-z_]\w*", body)
+        return command.group(0) if command else ""
+    keys: list[str] = []
+    for braced, char in _SEND_KEY_RE.findall(send.group(1)):
+        name = braced.split()[0] if braced.strip() else char   # "{LCtrl down}" -> "LCtrl"
+        if name and name.lower() not in _SEND_MODES and name not in keys:
+            keys.append(name)
+    return "+".join(keys)
+
+
+def _body_below(lines: list[tuple[int, str]]) -> str:
+    """The first command a hotkey with nothing after its ``::`` runs."""
+    for _, code in lines:
+        stripped = code.strip()
+        if stripped == "{":
+            continue
+        stacked = _HOTKEY_RE.fullmatch(stripped)
+        if stacked is None:
+            return stripped
+        if stacked.group(3).strip():
+            return stacked.group(3).strip()   # falls through into the next hotkey's line
+    return ""
+
+
+def profile_keys(text: str, navigation: dict[str, tuple[str, str]]) -> list[ProfileKey]:
+    """The keys an AHK profile acts on, each once, in file order.
+
+    Remaps (``a::Space``) and hotkeys (``*a::Send {Space}``, or a body on the
+    lines below) count; a plain hotkey on a key in *navigation* doesn't, as it
+    never fires (pass ``navigation_keys`` for the Internal keymapper and
+    ``{}`` for External).  Left out as well: modifier combinations (``^a::``),
+    ``a & b::`` and key-up hotkeys, which no single panel key fires; keys
+    switched off (``a::Return``); and hotkeys inside an ``#If`` context.
+    """
+    lines = list(iter_ahk_code_lines(text))
+    out: list[ProfileKey] = []
+    seen: set[str] = set()
+    conditional = False
+    for i, (number, code) in enumerate(lines):
+        stripped = code.strip()
+        context = _AHK_CONTEXT_RE.fullmatch(stripped)
+        if context:
+            conditional = bool(context.group(1))
+            continue
+        match = _HOTKEY_RE.fullmatch(stripped)
+        if conditional or not match or set(match.group(1)) - {"~", "*", "$"}:
+            continue
+        key, target = _normalise(match.group(2)), match.group(3).strip()
+        if key in seen:
+            continue     # AutoHotkey refuses a second definition
+        if _is_remap(target):
+            out.append(ProfileKey(number, key, target))
+            seen.add(key)
+            continue
+        body = target or _body_below(lines[i + 1:])
+        if body.lower() == "return":
+            continue
+        if "*" not in match.group(1) and key in navigation:
+            continue
+        out.append(ProfileKey(number, key, _does(body)))
+        seen.add(key)
+    return out
 
 
 def internal_ahk_method(index: RocketLauncherIndex, system: str) -> bool:
