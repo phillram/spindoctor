@@ -227,7 +227,7 @@ _PAGE_SUMMARIES = {
     "Metadata & Media": "Download game info and artwork, import local media, and keep databases in sync with your ROMs.",
     "Maintenance": "Remove duplicate games, clear caches and manage the ignore list.",
     "Custom Wheels": "Build and refresh the Favorites, Recently Played and Most Played wheels.",
-    "Intro Video": "Choose which intro videos HyperSpin plays at startup.",
+    "Intro Video": "Choose which intro videos HyperSpin plays at startup, and whether consoles show their own start-up logos.",
     "LEDBlinky": "Set up LEDBlinky and manage button colors, brightness and animations.",
     "Lightgun": "Find your lightgun software and set up systems to use it.",
     "Test games": "Launch games through RocketLauncher, one after another, and see which ones break.",
@@ -809,7 +809,7 @@ _READ_ONLY_COMMANDS: frozenset[str] = frozenset({
     "install-tools", "stats-report", "self-doctor",
     "cleanup categories", "cleanup audit",
     "ignore list", "match list",
-    "fav list", "recent list",
+    "fav list", "recent list", "boot-intros list",
     "mainmenu show", "mainmenu edit",
     "test --list-runs",
     "generate-media list", "generate-media stages",
@@ -1101,6 +1101,13 @@ _CUSTOM_COMMAND_PRESETS: tuple[str, ...] = (
     "introvideo install-autorun --apply",
     "introvideo uninstall-autorun",
     "introvideo uninstall-autorun --apply",
+    "boot-intros list",
+    "boot-intros off",
+    "boot-intros off --apply",
+    "boot-intros off <NAME> --apply",
+    "boot-intros on",
+    "boot-intros on --apply",
+    "boot-intros on <NAME> --apply",
     # ── LEDBlinky ─────────────────────────────────────────────────────────────
     "─── LEDBlinky ───",
     "ledblinky admin-buttons set --player 3 --colors \"<C1,C2,C3,C4,C5,C6>\" --apply",
@@ -14629,9 +14636,111 @@ class _SpinDoctorGUI:
             command=self._introvideo_uninstall_autorun,
         ).pack(side="left", padx=(6, 0))
 
+        # ── Console start-up logos (emulators' boot ROM / BIOS intros) ────
+        logos_lf = self.ttk.LabelFrame(frame, text="Console start-up logos")
+        logos_lf.pack(fill="both", expand=True, pady=(0, 8))
+        self._help_text(
+            logos_lf,
+            text="Emulators that can play a console's own start-up logo (Game Boy, PlayStation, GameCube…) before each game. Turning one on needs that console's boot ROM or BIOS; an emulator without it is left as it is and the missing file is named in Output. Close the emulators first.",
+        ).pack(fill="x", padx=6, pady=(6, 6))
+        logos_frame = self.ttk.Frame(logos_lf)
+        logos_frame.pack(fill="both", expand=True, padx=6, pady=(0, 4))
+        logos_frame.columnconfigure(0, weight=1)
+        logos_frame.rowconfigure(0, weight=1)
+        logos_tree = self.ttk.Treeview(
+            logos_frame, columns=("consoles", "logo", "needs"),
+            show="tree headings", height=8, selectmode="extended",
+        )
+        logos_tree.heading("#0", text="Emulator")
+        logos_tree.heading("consoles", text="Consoles")
+        logos_tree.heading("logo", text="Logo")
+        logos_tree.heading("needs", text="Boot ROM / BIOS")
+        logos_tree.column("#0", width=self._px(260))
+        logos_tree.column("consoles", width=self._px(240))
+        logos_tree.column("logo", width=self._px(70), anchor="center")
+        logos_tree.column("needs", width=self._px(200))
+        logos_scroll = self._vertical_scrollbar(logos_frame, logos_tree)
+        logos_tree.grid(row=0, column=0, sticky="nsew")
+        logos_scroll.grid(row=0, column=1, sticky="ns")
+        self._boot_intros_tree = logos_tree
+        self._boot_intros_names: dict[str, str] = {}
+        logos_btns = self.ttk.Frame(logos_lf)
+        logos_btns.pack(anchor="w", padx=6, pady=(0, 8))
+        self.ttk.Button(
+            logos_btns, text="↻ Refresh", command=self._refresh_boot_intros_list,
+        ).pack(side="left")
+        self.ttk.Button(
+            logos_btns, text="Turn on selected",
+            command=lambda: self._boot_intros_set(True, selected=True),
+        ).pack(side="left", padx=(6, 0))
+        self.ttk.Button(
+            logos_btns, text="Turn off selected",
+            command=lambda: self._boot_intros_set(False, selected=True),
+        ).pack(side="left", padx=(6, 0))
+        self.ttk.Button(
+            logos_btns, text="All on",
+            command=lambda: self._boot_intros_set(True, selected=False),
+        ).pack(side="left", padx=(12, 0))
+        self.ttk.Button(
+            logos_btns, text="All off",
+            command=lambda: self._boot_intros_set(False, selected=False),
+        ).pack(side="left", padx=(6, 0))
+
         self._refresh_introvideo_list()
         self._refresh_introvideo_autorun_status()
+        self._refresh_boot_intros_list()
         return frame
+
+    def _refresh_boot_intros_list(self) -> None:
+        tree = getattr(self, "_boot_intros_tree", None)
+        if tree is None:
+            return
+        tree.delete(*tree.get_children())
+        self._boot_intros_names = {}
+        from .boot_intros import survey
+
+        try:
+            found = survey(load_config())
+        except Exception as exc:  # a broken settings file must not break the page
+            tree.insert("", "end", text=f"Could not read emulator settings: {exc}",
+                        values=("", "", ""))
+            return
+        if not found.targets:
+            tree.insert("", "end", text="No emulator with a start-up logo setting found",
+                        values=("", "", ""))
+            return
+        for t in found.targets:
+            if t.problem:
+                logo = "?"
+            else:
+                logo = {True: "on", False: "off", None: "mixed"}[t.state]
+            if not t.setting.needs:
+                needs = "nothing extra"
+            elif not t.missing:
+                needs = "found"
+            else:
+                needs = "missing " + ", ".join(m.split(" (", 1)[0] for m in t.missing)
+            iid = tree.insert("", "end", text=t.label, values=(t.setting.consoles, logo, needs))
+            # The name 'boot-intros on/off' takes for exactly this row: the
+            # core in its RetroArch, or the emulator's own folder.
+            self._boot_intros_names[iid] = t.label if t.setting.retroarch else t.program
+
+    def _boot_intros_set(self, turn_on: bool, *, selected: bool) -> None:
+        args = ["boot-intros", "on" if turn_on else "off"]
+        if selected:
+            tree = getattr(self, "_boot_intros_tree", None)
+            names = [self._boot_intros_names[i] for i in (tree.selection() if tree else ())
+                     if i in self._boot_intros_names]
+            if not names:
+                self._flash_validation("Pick one or more emulators in the list first.")
+                return
+            args += names
+        if self._global_apply_var.get():
+            args.append("--apply")
+        self._run_cli(
+            "spindoctor", args,
+            on_complete=lambda _rc: self._refresh_boot_intros_list(),
+        )
 
     def _refresh_introvideo_list(self) -> None:
         tree = getattr(self, "_introvideo_tree", None)

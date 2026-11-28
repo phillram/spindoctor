@@ -16,6 +16,7 @@ CLI examples use `spindoctor` (pip); Windows binaries use `spindoctor-cli`.
 | Configure synthetic-wheel art and sound | [Synthetic-wheel media](synthetic-wheel-media.md) |
 | Put several programs on one wheel | [Combined wheels](combined-wheels.md) |
 | Tour consoles while idle | [Idle tour](idle-tour.md) |
+| Show or skip consoles' start-up logos | [Start-up logos](start-up-logos.md) |
 | Run Xbox games | [Cxbx-Reloaded](xbox.md) |
 | Run Nintendo 3DS games | [Azahar](nintendo-3ds.md) |
 | Run Nintendo DS and DSi games | [melonDS](nintendo-ds.md) |

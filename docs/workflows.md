@@ -147,6 +147,10 @@ pool files without permanent deletion. Swap overwrites the configured target.
 Logon autorun and wheel refresh are separate scheduled tasks; re-register both
 after moving/upgrading the EXE. Do not swap while HyperSpin is reading the intro.
 
+The consoles' own start-up logos, which emulators play before a game, are a
+separate setting in each emulator: `boot-intros` turns them on or off
+([start-up logos](start-up-logos.md)).
+
 ## Recovery from mistakes
 
 Close affected cabinet software first. Sidecar backups and manifests are

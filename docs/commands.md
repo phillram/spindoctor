@@ -72,6 +72,16 @@ Edit metadata fields across many games in one shot.
 Options: `--system/-s`, `--filter`, `--set`, `--clear`, `--append`, `--prepend`, `--apply`, `--report`, `--undo`, `--list-manifests`, `--output-dir`, `--help`.
 
 
+## `boot-intros`
+
+Turn consoles' own start-up logos on or off, emulator by emulator.
+
+Options: `--help`.
+
+- `boot-intros list`: List the emulators with a start-up logo setting, and whether it is on. Options: `--help`.
+- `boot-intros off NAMES`: Skip the consoles' start-up logos (all emulators, or the NAMEs given). Options: `--apply`, `--help`.
+- `boot-intros on NAMES`: Play the consoles' start-up logos (all emulators, or the NAMEs given). Options: `--apply`, `--help`.
+
 ## `check-archive-ext`
 
 Scan ROM archives and report inner files whose extensions are not in the RocketLauncher config.

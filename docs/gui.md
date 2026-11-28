@@ -89,7 +89,9 @@ The Idle Tour settings section controls limits and skipped wheels.
 ### Intro Video
 
 Manage the enabled pool, add videos, retire/restore selections, swap the current
-intro and register/remove its Windows-logon task.
+intro and register/remove its Windows-logon task. **Console start-up logos** lists
+the emulators that can play a console's own logo before each game and turns it on
+or off, for the selected rows or all ([start-up logos](start-up-logos.md)).
 
 ![Intro Video](screenshots/08-intro-video.png)
 
