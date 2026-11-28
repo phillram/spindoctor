@@ -1725,7 +1725,10 @@ class ProfileBuilder:
             if km is None and profiles:
                 km = self.resolver.profile_keymap(system, game, self.panel, always_lit)
             if km is None:
-                obsolete.discard(emu_key(game))
+                # A missing AHK profile no longer justifies a generated group.
+                # Unreadable emulator configs still keep their previous lights.
+                if not profiles:
+                    obsolete.discard(emu_key(game))
                 if game.lower() in overridden and not profiles:
                     self.result.warnings.append(f"{system}: '{game}' keymap isn't readable — kept system DEFAULT")
                 continue

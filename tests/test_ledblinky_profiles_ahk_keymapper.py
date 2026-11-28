@@ -276,3 +276,44 @@ def test_readable_emulators_still_go_through_the_remap(cabinet):
     # X now sends RetroArch's Start key too; the profile's own keys aren't a keymap here.
     assert _lit(_groups(b, "Nintendo Entertainment System")["DEFAULT"], b.panel) == \
         ["EXIT", "P1B1", "P1B2", "P1COIN", "P1START", "P2B8", "PAUSE"]
+
+
+@pytest.mark.parametrize("hand_authored", [False, True])
+def test_removed_ahk_profile_only_removes_generated_group(cabinet, hand_authored):
+    profile = _ahk(cabinet, "PC Games/Pac-Man 256.ahk", "a::Space\n")
+    before = lp.plan_profiles(cabinet)
+    if hand_authored:
+        before.doc.text = before.doc.text.replace(lp._GENERATED_OVERRIDE, "")
+    before.write(dry_run=False)
+    old_group = lp.ControlsXmlDoc.groups(
+        before.doc.emulators()[lp.emu_key("PC Games")])["PAC-MAN_256"]
+
+    profile.unlink()
+    after = lp.plan_profiles(cabinet)
+    groups = _groups(after, "PC Games")
+    if hand_authored:
+        assert lp.ControlsXmlDoc.groups(
+            after.doc.emulators()[lp.emu_key("PC Games")])["PAC-MAN_256"] == old_group
+    else:
+        assert "PAC-MAN_256" not in groups
+        assert _lit(groups["DEFAULT"], after.panel) == ["EXIT", "PAUSE"]
+    after.write(dry_run=False)
+    assert lp.plan_profiles(cabinet).write(dry_run=True).written == []
+
+
+def test_unreadable_emulator_override_keeps_generated_group(cabinet):
+    system = "Nintendo Entertainment System"
+    settings = Path(cabinet.rocketlauncher_dir) / "Settings"
+    _write(settings / system / "Games.ini", "[Contra (USA)]\nEmulator=Other RetroArch\n")
+    with (settings / "Global Emulators.ini").open("a", encoding="utf-8") as f:
+        f.write("[Other RetroArch]\nEmu_Path=..\\Emulators\\Other RetroArch\\retroarch.exe\n")
+    cfg = _write(Path(cabinet.emulators_dir) / "Other RetroArch" / "config" / f"{system}.cfg",
+                 'input_player1_a = "c"\n')
+    before = lp.plan_profiles(cabinet)
+    before.write(dry_run=False)
+    old_group = lp.ControlsXmlDoc.groups(before.doc.emulators()[lp.emu_key(system)])["CONTRA_(USA)"]
+    assert lp._GENERATED_OVERRIDE in old_group[0]
+
+    cfg.unlink()
+    after = lp.plan_profiles(cabinet)
+    assert lp.ControlsXmlDoc.groups(after.doc.emulators()[lp.emu_key(system)])["CONTRA_(USA)"] == old_group
