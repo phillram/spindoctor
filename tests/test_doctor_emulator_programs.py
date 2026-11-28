@@ -142,6 +142,30 @@ def test_games_ini_emulator_override_is_followed(tmp_path, windows):
     assert "Microsoft Visual C++ 2013 Redistributable (x64)" in node.fix
 
 
+def test_games_ini_override_of_a_game_not_on_the_wheel_is_not_read(tmp_path, windows):
+    # A stale [Old Game] section left in Games.ini names no game on the wheel,
+    # so RocketLauncher never starts its emulator for this wheel.
+    ok = _write(tmp_path / "Emulators" / "MAME" / "mame64.exe", _pe(["KERNEL32.dll"], bits=64))
+    old = _write(tmp_path / "Emulators" / "MAME 0.139" / "mame.exe", _pe(["MSVCR120.dll"], bits=64))
+    cfg, rl = _cabinet(tmp_path, {"MAME": "MAME"}, {"MAME": ok, "MAME 0.139": old})
+    _write(rl / "Settings" / "MAME" / "Games.ini", "[Old Game]\nEmulator=MAME 0.139\n")
+    result = health.check_emulator_programs(cfg)
+    assert result.status == OK
+    assert result.detail == "1 emulator program(s) OK"
+
+
+def test_default_emulator_no_game_uses_is_not_read(tmp_path, windows):
+    # The only game on the wheel launches with its Games.ini Emulator=, so the
+    # wheel's Default_Emulator never starts.
+    old = _write(tmp_path / "Emulators" / "MAME 0.139" / "mame.exe", _pe(["MSVCR120.dll"], bits=64))
+    new = _write(tmp_path / "Emulators" / "MAME" / "mame64.exe", _pe(["KERNEL32.dll"], bits=64))
+    cfg, rl = _cabinet(tmp_path, {"MAME": "MAME 0.139"}, {"MAME 0.139": old, "MAME": new})
+    _write(rl / "Settings" / "MAME" / "Games.ini", "[A Game]\nEmulator=MAME\n")
+    result = health.check_emulator_programs(cfg)
+    assert result.status == OK
+    assert result.detail == "1 emulator program(s) OK"
+
+
 def test_relative_emu_path_starts_from_the_rocketlauncher_folder(tmp_path, windows):
     cfg, rl = _cabinet(tmp_path, {"Atari Lynx": "Handy"}, {"Handy": "..\\Emulators\\Handy\\handy.exe"})
     _write(rl.parent / "Emulators" / "Handy" / "handy.exe", _pe(["OpenAL32.dll"]))

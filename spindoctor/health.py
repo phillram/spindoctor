@@ -1890,7 +1890,7 @@ def check_emulator_programs(config: Config) -> Check:
     For every Main Menu wheel, the emulators its games launch with (the
     wheel's ``Default_Emulator`` and the ``Emulator=`` / ``System=`` overrides
     in its ``Games.ini``) are followed to the ``Emu_Path`` RocketLauncher reads
-    (:meth:`_RomLookup.source`, relative to the RocketLauncher folder).  Each
+    (:meth:`_RomLookup.game_source`, relative to the RocketLauncher folder).  Each
     program is read once, the way :func:`check_pc_game_programs` reads a PC
     game's (:class:`_DllSearch`), and a FAIL names the wheels that use it and,
     for a known runtime, the package that installs the DLL.  Emulators whose
@@ -1921,13 +1921,14 @@ def check_emulator_programs(config: Config) -> Check:
     for system in _main_menu_wheels(mm_path):
         if system in SKIP_GENERATE_CONFIG:
             continue
-        own = look.source(system)
-        sources = [own] + [
-            look.source(other, emu) if other and other.lower() != system.lower()
-            else (look.source(system, emu) or own)
-            for emu, other in look.game_overrides(system).values()
-        ]
-        for src in sources:
+        # The source each game on the wheel launches through: its Games.ini
+        # Emulator=/System= override, else the wheel's Default_Emulator.  An
+        # override whose game is no longer on the wheel, and a default every
+        # game overrides, never start, so neither is read.
+        games, _raw = _wheel_games(system, config.databases_dir)
+        overrides = look.game_overrides(system)
+        for game in games:
+            src, _other = look.game_source(system, game, overrides)
             if src is None or src.stops or not src.emu_path:
                 continue
             module = look.module_file(src)
