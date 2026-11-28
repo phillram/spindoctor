@@ -72,6 +72,8 @@ PCSX2 2.x (PlayStation 2) reads a keyboard encoder only while its game window ha
 focus, though its SDL pads work in the background: [PS2 panel and pads](playstation-2.md#panel-and-pads).
 BigPEmu (Atari Jaguar) binds a pad by its DirectInput instance GUID and can put the
 Jaguar's keypad behind a held button: [Jaguar panel and pads](atari-jaguar.md#panel-and-pads).
+Flycast (Dreamcast, Naomi) reads one key map for the whole keyboard, so two players on a
+panel need it on all ports, and one key drives one action per port: [Flycast panel and pads](sega-dreamcast-naomi.md#panel-and-pads).
 Dolphin can combine keyboard-encoder and pad inputs, but GameCube keyboard
 bindings need explicit device qualifiers when the selected pad is disconnected.
 Per-game Dolphin profiles can overwrite global controller edits.
