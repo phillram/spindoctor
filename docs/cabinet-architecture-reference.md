@@ -265,6 +265,9 @@ it lights the keys each game's AHK keymapper profile remaps or binds.
 LEDBlinky finds a wheel's `<emulator emuname>` section by the wheel name with
 spaces as `_`, cut at its last dot (`Nokia N-Gage 2.0` is `Nokia_N-Gage_2`,
 `Tiger Game.com` is `Tiger_Game`); game group names keep their dots.
+PPSSPP, DuckStation, PCSX2 2.x and Vita3K keys come from their portable
+folders (`memstick\PSP\SYSTEM\controls.ini`, `settings.ini`, `inis\PCSX2.ini`,
+`config.yml`).
 Flycast's keys come from its `mappings\SDL_Keyboard*.cfg` files.
 Color brightness commands normalize/scale named colors, not Windows display
 brightness.
