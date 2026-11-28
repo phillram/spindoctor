@@ -2120,14 +2120,91 @@ class LaunchBoxClient:
         return self.fetch_with_search(game_name, system_name, threshold=0.6)[:max_results]
 
 
+# ─── libretro thumbnails ──────────────────────────────────────────────────────
+
+class LibretroClient:
+    """libretro-thumbnails (see :mod:`spindoctor.libretro`): box art,
+    screenshots, title screens and, for some systems, logos, matched by the
+    No-Intro / Redump file name. No key, no request allowance, no metadata.
+    """
+
+    source_name = "libretro"
+    _cache = None
+
+    def __init__(self, session=None, cache_dir: Optional[Path] = None, ttl_days: int = 30,
+                 refresh: bool = False):
+        from . import libretro as lr
+
+        self._lr = lr
+        self._session = session or make_session()
+        self._listings = lr.ListingCache(self._session, cache_dir, ttl_days, refresh=refresh)
+
+    def _from_listing(self, listing, game_name: str, threshold: float) -> Optional[GameMetadata]:
+        lr = self._lr
+        found: dict[str, tuple] = {}
+        for folder, slot in lr.FOLDER_SLOTS.items():
+            hit = lr.best_stem(listing, folder, game_name, threshold)
+            if not hit:
+                continue
+            stem, score = hit
+            path, is_link = listing.files[folder][stem]
+            if is_link:
+                path = lr.resolve_link(self._session, listing.repo, listing.branch, path)
+                if not path:
+                    continue
+            found[slot] = (stem, score, folder, lr.raw_url(listing.repo, listing.branch, path))
+        return self._meta(listing.repo, found)
+
+    def _from_names(self, repo: str, game_name: str) -> Optional[GameMetadata]:
+        """No listing: check the exact file names, one HEAD request each."""
+        lr = self._lr
+        stem = lr.file_stem(game_name)
+        found: dict[str, tuple] = {}
+        for folder, slot in lr.FOLDER_SLOTS.items():
+            path = f"{folder}/{stem}.png"
+            if lr.exists(self._session, repo, lr.BRANCHES[0], path):
+                found[slot] = (stem, 1.0, folder, lr.raw_url(repo, lr.BRANCHES[0], path))
+        return self._meta(repo, found)
+
+    def _meta(self, repo: str, found: dict[str, tuple]) -> Optional[GameMetadata]:
+        if not found:
+            return None
+        stem, score = max(((f[0], f[1]) for f in found.values()), key=lambda f: f[1])
+        meta = GameMetadata(
+            name=stem, source="libretro", source_id=f"{repo}/{stem}",
+            source_url=self._lr.REPO_PAGE.format(repo=repo), match_score=score,
+        )
+        for slot, (_s, _score, folder, url) in found.items():
+            setattr(meta, f"{slot}_url", url)
+            meta.media_candidates[slot] = [MediaCandidate(url=url, source_type=folder, format="png")]
+        return meta
+
+    def fetch_with_search(self, game_name: str, system_name: str,
+                          threshold: float = 0.80) -> list[GameMetadata]:
+        for repo in self._lr.repos_for(system_name):
+            listing = self._listings.get(repo)
+            meta = (self._from_listing(listing, game_name, threshold) if listing is not None
+                    else self._from_names(repo, game_name))
+            if meta is not None:
+                return [meta]
+        return []
+
+    def fetch(self, game_name: str, system_name: str) -> Optional[GameMetadata]:
+        results = self.fetch_with_search(game_name, system_name)
+        return results[0] if results else None
+
+    def search(self, game_name: str, system_name: str, max_results: int = 8) -> list[GameMetadata]:
+        return self.fetch_with_search(game_name, system_name, threshold=0.6)[:max_results]
+
+
 # ─── several sources in turn ──────────────────────────────────────────────────
 
 # Every name `--source` and `default_metadata_source` accept; a comma list of
 # the single sources asks them in that order.
-SINGLE_SOURCES = ("screenscraper", "thegamesdb", "launchbox")
+SINGLE_SOURCES = ("screenscraper", "thegamesdb", "launchbox", "libretro")
 SOURCE_ALIASES = ("auto", "both", "combined")
 _SOURCE_LABELS = {"screenscraper": "ScreenScraper", "thegamesdb": "TheGamesDB",
-                  "launchbox": "LaunchBox"}
+                  "launchbox": "LaunchBox", "libretro": "libretro"}
 
 
 def parse_source_list(value: Optional[str]) -> list[str]:
@@ -2391,6 +2468,9 @@ def build_client(
 
     if source == "launchbox":
         return LaunchBoxClient()
+
+    if source == "libretro":
+        return LibretroClient(ttl_days=config.metadata_cache_ttl_days, refresh=not enabled)
 
     if source in ("both", "combined"):
         return CombinedMetadataClient(_make_ss(), _make_tgdb(), cache=cache)

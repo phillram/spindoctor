@@ -166,6 +166,11 @@ Logs redact some secrets, not all identifying data.
   --launchbox-platform "<platform>"` (LaunchBox's own spelling). Arcade wheels
   named by MAME set (`pacman`) don't match LaunchBox's titles. See
   [media sources](media-sources.md).
+- **`--source libretro` finds nothing:** the wheel may have no known repository
+  (set one with `config system set "<wheel>" --libretro-system "<Maker> - <System>"`,
+  as named at github.com/libretro-thumbnails), or the system may have no folder for
+  that type (many have no logos). After GitHub's anonymous limit of 60 listings an
+  hour, only exact file names are found until the hour is up.
 - **Matched game, no media URL:** provider search results can be sparse.
   Use the current release, check the detailed provider lookup, try another
   configured source or import local media. Not every provider supplies videos/themes.
