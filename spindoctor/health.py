@@ -1269,6 +1269,733 @@ def check_pclauncher_ini_text(config: Config) -> Check:
     return parent
 
 
+# ─── PC game programs ────────────────────────────────────────────────────────
+#
+# A program that needs a DLL which isn't there never starts: Windows' loader
+# ends it at once with STATUS_DLL_NOT_FOUND (0xC0000135) and shows a "System
+# Error ... was not found" box naming the DLL (logged as System event 26,
+# "Application Popup").  That happens when RocketLauncher starts the program
+# too, and on a cabinet the box can open behind the frontend, so the screen
+# looks frozen.  Every other check passes such a game: its INI and its
+# program are there.  Antivirus quarantine is a common cause (replaced or
+# emulated Steam DLLs, steam_api.dll above all), and so is a runtime the game
+# expects Windows to have (OpenAL, Games for Windows Live's xlive.dll).  A
+# WorkingFolder that doesn't hold the program stops the launch earlier, with
+# AutoHotkey's "Failed attempt to launch program or document".
+
+_PCLAUNCHER_MODULE = "pclauncher.ahk"
+
+# The module INI keys PCLauncher starts a program from (Application last
+# reads as the game's own; the others run around it).
+_PCLAUNCHER_PROGRAM_KEYS = ("Application", "PreLaunch", "PostLaunch", "PostExit")
+
+# Microsoft's C/C++ runtimes that come from side-by-side assemblies
+# (``%windir%\\WinSxS`` or a ``Microsoft.VC90.CRT`` folder beside the program)
+# rather than the system folder.
+_SXS_RUNTIME_PREFIXES = ("msvcr", "msvcp", "msvcm", "mfc", "atl", "vcomp")
+
+
+@dataclass
+class _PeImage:
+    """What the loader needs from one Windows program or DLL."""
+    bits: int                 # 32 or 64
+    imports: list[str]        # statically imported DLLs, as the import table spells them
+
+
+def _pe_image(path: Path) -> Optional[_PeImage]:
+    """The bitness and import table of the PE file at *path*; None when it
+    isn't one (a ``.bat``, an ``.ahk``, a damaged file).
+
+    Reads only the headers, the section table and the import directory, so a
+    200 MB game program costs a few small reads.  Delay-loaded DLLs aren't in
+    the import table: the program loads those when it first uses them."""
+
+    def u16(b: bytes, at: int) -> int:
+        return int.from_bytes(b[at:at + 2], "little")
+
+    def u32(b: bytes, at: int) -> int:
+        return int.from_bytes(b[at:at + 4], "little")
+
+    try:
+        with open(path, "rb") as fh:
+            def read(offset: int, size: int) -> bytes:
+                fh.seek(offset)
+                return fh.read(size)
+
+            dos = read(0, 64)
+            if len(dos) < 64 or dos[:2] != b"MZ":
+                return None
+            pe = u32(dos, 60)
+            head = read(pe, 24)
+            if len(head) < 24 or head[:4] != b"PE\0\0":
+                return None
+            sections, opt_size = u16(head, 6), u16(head, 20)
+            opt = read(pe + 24, opt_size)
+            magic = u16(opt, 0)
+            if magic == 0x10B:
+                bits, dirs = 32, 96
+            elif magic == 0x20B:
+                bits, dirs = 64, 112
+            else:
+                return None
+            # NumberOfRvaAndSizes sits just before the data directories; the
+            # import table is directory 1.
+            if len(opt) < dirs + 16 or u32(opt, dirs - 4) < 2:
+                return _PeImage(bits, [])
+            table_rva = u32(opt, dirs + 8)
+            raw = read(pe + 24 + opt_size, 40 * sections)
+            spans = []
+            for i in range(len(raw) // 40):
+                s = raw[40 * i:40 * i + 40]
+                spans.append((u32(s, 12), max(u32(s, 8), u32(s, 16)), u32(s, 20)))
+
+            def offset(rva: int) -> Optional[int]:
+                for va, size, start in spans:
+                    if va <= rva < va + size:
+                        return rva - va + start
+                return None
+
+            names: list[str] = []
+            seen: set[str] = set()
+            at = offset(table_rva) if table_rva else None
+            while at is not None and len(seen) < 4096:
+                entry = read(at, 20)
+                if len(entry) < 20 or u32(entry, 12) == 0:
+                    break  # the all-zero entry that ends the table
+                where = offset(u32(entry, 12))
+                if where is not None:
+                    name = read(where, 256).split(b"\0", 1)[0].decode("ascii", errors="replace").strip()
+                    if name and name.lower() not in seen:
+                        seen.add(name.lower())
+                        names.append(name)
+                at += 20
+            return _PeImage(bits, names)
+    except OSError:
+        return None
+
+
+def _windows_dir() -> Optional[Path]:
+    """``%SystemRoot%`` (``%windir%``) when it is a folder, else None."""
+    for var in ("SystemRoot", "windir"):
+        value = os.environ.get(var, "")
+        if value and Path(value).is_dir():
+            return Path(value)
+    return None
+
+
+@dataclass
+class _PcProgram:
+    """One program PCLauncher starts for a game, and what it lacks."""
+    game: str
+    key: str                  # Application / PreLaunch / PostLaunch / PostExit
+    path: Path
+    ini: Optional[Path]       # the module INI the key came from
+    bits: int = 0
+    missing: list[str] = field(default_factory=list)        # "steam_api.dll" or "binkw32.dll (for x.dll)"
+    wrong_bits: list[str] = field(default_factory=list)     # "x.dll is 64-bit"
+    plugins: list[str] = field(default_factory=list)        # Unity plugin DLLs' missing DLLs
+    loaded: set[str] = field(default_factory=set)            # own DLLs the loader loads up front (normcase)
+
+
+class _DllSearch:
+    """Where Windows' loader finds a program's DLLs, in its order (safe DLL
+    search mode): the program's folder, the system folder for the program's
+    bitness (``SysWOW64`` for a 32-bit program on 64-bit Windows, else
+    ``System32``), the Windows folder, the folder the program starts in, then
+    ``PATH``.  PCLauncher starts every program by its file name inside its
+    start folder, so that is always the program's own folder here.
+    ``api-ms-*`` / ``ext-ms-*`` names are API sets Windows maps itself, and
+    Microsoft's C runtimes may come from side-by-side assemblies.  Every
+    folder is listed once per run (:meth:`_RomLookup.listing`) and every file
+    parsed once."""
+
+    def __init__(self, look: _RomLookup, windows: Path):
+        self.look = look
+        self.windows = windows
+        # A 32-bit Python on 64-bit Windows sees SysWOW64 under System32's name;
+        # Sysnative is the real System32 then.
+        native = windows / "Sysnative"
+        self.system = {
+            64: native if look.listing(native) is not None else windows / "System32",
+            32: windows / "SysWOW64" if look.listing(windows / "SysWOW64") is not None else windows / "System32",
+        }
+        self.path = [Path(p) for p in os.environ.get("PATH", "").split(os.pathsep) if p.strip()]
+        self._images: dict[str, Optional[_PeImage]] = {}
+        self._sxs: Optional[list[str]] = None
+
+    def image(self, path: Path) -> Optional[_PeImage]:
+        key = os.path.normcase(str(path))
+        if key not in self._images:
+            self._images[key] = _pe_image(path)
+        return self._images[key]
+
+    def _in(self, folder: Path, name: str) -> Optional[Path]:
+        lst = self.look.listing(folder)
+        real = lst[0].get(name.lower()) if lst is not None else None
+        return folder / real if real is not None else None
+
+    def _side_by_side(self, name: str, bits: int, home: Path) -> bool:
+        """Whether *name* is a C runtime found as a side-by-side assembly: a
+        ``Microsoft.*`` folder beside the program, or ``WinSxS``."""
+        if not name.lower().startswith(_SXS_RUNTIME_PREFIXES):
+            return False
+        lst = self.look.listing(home)
+        if lst is not None and any(self._in(home / sub, name) for low, sub in lst[1].items()
+                                   if low.startswith("microsoft.")):
+            return True
+        if self._sxs is None:
+            sxs = self.look.listing(self.windows / "WinSxS")
+            self._sxs = [real for low, real in (sxs[1].items() if sxs else [])
+                         if low.startswith(("x86_microsoft.vc", "amd64_microsoft.vc"))]
+        arch = "x86_" if bits == 32 else "amd64_"
+        return any(self._in(self.windows / "WinSxS" / sub, name)
+                   for sub in self._sxs if sub.lower().startswith(arch))
+
+    def find(self, name: str, bits: int, home: Path, first: Optional[Path] = None,
+             ) -> tuple[Optional[Path], bool]:
+        """``(file, own)``: where the loader finds DLL *name* for a *bits*-bit
+        program in *home* (*first*: a folder searched before the rest, a
+        Unity plugin's own), and whether that is one of the game's own
+        folders.  ``(None, False)`` when it is nowhere."""
+        low = name.lower()
+        if low.startswith(("api-ms-", "ext-ms-")):
+            return self.system[bits] / name, False
+        for folder, own in ([(first, True)] if first else []) + [
+            (home, True), (self.system[bits], False), (self.windows, False),
+        ] + [(p, False) for p in self.path]:
+            hit = self._in(folder, name)
+            if hit is not None:
+                return hit, own
+        if self._side_by_side(name, bits, home):
+            return self.windows / "WinSxS" / name, False
+        return None, False
+
+    def on_search_path(self, name: str) -> bool:
+        """Whether Windows finds the program *name* by its bare name outside
+        the start folder: in the system folders, the Windows folder or
+        ``PATH`` (``notepad.exe``)."""
+        return any(self._in(folder, name) is not None
+                   for folder in [self.system[64], self.system[32], self.windows] + self.path)
+
+    def check(self, program: _PcProgram, image: _PeImage) -> None:
+        """Fill *program*'s ``missing`` / ``wrong_bits``: every DLL the program
+        imports, and every DLL those of its own folders import in turn (the
+        loader loads them all before the program runs)."""
+        home = program.path.parent
+        queue = [(program.path, image)]
+        done = program.loaded
+        done.add(os.path.normcase(str(program.path)))
+        while queue:
+            path, img = queue.pop(0)
+            needer = "" if path == program.path else f" (for {path.name})"
+            for name in img.imports:
+                hit, own = self.find(name, image.bits, home)
+                if hit is None:
+                    program.missing.append(name + needer)
+                    continue
+                if not own or os.path.normcase(str(hit)) in done:
+                    continue
+                done.add(os.path.normcase(str(hit)))
+                dll = self.image(hit)
+                if dll is None:
+                    continue
+                if dll.bits != image.bits:
+                    program.wrong_bits.append(f"{hit.name} is {dll.bits}-bit")
+                    continue
+                queue.append((hit, dll))
+
+    def unity_plugins(self, program: _PcProgram, image: _PeImage) -> bool:
+        """Whether *program* is a Unity game (a ``<program>_Data`` folder
+        beside it), filling ``plugins`` for one.
+
+        Unity games load their native plugins while running: the DLLs in
+        ``<program>_Data\\Plugins`` (or its ``x86`` / ``x86_64`` folder), and
+        DLLs beside the program that it doesn't import, so the import table
+        doesn't name them.  ``plugins`` gets the DLLs those import that are
+        nowhere (looked for beside the plugin first, as Unity's Mono loads
+        them, and among the game's other plugins).  Call after :meth:`check`."""
+        home = program.path.parent
+        data = home / f"{program.path.stem}_Data"
+        if self.look.listing(data) is None:
+            return False
+        plugins = data / "Plugins"
+        lst = self.look.listing(plugins)
+        groups = []
+        if lst is not None:
+            arch = "x86" if image.bits == 32 else "x86_64"
+            groups = [(f, self._dlls(f)) for f in [plugins] + ([plugins / lst[1][arch]] if arch in lst[1] else [])]
+        groups.append((home, [p for p in self._dlls(home) if os.path.normcase(str(p)) not in program.loaded]))
+        own = {p.name.lower() for _f, dlls in groups for p in dlls}
+        for folder, dlls in groups:
+            for plugin in dlls:
+                img = self.image(plugin)
+                if img is None or img.bits != image.bits:
+                    continue  # the other bitness's copy, or not a DLL
+                for name in img.imports:
+                    if name.lower() in own:
+                        continue
+                    hit, _own = self.find(name, image.bits, home, first=None if folder == home else folder)
+                    entry = f"{name} (for {plugin.name})"
+                    if hit is None and entry not in program.plugins:
+                        program.plugins.append(entry)
+        return True
+
+    def _dlls(self, folder: Path) -> list[Path]:
+        lst = self.look.listing(folder)
+        return [folder / real for low, real in sorted((lst[0] if lst else {}).items()) if low.endswith(".dll")]
+
+
+def _is_uninstaller(path: Path) -> bool:
+    """``unins000.exe`` (Inno Setup), ``uninstall.exe``, ``uninst.exe``…"""
+    low = path.name.lower()
+    return low.startswith("unins") and low.endswith(".exe")
+
+
+def _pc_program_target(value: str) -> Optional[str]:
+    """*value* (a PCLauncher program key) as a path to check, or None for a
+    URL or Steam browser link (the module runs those as they are: it tests
+    ``"http"`` / ``"ste"`` at the start, ignoring case)."""
+    value = value.strip().strip('"').strip()
+    if not value or value[:4].lower() == "http" or value[:3].lower() == "ste":
+        return None
+    return value
+
+
+def _bare_file_name(value: str) -> bool:
+    """Whether a program key names just a file (``setup.exe``), no folder."""
+    from pathlib import PureWindowsPath
+
+    pw = PureWindowsPath(value)
+    return not pw.drive and not pw.root and len(pw.parts) == 1
+
+
+def _on_unmounted_drive(value: str, look: _RomLookup) -> bool:
+    """Whether *value* is on a drive that can't be listed now: one with no
+    disc in it, or a virtual drive letter that exists only while mounted."""
+    from pathlib import PureWindowsPath
+
+    drive = PureWindowsPath(value).drive
+    return bool(drive) and look.listing(Path(drive + "\\")) is None
+
+
+def _wheel_pc_programs(
+    system: str, look: _RomLookup, databases_dir: Path, search: Optional[_DllSearch],
+) -> Optional[Check]:
+    """One wheel's node for :func:`check_pc_game_programs`; None when none of
+    its games starts through PCLauncher."""
+
+    def pclauncher(src: Optional[_RomSource]) -> bool:
+        module = look.module_file(src) if src is not None and not src.stops else None
+        return module is not None and module.name.lower() == _PCLAUNCHER_MODULE
+
+    overrides = look.game_overrides(system)
+    own = look.source(system)
+    if not pclauncher(own) and not any(
+        pclauncher(look.source(other, emu) if other and other.lower() != system.lower()
+                   else look.source(system, emu) or own)
+        for emu, other in overrides.values()
+    ):
+        return None
+
+    games, _raw = _wheel_games(system, databases_dir)
+    node = Check(name=system, status=Status.OK)
+    checked: set[str] = set()
+    programs: list[_PcProgram] = []
+    uninstallers: list[_PcProgram] = []
+    absent: list[_PcProgram] = []
+    misplaced: list[tuple[_PcProgram, str, Path, Optional[Path]]] = []  # (program, WorkingFolder, folder, its INI)
+    other = 0           # Steam / URL / script (.ahk, .bat): no import table to read
+    on_disc = 0         # on a DiscImage that is only there once PCLauncher mounts it
+    unity = 0
+    uncheckable = False
+    for name in games:
+        src, _other = look.game_source(system, name, overrides)
+        if src is None or src.stops:
+            continue  # RL stops before any module runs (the ROM paths check)
+        module = look.module_file(src, name)
+        if module is None or module.name.lower() != _PCLAUNCHER_MODULE or not look.exists(module):
+            continue
+        # PCLauncher reads each key with moduleIni.Read(dbName, key): the game's
+        # own <System>\<game>.ini, then <System>.ini, then PCLauncher.ini.
+        setting = {key: look.module_setting(module, src.system, name, [name], key)
+                   for key in _PCLAUNCHER_PROGRAM_KEYS + ("SteamID", "WorkingFolder", "OriginGame", "DiscImage")}
+        steam = bool(setting["SteamID"][0])
+        if steam:
+            other += 1  # Steam starts the game; the other keys still run
+        folder = setting["WorkingFolder"][0].strip('"').strip()
+        work = _resolve_rom_path(folder, look.rl_dir) if folder else None
+        # Origin starts the game itself, and a DiscImage game's program may be
+        # on the mounted disc: neither goes through the plain start below.
+        disc = bool(setting["DiscImage"][0])
+        plain = not setting["OriginGame"][0] and not disc
+        read_any = False
+        for key in _PCLAUNCHER_PROGRAM_KEYS:
+            value, ini = setting[key]
+            if key == "Application" and steam:
+                continue
+            target = _pc_program_target(value)
+            if target is None:
+                if value and key == "Application":
+                    other += 1
+                continue
+            if disc and key == "Application" and _bare_file_name(target):
+                # PCLauncher takes a bare Application name as the root of the
+                # mounted image, not the RocketLauncher folder.
+                on_disc += 1
+                continue
+            full = _resolve_rom_path(target, look.rl_dir)
+            if full is None:
+                uncheckable = True
+                continue
+            program = _PcProgram(name, key, full, ini)
+            if key == "Application" and _is_uninstaller(full):
+                uninstallers.append(program)
+            if not look.exists(full):
+                if disc and _on_unmounted_drive(target, look):
+                    # PCLauncher mounts DiscImage before it looks for its
+                    # programs, so one on the virtual drive is there by then.
+                    on_disc += 1
+                else:
+                    absent.append(program)
+                continue
+            if key == "Application" and plain and work is not None:
+                # RocketLauncher's Process.Run() starts it as
+                #   Run, "<file name>", <WorkingFolder or the program's folder>
+                # with no UseErrorLevel (PreLaunch/PostLaunch/PostExit always
+                # start in their own folder), so the copy that runs is the one
+                # in WorkingFolder, and with none there AutoHotkey stops the
+                # module: "Failed attempt to launch program or document".
+                lst = look.listing(work)
+                there = lst[0].get(full.name.lower()) if lst is not None else None
+                if there is not None:
+                    program.path = full = work / there
+                elif not look.exists(look.rl_dir / full.name) and not (
+                        search is not None and search.on_search_path(full.name)):
+                    misplaced.append((program, folder, work, setting["WorkingFolder"][1]))
+            if search is None:
+                continue
+            image = search.image(full)
+            if image is None:
+                if key == "Application":
+                    other += 1  # .ahk / .bat / .lnk: no import table
+                continue
+            program.bits = image.bits
+            search.check(program, image)
+            if key == "Application" and search.unity_plugins(program, image):
+                unity += 1
+            read_any = True
+            if program.missing or program.wrong_bits or program.plugins:
+                programs.append(program)
+        if read_any:
+            checked.add(name)
+
+    def where(p: _PcProgram) -> str:
+        return f"{p.game}: {p.path.name}" + ("" if p.key == "Application" else f" ({p.key})")
+
+    total = len(checked)
+    if misplaced:
+        p, value, work, ini = misplaced[0]
+        node.children.append(Check(
+            name="Start folder", status=Status.FAIL,
+            detail=(f"{len(misplaced)} game(s) won't start: PCLauncher starts the program by its file name "
+                    "inside WorkingFolder, which doesn't hold it, so AutoHotkey stops the module with "
+                    "\"Failed attempt to launch program or document\" and RocketLauncher waits for it "
+                    "forever (the error box can sit behind the frontend): "
+                    + _some([f"{g.game}: {g.path.name} isn't in {w}" for g, _v, w, _i in misplaced], 5)),
+            fix=(f"Set WorkingFolder={p.path.parent} under [{p.game}] in {ini}, or remove the line (the "
+                 "program then starts in its own folder). A game that must start somewhere else needs a "
+                 "launcher (.bat) in that folder"),
+        ))
+    missing = [p for p in programs if p.missing]
+    if missing:
+        rows = [f"{where(p)} needs {', '.join(p.missing)}" for p in missing]
+        games_hit = len({p.game for p in missing})
+        node.children.append(Check(
+            name="Missing DLLs", status=Status.FAIL,
+            detail=(f"{games_hit}/{total} games have a program that can't start: it needs a DLL that isn't "
+                    "there, so Windows ends it at once (0xC0000135) with a \"System Error ... was not "
+                    "found\" box, also when RocketLauncher starts it. The program waits on that box, which "
+                    f"on a cabinet can open behind the frontend, so the screen looks frozen. {_some(rows, 5)}"),
+            fix=(f"Put each DLL back beside the program ({missing[0].path.parent}), from the game's own "
+                 "install, or install the runtime it comes with (OpenAL, Games for Windows Live). "
+                 "Antivirus quarantine is a common cause, especially of steam_api.dll: check its history "
+                 "(and decide whether you trust the file) before restoring it. Windows logs each box as "
+                 "System event 26 (\"Application Popup\")"),
+        ))
+    wrong = [p for p in programs if p.wrong_bits]
+    if wrong:
+        rows = [f"{where(p)} is {p.bits}-bit, {', '.join(p.wrong_bits)}" for p in wrong]
+        node.children.append(Check(
+            name="DLL bitness", status=Status.FAIL,
+            detail=(f"{len({p.game for p in wrong})}/{total} games have a program that can't start: a DLL "
+                    f"beside it is built for the other bitness (0xC000007B): {_some(rows, 5)}"),
+            fix=f"Replace each DLL in {wrong[0].path.parent} with the game's own copy (same bitness as the program)",
+        ))
+    plugins = [p for p in programs if p.plugins]
+    if plugins:
+        rows = [f"{where(p)}: {', '.join(p.plugins)}" for p in plugins]
+        node.children.append(Check(
+            name="Unity plugins", status=Status.WARN,
+            detail=(f"{len(plugins)}/{unity} Unity games have a plugin (in <program>_Data\\Plugins or beside "
+                    "the program) that needs a DLL that isn't there. Unity loads plugins while the game runs, "
+                    f"so it may stop or carry on without it: {_some(rows, 5)}"),
+            fix=(f"Put each DLL back beside its plugin (e.g. in {plugins[0].path.parent}), from the game's own "
+                 "install; antivirus quarantine is a common cause, especially of steam_api.dll"),
+        ))
+    if uninstallers:
+        first = uninstallers[0]
+        node.children.append(Check(
+            name="Uninstaller", status=Status.WARN,
+            detail=(f"{len(uninstallers)} game(s) start an uninstaller as their Application: "
+                    + _some([f"{p.game} ({p.path.name})" for p in uninstallers], 5)),
+            fix=f"Point Application under [{first.game}] in {first.ini} at the game's own program",
+        ))
+    if absent:
+        node.children.append(Check(
+            name="Programs not found", status=Status.INFO,
+            detail=(f"{len(absent)} program(s) aren't there, so PCLauncher stops with \"Cannot find this "
+                    f"...\" before they start: {_some([f'{where(p)} ({p.path})' for p in absent], 3)}"),
+            fix=f"Fix the path in each game's module INI (e.g. {absent[0].key} under [{absent[0].game}] in {absent[0].ini})",
+        ))
+
+    notes = []
+    if total and not any(c.status in (Status.FAIL, Status.WARN) for c in node.children):
+        notes.append(f"{total} game(s) OK")
+    elif total:
+        notes.append(f"{total} game(s) read")
+    if other:
+        notes.append(f"{other} start through Steam, a URL or a script (no import table to read)")
+    if on_disc:
+        notes.append(f"{on_disc} program(s) are on a disc image PCLauncher mounts first (not read)")
+    if search is None:
+        notes.append("no Windows folder (SystemRoot), so DLLs weren't looked for")
+    if uncheckable:
+        notes.append("some paths use Windows drive letters; can't check them on this OS")
+    if not total and not node.children and not other and not on_disc:
+        node.status = Status.INFO
+        notes.append("no programs to read")
+    node.detail = "; ".join(notes)
+    if node.children:
+        node.status = _worst(c.status for c in node.children)
+    return node
+
+
+def check_pc_game_programs(config: Config) -> Check:
+    """Will each PCLauncher game's program start?  FAIL when it needs a DLL
+    that isn't there.
+
+    For every game on a Main Menu wheel that launches with PCLauncher, the
+    programs the module starts (``Application``, ``PreLaunch``, ``PostLaunch``,
+    ``PostExit``) are read the way the module reads them, key by key
+    (:meth:`_RomLookup.module_setting`: ``<System>\\<game>.ini``, then
+    ``<System>.ini``, then ``PCLauncher.ini``; a relative path starts from the
+    RocketLauncher folder).  Each program's import table is read, and each DLL
+    it names is looked for where Windows' loader looks (:class:`_DllSearch`),
+    following the DLLs of the game's own folders to theirs:
+
+    * an ``Application`` its ``WorkingFolder`` doesn't hold is a FAIL:
+      RocketLauncher starts it by its file name inside that folder, and
+      AutoHotkey stops the module with "Failed attempt to launch program or
+      document" (a copy found by its bare name in the RocketLauncher folder,
+      Windows' folders or ``PATH`` would start instead, so that isn't flagged);
+    * a DLL that is nowhere is a FAIL: Windows ends the program at once
+      (0xC0000135) with a "System Error" box, which can open behind the
+      frontend;
+    * a DLL beside the program built for the other bitness is a FAIL (0xC000007B);
+    * a Unity game's plugin (``<program>_Data\\Plugins``) that needs a missing
+      DLL is a WARN: the game loads plugins while running, so the import
+      table can't tell whether it stops;
+    * an ``Application`` that is an uninstaller (``unins*.exe``) is a WARN.
+
+    URLs, Steam (``SteamID``, ``steam://``) and scripts (``.ahk``, ``.bat``,
+    which have no import table) are skipped, and so is a program on a
+    ``DiscImage`` that isn't there until PCLauncher mounts it (a bare file
+    name, or a drive that can't be listed now).  DLLs a program loads only while
+    running (delay-loaded, or with ``LoadLibrary``) can't be seen.  Wheels
+    switched off on the Main Menu are capped at INFO.  Diagnosis only.
+    """
+    name = "PC game programs"
+    if not config.hyperspin_dir or not Path(config.hyperspin_dir).is_dir():
+        return Check(name=name, status=Status.INFO, detail="hyperspin_dir not configured; skipping")
+    if not config.rocketlauncher_dir:
+        return Check(name=name, status=Status.INFO, detail="rocketlauncher_dir not configured; skipping")
+
+    from .rocketlauncher import SKIP_GENERATE_CONFIG
+
+    mm_path = Path(config.hyperspin_dir) / "Databases" / "Main Menu" / "Main Menu.xml"
+    look = _RomLookup(Path(config.rocketlauncher_dir))
+    windows = _windows_dir()
+    search = _DllSearch(look, windows) if windows is not None else None
+    hidden = _hidden_main_menu_wheels(mm_path)
+    parent = Check(name=name, status=Status.OK)
+    for system in _main_menu_wheels(mm_path):
+        if system in SKIP_GENERATE_CONFIG:
+            continue
+        node = _wheel_pc_programs(system, look, config.databases_dir, search)
+        if node is None:
+            continue
+        if system in hidden:
+            node.name = f"{system} (hidden on the Main Menu)"
+            _cap_at_info(node)
+        parent.children.append(node)
+    if not parent.children:
+        return Check(name=name, status=Status.INFO, detail="no PCLauncher systems")
+    parent.status = _worst(c.status for c in parent.children)
+    return parent
+
+
+# ─── Emulator programs ───────────────────────────────────────────────────────
+#
+# The same missing-DLL failure for the emulators RocketLauncher starts
+# (Emu_Path): an emulator built with an older Visual C++ or DirectX needs that
+# runtime installed, and a newer Visual C++ runtime doesn't replace an older
+# one.  Every game on the wheel then stops at Windows' "System Error ... was
+# not found" box.
+
+# Modules that never start their emulator section's Emu_Path (it names a
+# placeholder; the module starts each game's own program).
+_EMU_PATH_UNUSED_MODULES = (_PCLAUNCHER_MODULE, "casual games.ahk")
+
+# DLL name prefix -> the Microsoft download it comes with.
+_VC_RUNTIME_YEARS = {"71": "2003", "80": "2005", "90": "2008", "100": "2010", "110": "2012",
+                     "120": "2013", "140": "2015-2022"}
+
+
+def _runtime_of(dll: str, bits: int) -> str:
+    """The package that installs *dll*, for a *bits*-bit program ("" when not
+    a known runtime)."""
+    import re
+
+    low = dll.lower()
+    arch = "x86" if bits == 32 else "x64"
+    m = re.match(r"(?:msvc[rp]|mfcm?|vcomp|vcruntime|concrt|atl)(\d{2,3})", low)
+    if m and m.group(1) in _VC_RUNTIME_YEARS:
+        return f"Microsoft Visual C++ {_VC_RUNTIME_YEARS[m.group(1)]} Redistributable ({arch})"
+    # The June 2010 DirectX runtime's D3DX, compiler 33-43, XInput 1.1-1.3 and
+    # XAudio 2.0-2.7 (later ones, such as d3dcompiler_47 and xinput1_4, are Windows' own).
+    if re.match(r"(?:d3dx9_|d3dx10_|d3dx11_|d3dcompiler_(?:3\d|4[0-3])\.|xinput1_[123]\.|x3daudio1_|"
+                r"xaudio2_[0-7]\.|xactengine)", low):
+        return "the DirectX End-User Runtime (June 2010)"
+    if low == "openal32.dll":
+        return "OpenAL"
+    if low == "xlive.dll":
+        return "Games for Windows Live"
+    return ""
+
+
+def check_emulator_programs(config: Config) -> Check:
+    """Will each emulator RocketLauncher starts run?  FAIL when its program
+    needs a DLL that isn't there, or one of the other bitness.
+
+    For every Main Menu wheel, the emulators its games launch with (the
+    wheel's ``Default_Emulator`` and the ``Emulator=`` / ``System=`` overrides
+    in its ``Games.ini``) are followed to the ``Emu_Path`` RocketLauncher reads
+    (:meth:`_RomLookup.game_source`, relative to the RocketLauncher folder).  Each
+    program is read once, the way :func:`check_pc_game_programs` reads a PC
+    game's (:class:`_DllSearch`), and a FAIL names the wheels that use it and,
+    for a known runtime, the package that installs the DLL.  Emulators whose
+    program is missing are left to the wheel and ROM checks; PCLauncher and
+    Casual Games never start their ``Emu_Path``.  An emulator only hidden
+    wheels use is capped at INFO.  DLLs an emulator loads later (RetroArch's
+    cores, plugins) aren't read.  Diagnosis only.
+    """
+    name = "Emulator programs"
+    if not config.hyperspin_dir or not Path(config.hyperspin_dir).is_dir():
+        return Check(name=name, status=Status.INFO, detail="hyperspin_dir not configured; skipping")
+    if not config.rocketlauncher_dir:
+        return Check(name=name, status=Status.INFO, detail="rocketlauncher_dir not configured; skipping")
+    windows = _windows_dir()
+    if windows is None:
+        return Check(name=name, status=Status.INFO,
+                     detail="no Windows folder (SystemRoot), so DLLs can't be looked for")
+
+    from .rocketlauncher import SKIP_GENERATE_CONFIG
+
+    mm_path = Path(config.hyperspin_dir) / "Databases" / "Main Menu" / "Main Menu.xml"
+    look = _RomLookup(Path(config.rocketlauncher_dir))
+    search = _DllSearch(look, windows)
+    hidden = _hidden_main_menu_wheels(mm_path)
+    # program (normcase) -> (program, emulator, settings section, wheels in Main Menu order)
+    found: dict[str, tuple[Path, str, str, list[str]]] = {}
+    uncheckable = False
+    for system in _main_menu_wheels(mm_path):
+        if system in SKIP_GENERATE_CONFIG:
+            continue
+        # The source each game on the wheel launches through: its Games.ini
+        # Emulator=/System= override, else the wheel's Default_Emulator.  An
+        # override whose game is no longer on the wheel, and a default every
+        # game overrides, never start, so neither is read.
+        games, _raw = _wheel_games(system, config.databases_dir)
+        overrides = look.game_overrides(system)
+        for game in games:
+            src, _other = look.game_source(system, game, overrides)
+            if src is None or src.stops or not src.emu_path:
+                continue
+            module = look.module_file(src)
+            if module is not None and module.name.lower() in _EMU_PATH_UNUSED_MODULES:
+                continue
+            program = _resolve_rom_path(src.emu_path, look.rl_dir)
+            if program is None:
+                uncheckable = True
+                continue
+            if not look.exists(program):
+                continue  # "emulator not found": the wheel and ROM checks say so
+            key = os.path.normcase(str(program))
+            entry = found.setdefault(key, (program, src.emulator, src.emu_where, []))
+            if system not in entry[3]:
+                entry[3].append(system)
+
+    parent = Check(name=name, status=Status.OK)
+    read = 0
+    for program, emulator, where, wheels in found.values():
+        image = search.image(program)
+        if image is None:
+            continue  # a script or launcher with no import table
+        read += 1
+        prog = _PcProgram(emulator, "Emu_Path", program, None, bits=image.bits)
+        search.check(prog, image)
+        if not prog.missing and not prog.wrong_bits:
+            continue
+        shown = [w for w in wheels if w not in hidden]
+        problems = []
+        if prog.missing:
+            problems.append(f"needs {', '.join(prog.missing)}, which isn't there (0xC0000135)")
+        if prog.wrong_bits:
+            problems.append(f"is {image.bits}-bit, but {', '.join(prog.wrong_bits)} (0xC000007B)")
+        runtimes = []
+        for dll in prog.missing:
+            runtime = _runtime_of(dll.split(" ", 1)[0], image.bits)
+            if runtime and runtime not in runtimes:
+                runtimes.append(runtime)
+        step = (f"Install {' and '.join(runtimes)}" if runtimes
+                else f"Put the missing DLL in {program.parent}, from the emulator's own download")
+        node = Check(
+            name=emulator if shown else f"{emulator} (only wheels hidden on the Main Menu)",
+            status=Status.FAIL,
+            detail=(f"{program.name} {'; and '.join(problems)}, so Windows stops it with a \"System Error\" "
+                    f"box and none of its games start. Used by {_some(shown or wheels, 4)} ({where})"),
+            fix=(f"{step}. Newer Visual C++ runtimes don't replace older ones: see "
+                 "docs/windows-10-migration.md, \"Restore cabinet dependencies\""),
+        )
+        if not shown:
+            _cap_at_info(node)
+        parent.children.append(node)
+
+    notes = []
+    if not read:
+        notes.append("no emulator programs to read")
+        parent.status = Status.INFO
+    elif not parent.children:
+        notes.append(f"{read} emulator program(s) OK")
+    else:
+        notes.append(f"{len(parent.children)} of {read} emulator program(s) can't start")
+        parent.status = _worst(c.status for c in parent.children)
+    if uncheckable:
+        notes.append("some Emu_Paths use Windows drive letters; can't check them on this OS")
+    parent.detail = "; ".join(notes)
+    return parent
+
+
 # ─── Casual Games (PopCap / Big Fish Games) ──────────────────────────────────
 #
 # RocketLauncher's Casual Games module starts each game's own .exe: gamePath
@@ -5617,6 +6344,8 @@ def run_health_checks(config: Config, fix: bool = False) -> HealthReport:
     _safe("PC games", lambda: check_pc_launchability(config))
     _safe("Casual Games", lambda: check_casual_games(config))
     _safe("PCLauncher INI text", lambda: check_pclauncher_ini_text(config))
+    _safe("PC game programs", lambda: check_pc_game_programs(config))
+    _safe("Emulator programs", lambda: check_emulator_programs(config))
     _safe("ROM paths", lambda: check_rom_paths(config))
     _safe("HyperSpin ROMs only", lambda: check_hyperspin_roms_only(config))
     _safe("Video redirects", lambda: check_video_redirects(config))

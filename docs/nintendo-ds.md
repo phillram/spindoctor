@@ -87,9 +87,11 @@ the lid. `HK_Mic` blows while it is held, if `[Mic]` `InputType = 2` (melonDS's 
 noise); with the default, an external microphone, it does nothing on a PC without one.
 `HK_Lid` closes the lid on one press and opens it on the next.
 
-**Button lights.** `ledblinky profiles` reads a DS wheel's keys from DeSmuME's
-`desmume.ini` only. With melonDS it finds none for the wheel, so keep or edit the wheel's
-LEDBlinky section by hand.
+**Button lights.** `ledblinky profiles` reads a melonDS wheel's keys from
+`[Instance0.Keyboard]` in the `melonDS.toml` beside the exe (and a DeSmuME wheel's from
+`desmume.ini`). It lights the DS buttons, Start and Select, and also `HK_Mic` and
+`HK_Lid` when they are bound. It doesn't read pad binds, and a key bound with Shift,
+Ctrl or Alt held lights nothing.
 
 ## Starting games from RocketLauncher
 
