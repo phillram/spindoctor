@@ -358,9 +358,10 @@ def config_set(key: str, value: str):
       screenscraper_user        ScreenScraper username
       screenscraper_pass        ScreenScraper password
       thegamesdb_key            TheGamesDB API key
-      default_metadata_source   auto | screenscraper | thegamesdb | both
-                                (default auto: both when both are configured,
-                                else whichever is)
+      default_metadata_source   auto | screenscraper | thegamesdb | launchbox | both,
+                                or a comma list asked in that order
+                                (e.g. launchbox,thegamesdb). Default auto: both
+                                when both are configured, else whichever is
       backup_before_modify      true | false
       match_threshold           0.0–1.0 fuzzy match confidence (default 0.80)
       interactive_matching      true | false
@@ -418,15 +419,22 @@ def config_set(key: str, value: str):
         "test_hyperspin_timeout": (10, 3600),
     }
     current = getattr(config, key)
-    _metadata_sources = ("auto", "screenscraper", "thegamesdb", "both")
     if key == "default_metadata_source":
+        from .scraper import SINGLE_SOURCES, SOURCE_ALIASES, parse_source_list
+        _metadata_sources = ("auto",) + SINGLE_SOURCES + ("both",)
         value = value.strip().lower()
-        if value not in _metadata_sources:
+        try:
+            parts = parse_source_list(value)
+        except ValueError:
+            parts = []
+        if not parts or (len(parts) == 1 and parts[0] not in SOURCE_ALIASES + SINGLE_SOURCES):
             err_console.print(
                 f"[red]Invalid value for[/red] {key}: {value!r} "
-                f"(expected one of: {', '.join(_metadata_sources)})"
+                f"(expected one of: {', '.join(_metadata_sources)}, "
+                f"or a comma list such as launchbox,thegamesdb)"
             )
             sys.exit(1)
+        value = ",".join(parts)
     if key == "test_cleanup":
         from .gametest_cleanup import MODES
         value = value.strip().lower()
@@ -667,8 +675,12 @@ def config_system_group():
               help="Exact ROM folder path for this system. Used by generate-config "
                    "as Rom_Path= instead of roms_dir/<SystemName>. Useful when ROMs "
                    "share a folder (e.g. MAME variants) or live under a non-standard name.")
+@click.option("--launchbox-platform", "launchbox_platforms", multiple=True,
+              help="LaunchBox platform name(s) to search for this wheel, in order "
+                   "(e.g. \"Sony PSP Minis\"). Repeatable. Default: the wheel's own "
+                   "name, then SpinDoctor's known aliases.")
 def config_system_set(system_name, screenscraper_id, thegamesdb_id,
-                      rom_extensions, layout, emulator, rom_path):
+                      rom_extensions, layout, emulator, rom_path, launchbox_platforms):
     """Add or update overrides for SYSTEM_NAME.
 
     \b
@@ -706,12 +718,15 @@ def config_system_set(system_name, screenscraper_id, thegamesdb_id,
         entry["emulator"] = emulator
     if rom_path is not None:
         entry["rom_path"] = rom_path
+    if launchbox_platforms:
+        names = [p.strip() for p in launchbox_platforms if p.strip()]
+        entry["launchbox_platform"] = names[0] if len(names) == 1 else names
 
     if not entry:
         err_console.print(
             "[red]Nothing to set.[/red] Pass at least one of "
             "--screenscraper-id / --thegamesdb-id / --rom-extensions / --layout / "
-            "--emulator / --rom-path."
+            "--emulator / --rom-path / --launchbox-platform."
         )
         sys.exit(1)
 
@@ -5909,15 +5924,44 @@ def match_clear(system: Optional[str]):
     console.print(f"[green]✓[/green] Cleared {n} cache file(s).")
 
 
+# ─── metadata sources ─────────────────────────────────────────────────────────
+
+class _SourceParam(click.ParamType):
+    """``--source``: one source, or a comma list asked in that order."""
+
+    name = "source"
+
+    def get_metavar(self, param, ctx=None):  # click < 8.2 passes no ctx
+        return "[screenscraper|thegamesdb|launchbox|both|A,B,...]"
+
+    def convert(self, value, param, ctx):
+        from .scraper import SINGLE_SOURCES, SOURCE_ALIASES, parse_source_list
+        if value is None or value == "":
+            return None
+        try:
+            parts = parse_source_list(str(value))
+        except ValueError as e:
+            self.fail(str(e), param, ctx)
+        if len(parts) == 1 and parts[0] not in SOURCE_ALIASES + SINGLE_SOURCES:
+            self.fail(
+                f"{value!r} is not a source (use {', '.join(SINGLE_SOURCES + ('both',))}, "
+                f"or a comma list such as launchbox,thegamesdb)", param, ctx,
+            )
+        return ",".join(parts) or None
+
+
+_SOURCE_HELP = ("Scraper to use, or a comma list asked in that order, each "
+                "filling what the ones before it lack (e.g. launchbox,thegamesdb). "
+                "Default: both when credentials exist, else whichever is configured.")
+
+
 # ─── fetch-meta ───────────────────────────────────────────────────────────────
 
 @cli.command("fetch-meta")
 @_system_options
 @click.option("--game", "-g", default=None,
               help="Limit to a single game name (exact match, no extension). Requires --system.")
-@click.option("--source", default=None,
-              type=click.Choice(["screenscraper", "thegamesdb", "both"]),
-              help="Scraper to use (default: both when credentials exist, else whichever is configured).")
+@click.option("--source", default=None, type=_SourceParam(), help=_SOURCE_HELP)
 @click.option("--all-games", "fetch_all", is_flag=True,
               help="Refresh metadata for every game, even complete ones.")
 @click.option("--interactive/--auto-best", "interactive", default=None,
@@ -5960,7 +6004,9 @@ def fetch_meta(system, all_systems, game, source, fetch_all,
         cache = build_metadata_cache(config)
         src = source or None
         sys_name = system if system else None
-        n = cache.clear(source=src, system=sys_name)
+        # A list clears each of its sources' caches.
+        n = sum(cache.clear(source=s, system=sys_name)
+                for s in (src.split(",") if src else [None]))
         scope = (
             f"all systems for {src}" if src and not sys_name else
             f"{sys_name} ({src or 'all sources'})" if sys_name else
@@ -6185,9 +6231,7 @@ def _is_network_error(msg: str) -> bool:
               help="Limit to a single game name (exact match, no extension). Requires --system.")
 @click.option("--types", default=",".join(MEDIA_TYPES),
               help=f"Comma-separated types. Options: {', '.join(MEDIA_TYPES)}")
-@click.option("--source", default=None,
-              type=click.Choice(["screenscraper", "thegamesdb", "both"]),
-              help="Scraper to use (default: both when credentials exist, else whichever is configured).")
+@click.option("--source", default=None, type=_SourceParam(), help=_SOURCE_HELP)
 @click.option("--overwrite", is_flag=True)
 @click.option("--pick-media", "pick_media", is_flag=True,
               help="Interactively preview & pick when a media slot has multiple "
@@ -6351,6 +6395,11 @@ def fetch_media(system, all_systems, game, types, source, overwrite, pick_media,
                     prog.console.print(f"  [dim]Fetching:[/dim] {game.name}")
                 else:
                     prog.update(task, description=f"[dim]meta · {game.name[:35]}[/dim]")
+                if hasattr(client, "wanted_types"):
+                    # A source list stops asking once this game's missing
+                    # types are all found, so a quota-limited source last
+                    # in the list is asked only for what the others lack.
+                    client.wanted_types = set(needed[game.name])
                 try:
                     meta = client.fetch_with_search(game.name, sys_name,
                                                     threshold=config.match_threshold)
@@ -6633,6 +6682,127 @@ def fetch_media(system, all_systems, game, types, source, overwrite, pick_media,
         # nothing, so only an explicit --report is written then.
         auto=apply_changes,
     )
+
+
+# ─── launchbox-db ─────────────────────────────────────────────────────────────
+
+@cli.group("launchbox-db")
+def launchbox_db_group():
+    """The local copy of the LaunchBox Games Database (--source launchbox).
+
+    LaunchBox publishes its whole games database as one Metadata.zip (about
+    100 MB, rebuilt daily; no key or account). `update --apply` downloads it
+    into ~/.spindoctor/launchbox and indexes it; every lookup is then local.
+    """
+
+
+def _launchbox_paths():
+    from . import launchbox as lb
+    base = lb.LAUNCHBOX_DIR
+    return base / lb.ZIP_NAME, base / lb.INDEX_NAME, base / (lb.ZIP_NAME + ".source")
+
+
+@launchbox_db_group.command("status")
+@click.option("--offline", is_flag=True, help="Don't ask LaunchBox for its current file.")
+def launchbox_db_status(offline):
+    """Show the local copy, and LaunchBox's current one."""
+    from . import launchbox as lb
+    from ._net import make_session
+    from .backup import format_bytes
+
+    st = lb.local_status()
+    z = st.get("zip")
+    console.print(
+        f"  Metadata.zip:  {format_bytes(z['size'])}, saved {z['modified']}" if z
+        else "  Metadata.zip:  not downloaded (spindoctor launchbox-db update --apply)"
+    )
+    idx = st.get("index")
+    if idx:
+        console.print(f"  Index:         {int(idx.get('games', 0)):,} games on "
+                      f"{st.get('platforms', 0)} platforms, built {idx.get('built', '?')}")
+    elif st.get("index_error"):
+        console.print(f"  Index:         [red]unreadable:[/red] {st['index_error']}")
+    else:
+        console.print("  Index:         none")
+    if offline:
+        return
+    try:
+        size, modified = lb.remote_info(make_session())
+    except lb.LaunchBoxError as e:
+        err_console.print(f"[yellow]{e}[/yellow]")
+        return
+    console.print(f"  LaunchBox now: {format_bytes(size) if size else '? MB'}, published {modified or '?'}")
+
+
+@launchbox_db_group.command("update")
+@click.option("--force", is_flag=True, help="Download again even when the local copy is current.")
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Download and index (default: say what would be downloaded).")
+def launchbox_db_update(force, apply_changes):
+    """Download LaunchBox's Metadata.zip and index it for --source launchbox.
+
+    Downloads only when LaunchBox has published a newer file (or --force),
+    then rebuilds the index, which takes a minute or two.
+    """
+    from . import launchbox as lb
+    from ._net import make_session
+    from .backup import format_bytes
+
+    zip_path, index_path, stamp_path = _launchbox_paths()
+    session = make_session()
+    try:
+        size, modified = lb.remote_info(session)
+    except lb.LaunchBoxError as e:
+        err_console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+    stamp = f"{size}|{modified}"
+    have = stamp_path.read_text(encoding="utf-8").strip() if stamp_path.is_file() else ""
+    current = zip_path.is_file() and have == stamp and not force
+    stale_index = (not index_path.is_file()
+                   or (zip_path.is_file() and zip_path.stat().st_mtime > index_path.stat().st_mtime))
+    console.print(f"  LaunchBox Metadata.zip: {format_bytes(size) if size else '? MB'}, "
+                  f"published {modified or '?'} ({lb.METADATA_URL})")
+    if current:
+        console.print("  The local copy is current.")
+
+    if not apply_changes:
+        _print_dry_run(False, "Nothing will be downloaded.")
+        if not current:
+            console.print(f"  Would download it to {zip_path}")
+        if not current or stale_index:
+            console.print(f"  Would build the index {index_path}")
+        return
+
+    if not current:
+        with _make_progress(bar=True) as prog:
+            task = prog.add_task("Downloading Metadata.zip…", total=size or None)
+            lb_bytes = 0
+
+            def _tick(done, total):
+                nonlocal lb_bytes
+                prog.update(task, completed=done, total=total)
+                lb_bytes = done
+            try:
+                lb.download(session, zip_path, progress=_tick)
+            except lb.LaunchBoxError as e:
+                err_console.print(f"[red]{e}[/red]")
+                sys.exit(1)
+        stamp_path.write_text(stamp, encoding="utf-8")
+        console.print(f"  [green]✓[/green] Downloaded {format_bytes(lb_bytes)}")
+    if current and not stale_index:
+        console.print("  [green]✓[/green] Nothing to do.")
+        return
+    import sqlite3
+    import zipfile
+    from xml.etree.ElementTree import ParseError
+
+    console.print("  Indexing Metadata.xml (a minute or two)…")
+    try:
+        games = lb.build_index(zip_path, index_path)
+    except (lb.LaunchBoxError, OSError, ParseError, sqlite3.Error, zipfile.BadZipFile) as e:
+        err_console.print(f"[red]Indexing failed:[/red] {e}")
+        sys.exit(1)
+    console.print(f"  [green]✓[/green] {games:,} games indexed into {index_path}")
 
 
 # ─── fetch-steam-media ────────────────────────────────────────────────────────

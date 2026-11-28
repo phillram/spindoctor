@@ -2037,6 +2037,212 @@ def _parse_steam(app_id: str, data: dict) -> GameMetadata:
     return meta
 
 
+# ─── LaunchBox ────────────────────────────────────────────────────────────────
+
+class LaunchBoxClient:
+    """LaunchBox Games Database, read from the local copy that
+    ``spindoctor launchbox-db update --apply`` keeps (see :mod:`spindoctor.launchbox`).
+
+    Lookups are local: no key, no request allowance, nothing cached by
+    :class:`MetadataCache`. Only the images ``fetch-media --apply``
+    downloads go over the network.
+    """
+
+    source_name = "launchbox"
+    _cache = None
+
+    def __init__(self, index_path: Optional[Path] = None):
+        from . import launchbox as lb
+
+        self._lb = lb
+        path = Path(index_path) if index_path else lb.LAUNCHBOX_DIR / lb.INDEX_NAME
+        try:
+            self._index = lb.LaunchBoxIndex(path)
+        except lb.LaunchBoxError as e:
+            raise MetadataError(str(e)) from e
+
+    def _platforms(self, system_name: str) -> list[str]:
+        return self._lb.platforms_for(system_name, self._index.platforms())
+
+    def _meta(self, game_name: str, row, score: float) -> GameMetadata:
+        lb = self._lb
+        prefs = lb.region_order(game_name)
+        region_rank = {r: i for i, r in enumerate(prefs)}
+        type_rank = {t: i for i, t in enumerate(lb.IMAGE_SLOTS)}
+        found: dict[str, list[tuple]] = {}
+        for n, img in enumerate(self._index.images(row["id"])):
+            slot = lb.IMAGE_SLOTS.get(img["type"])
+            if not slot:
+                continue
+            fname = img["file"]
+            found.setdefault(slot, []).append((
+                type_rank[img["type"]], region_rank.get(img["region"] or "", len(prefs)), n,
+                MediaCandidate(url=lb.IMAGE_BASE + quote(fname), region=img["region"] or "",
+                               format=Path(fname).suffix.lstrip(".").lower(),
+                               source_type=img["type"]),
+            ))
+        candidates = {slot: [c[-1] for c in sorted(items, key=lambda c: c[:3])]
+                      for slot, items in found.items()}
+        genres = [g.strip() for g in (row["genres"] or "").split(";") if g.strip()]
+        meta = GameMetadata(
+            name=row["name"],
+            manufacturer=row["developer"] or row["publisher"] or "",
+            year=(row["year"] or "")[:4],
+            genre=genres[0] if genres else "",
+            rating=row["esrb"] or "",
+            players=row["players"] or "",
+            source="launchbox",
+            source_id=str(row["id"]),
+            source_url=lb.GAME_PAGE + str(row["id"]),
+            match_score=score,
+        )
+        meta.media_candidates = candidates
+        for slot, cands in candidates.items():
+            setattr(meta, f"{slot}_url", cands[0].url)
+        return meta
+
+    def fetch_with_search(self, game_name: str, system_name: str,
+                          threshold: float = 0.80) -> list[GameMetadata]:
+        platforms = self._platforms(system_name)
+        key = self._lb.name_key(game_name)
+        if not platforms or not key:
+            return []
+        rows = self._index.exact(platforms, key)
+        if rows:
+            return [self._meta(game_name, r, 1.0) for r in rows[:5]]
+        return [self._meta(game_name, r, s) for r, s in self._index.fuzzy(platforms, key, threshold)]
+
+    def fetch(self, game_name: str, system_name: str) -> Optional[GameMetadata]:
+        results = self.fetch_with_search(game_name, system_name)
+        return results[0] if results else None
+
+    def search(self, game_name: str, system_name: str, max_results: int = 8) -> list[GameMetadata]:
+        return self.fetch_with_search(game_name, system_name, threshold=0.6)[:max_results]
+
+
+# ─── several sources in turn ──────────────────────────────────────────────────
+
+# Every name `--source` and `default_metadata_source` accept; a comma list of
+# the single sources asks them in that order.
+SINGLE_SOURCES = ("screenscraper", "thegamesdb", "launchbox")
+SOURCE_ALIASES = ("auto", "both", "combined")
+_SOURCE_LABELS = {"screenscraper": "ScreenScraper", "thegamesdb": "TheGamesDB",
+                  "launchbox": "LaunchBox"}
+
+
+def parse_source_list(value: Optional[str]) -> list[str]:
+    """``"launchbox, thegamesdb"`` → ``["launchbox", "thegamesdb"]``.
+
+    Raises ``ValueError`` naming an unknown source, or an alias such as
+    ``both`` used inside a list.
+    """
+    parts = [p.strip().lower() for p in (value or "").split(",") if p.strip()]
+    if len(parts) <= 1:
+        # One name is passed on as it is: build_client treats an unknown
+        # single value as "auto", as it always has.
+        return parts
+    bad = [p for p in parts if p not in SINGLE_SOURCES]
+    if bad:
+        raise ValueError(
+            f"unknown source {bad[0]!r} in a list (use {', '.join(SINGLE_SOURCES)})"
+        )
+    return list(dict.fromkeys(parts))
+
+
+_MEDIA_SLOTS = ("wheel", "background", "artwork", "title", "snap", "fade",
+                "video", "trailer", "sound", "theme")
+_META_FIELDS = ("description", "manufacturer", "year", "genre", "rating", "players")
+
+
+class ChainedMetadataClient:
+    """Asks several sources in turn; later ones fill what earlier ones lack.
+
+    The first source whose best match clears the match threshold supplies
+    the game (else the first that found anything). Each later source with a
+    match above the threshold fills the media slots and metadata fields
+    still empty. When ``wanted_types`` is set (``fetch-media`` sets it to the
+    types a game is missing), sources after the first that has them all
+    aren't asked, so a quota-limited source last in the list is only used
+    for what the others don't have.
+    """
+
+    source_name = "chain"
+    _cache = None
+
+    def __init__(self, clients: list, names: Optional[list[str]] = None):
+        self.clients = list(clients)
+        self.names = list(names or [getattr(c, "source_name", "?") for c in self.clients])
+        self.wanted_types: Optional[set] = None
+
+    def _covered(self, meta: GameMetadata) -> bool:
+        wanted = self.wanted_types
+        return bool(wanted) and all(getattr(meta, f"{t}_url", "") for t in wanted)
+
+    @staticmethod
+    def _fill(base: GameMetadata, other: GameMetadata) -> None:
+        for slot in _MEDIA_SLOTS:
+            if not getattr(base, f"{slot}_url", "") and getattr(other, f"{slot}_url", ""):
+                setattr(base, f"{slot}_url", getattr(other, f"{slot}_url"))
+                cands = (other.media_candidates or {}).get(slot)
+                if cands:
+                    base.media_candidates[slot] = cands
+        for name in _META_FIELDS:
+            if not getattr(base, name, "") and getattr(other, name, ""):
+                setattr(base, name, getattr(other, name))
+
+    def _merge(self, found: list[list[GameMetadata]], threshold: float) -> GameMetadata:
+        import copy
+
+        tops = [rs[0] for rs in found]
+        good = [t for t in tops if t.match_score >= threshold]
+        chosen = good[0] if good else tops[0]
+        base = copy.deepcopy(chosen)
+        base.media_candidates = dict(base.media_candidates or {})
+        for top in tops:
+            if top is not chosen and top.match_score >= threshold:
+                self._fill(base, top)
+        return base
+
+    def fetch_with_search(self, game_name: str, system_name: str,
+                          threshold: float = 0.80) -> list[GameMetadata]:
+        found: list[list[GameMetadata]] = []
+        errors: list[str] = []
+        for name, client in zip(self.names, self.clients):
+            if found and self._covered(self._merge(found, threshold)):
+                break
+            try:
+                results = client.fetch_with_search(game_name, system_name, threshold=threshold)
+            except MetadataError as e:
+                errors.append(f"{_SOURCE_LABELS.get(name, name)}: {e}")
+                continue
+            if results:
+                found.append(results)
+        if not found:
+            if errors:
+                raise MetadataError("; ".join(errors))
+            return []
+        base = self._merge(found, threshold)
+        others = [r for rs in found for r in rs
+                  if not (r.source_id == base.source_id and r.source == base.source)]
+        return [base] + others
+
+    def fetch(self, game_name: str, system_name: str) -> Optional[GameMetadata]:
+        results = self.fetch_with_search(game_name, system_name)
+        return results[0] if results else None
+
+    def search(self, game_name: str, system_name: str) -> list[GameMetadata]:
+        out: list[GameMetadata] = []
+        errors: list[str] = []
+        for name, client in zip(self.names, self.clients):
+            try:
+                out.extend(client.search(game_name, system_name))
+            except MetadataError as e:
+                errors.append(f"{_SOURCE_LABELS.get(name, name)}: {e}")
+        if not out and errors:
+            raise MetadataError("; ".join(errors))
+        return out
+
+
 class CombinedMetadataClient(_FetchWithSearchMixin):
     """ScreenScraper primary, TheGamesDB fills any slots SS missed.
 
@@ -2137,9 +2343,20 @@ def build_client(
     ``"both"``, and ``"auto"`` (the default) when both credential sets are
     present, return a :class:`CombinedMetadataClient` that queries
     ScreenScraper first and fills any gaps from TheGamesDB.  ``"auto"`` with
-    only one set configured uses that one.
+    only one set configured uses that one. ``"launchbox"`` reads the local
+    LaunchBox database. A comma list (``"launchbox,thegamesdb"``) returns a
+    :class:`ChainedMetadataClient` asking those sources in that order.
     """
     source = source or config.default_metadata_source
+    try:
+        chain = parse_source_list(source)
+    except ValueError as e:
+        raise MetadataError(f"--source: {e}") from e
+    if len(chain) > 1:
+        clients = [build_client(config, name, use_cache=use_cache) for name in chain]
+        return ChainedMetadataClient(clients, chain)
+    if chain:
+        source = chain[0]
     enabled = config.metadata_cache_enabled if use_cache is None else use_cache
     cache = build_metadata_cache(config) if enabled else None
 
@@ -2171,6 +2388,9 @@ def build_client(
 
     if source == "thegamesdb":
         return _make_tgdb()
+
+    if source == "launchbox":
+        return LaunchBoxClient()
 
     if source in ("both", "combined"):
         return CombinedMetadataClient(_make_ss(), _make_tgdb(), cache=cache)

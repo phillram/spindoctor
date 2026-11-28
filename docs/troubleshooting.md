@@ -160,6 +160,12 @@ Logs redact some secrets, not all identifying data.
   the ROM name without its region tags and with ` - ` as `: `, then the title's
   parts, longest first (at most three names, each one request). If it still misses,
   look the game up on thegamesdb.net and pin its ID with `config game-override`.
+- **`--source launchbox` finds nothing:** run `spindoctor launchbox-db status`; with no
+  index, run `spindoctor launchbox-db update --apply` (about 100 MB, once). A wheel
+  whose name isn't a LaunchBox platform needs `config system set "<wheel>"
+  --launchbox-platform "<platform>"` (LaunchBox's own spelling). Arcade wheels
+  named by MAME set (`pacman`) don't match LaunchBox's titles. See
+  [media sources](media-sources.md).
 - **Matched game, no media URL:** provider search results can be sparse.
   Use the current release, check the detailed provider lookup, try another
   configured source or import local media. Not every provider supplies videos/themes.

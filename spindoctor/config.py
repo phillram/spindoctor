@@ -308,6 +308,7 @@ class Config:
     #         "recursive_scan": True,          # walk subdirectories under <roms_dir>/<system>/
     #         "title_strategy": "smart",       # "smart" | "stem" | "parent_folder"
     #         "lightgun": True,                # System uses Sinden / DemulShooter
+    #         "launchbox_platform": "Sony PSP",  # str or list[str], searched in order
     #     }
     #   }
     system_overrides: dict[str, dict] = field(default_factory=dict)
