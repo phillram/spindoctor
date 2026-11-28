@@ -35,7 +35,8 @@ from pathlib import Path, PureWindowsPath
 from typing import Iterable, Optional
 from xml.sax.saxutils import quoteattr
 
-from .config import Config
+from ._utils import atomic_write_bytes
+from .config import CONFIG_DIR, Config
 from .ledblinky import (
     COLORS_INI_NAME,
     CONTROLS_XML_NAME,
@@ -373,7 +374,40 @@ MESS_DRIVERS = {
 MESS_PER_GAME_DRIVER = {"Konami Handheld", "Tiger Handheld Electronics"}
 
 MESS_LABELS = {**{f"BUTTON{i}": f"Button {i}" for i in range(1, 9)},
-               "START": "Start", "COIN": "Select"}
+               "START": "Start", "COIN": "Select", "SELECT": "Select"}
+
+#: A keypad or keyboard port's other key, which names it (``KEYCODE_9PAD OR KEYCODE_R``: "9").
+_KEYPAD_NAMES = {**{f"KEYCODE_{d}{pad}": str(d) for d in range(10) for pad in ("PAD", "_PAD", "")},
+                 "KEYCODE_ASTERISK": "*", "KEYCODE_ENTERPAD": "Enter", "KEYCODE_ENTER_PAD": "Enter"}
+
+
+def _mame_console_ports(path: Path) -> list[tuple[str, int, str, list[str]]]:
+    """A console driver's Start / Select, keypad and keyboard ports, in file order.
+
+    ``(kind, player, id, keys)``: kind ``START`` / ``SELECT`` (``P1_START``,
+    ``P2_SELECT``: *player* from the type) or ``KEYPAD`` / ``KEYBOARD`` /
+    ``OTHER`` (a console's own switch, such as Option; player 0: the type
+    doesn't say; *id* is the port's tag and mask).
+    """
+    out: list[tuple[str, int, str, list[str]]] = []
+    if not path.is_file() or path.stat().st_size == 0:
+        return out
+    try:
+        root = ET.fromstring(_read_text(path))
+    except ET.ParseError:
+        return out
+    for port in root.iter("port"):
+        t = port.get("type") or ""
+        seq = port.find("newseq[@type='standard']")
+        if seq is None or not (seq.text or "").strip():
+            continue
+        keys = keys_from_mame_seq(seq.text.strip())
+        m = re.fullmatch(r"P(\d)_(START|SELECT)", t)
+        if m:
+            out.append((m.group(2), int(m.group(1)), "", keys))
+        elif t in ("KEYPAD", "KEYBOARD", "OTHER"):
+            out.append((t, 0, f"{port.get('tag') or ''}/{port.get('mask') or ''}", keys))
+    return out
 
 
 def _mame_cfg_ports(path: Path) -> dict[str, list[str]]:
@@ -416,15 +450,20 @@ class MameIndex:
         self.base.update(_mame_cfg_ports(folder / "cfg" / "default.cfg"))
         self._cache: dict[str, Keymap] = {}
 
-    def driver_keymap(self, driver: str) -> Optional[Keymap]:
+    def driver_keymap(self, driver: str, panel: Optional[dict[str, str]] = None) -> Optional[Keymap]:
         """Keys a console driver's own cfg remaps — nothing inherited.
 
         A console driver has far fewer ports than MAME's defaults cover, and
         which ones it has isn't recorded outside the driver; the ports the
-        cabinet remapped for it are the ones it uses.
+        cabinet remapped for it are the ones it uses.  Besides the buttons:
+        Start / Select (``P1_START``, ``P1_SELECT``), and every keypad,
+        keyboard or other key on *panel*, named by the port's other key
+        ("Keypad 9") and given to the player whose side of *panel* it is on.
         """
-        ports = _mame_cfg_ports(self.folder / "cfg" / f"{driver}.cfg")
-        if not ports:
+        cfg = self.folder / "cfg" / f"{driver}.cfg"
+        ports = _mame_cfg_ports(cfg)
+        console = _mame_console_ports(cfg)
+        if not ports and not console:
             return None
         km = Keymap(source=f"{self.folder.name}\\cfg\\{driver}.cfg")
         for port, keys in ports.items():
@@ -435,6 +474,21 @@ class MameIndex:
                 km.keys[(int(m.group(1)), m.group(2))] = keys
             else:
                 km.keys[(int(m.group(2)), m.group(1))] = keys
+        panel = panel or {}
+        for kind, player, ident, keys in console:
+            if player:
+                for k in keys:
+                    _add_key(km, (player, kind), k)
+                continue
+            name = next((_KEYPAD_NAMES[k] for k in keys if k in _KEYPAD_NAMES and k not in panel), "")
+            label = {"KEYPAD": "Keypad", "KEYBOARD": "Key"}.get(kind, "Other") + (f" {name}" if name else "")
+            for k in keys:
+                # Only a player's buttons: the admin keys (Pause, Exit) light anyway.
+                if panel and not panel.get(k, "").upper().startswith(("P1", "P2")):
+                    continue
+                act = f"{kind}:{ident}"
+                km.labels[act] = label
+                _add_key(km, (2 if panel.get(k, "").upper().startswith("P2") else 1, act), k)
         return km
 
     def keymap(self, game: Optional[str] = None) -> Keymap:
@@ -1076,6 +1130,219 @@ def bigpemu_keymap(folder: Path) -> Optional[Keymap]:
     return km
 
 
+# SNESGT, Project64's N-Rage, Mugen: DirectInput scan codes ----------------------
+
+_SNESGT_BUTTONS = {"Y": "Button Y", "X": "Button X", "L": "L Button", "B": "Button B",
+                   "A": "Button A", "R": "R Button", "START": "Start", "SELECT": "Select"}
+
+
+def snesgt_keymap(folder: Path) -> Optional[Keymap]:
+    """SNESGT: ``[key_config]`` in ``SNESGT.ini``, ``1P_A=32`` (DirectInput scan codes, 0 unbound)."""
+    ini = _ci_file(folder, "SNESGT.ini")
+    if ini is None:
+        return None
+    km = Keymap(source="SNESGT SNESGT.ini", labels=dict(_SNESGT_BUTTONS))
+    section = ""
+    for line in _read_text(ini).splitlines():
+        s = line.strip()
+        m = re.fullmatch(r"\[(.+)\]", s)
+        if m:
+            section = m.group(1).strip().lower()
+            continue
+        m = re.fullmatch(r"([12])P_(\w+)\s*=\s*(\d+)", s, re.I)
+        if section == "key_config" and m and m.group(2).upper() in _SNESGT_BUTTONS:
+            _add_key(km, (int(m.group(1)), m.group(2).upper()), key_from_dik(int(m.group(3))))
+    return km
+
+
+#: N-Rage's N64 controller buttons, by the button number in its ``Button=`` lines.
+_N64_BUTTONS = {0: "D-pad Right", 1: "D-pad Left", 2: "D-pad Down", 3: "D-pad Up", 4: "Start",
+                5: "Z Trigger", 6: "Button B", 7: "Button A", 8: "C Right", 9: "C Left",
+                10: "C Down", 11: "C Up", 12: "R Button", 13: "L Button"}
+_NRAGE_KEY = 5      # N-Rage's DT_KEYBUTTON
+
+
+def nrage_keymap(folder: Path) -> Optional[Keymap]:
+    """Project64 with the N-Rage input plugin: ``Config\\NRage.ini`` ``[Controls]``.
+
+    ``Button=<controller> <button> <DIK hex> <axis> <type>``: controller 0
+    is player 1, type 5 a keyboard key.  Other input plugins aren't read.
+    """
+    ini = _ci_path(folder, "Config", "NRage.ini")
+    if ini is None or not ini.is_file():
+        return None
+    km = Keymap(source="Project64 Config\\NRage.ini",
+                labels={str(b): name for b, name in _N64_BUTTONS.items()})
+    section = ""
+    for line in _read_text(ini).splitlines():
+        s = line.strip()
+        m = re.fullmatch(r"\[(.+)\]", s)
+        if m:
+            section = m.group(1).strip().lower()
+            continue
+        m = re.fullmatch(r"Button\s*=\s*(\d+)\s+(\d+)\s+([0-9A-Fa-f]+)\s+\d+\s+(\d+)", s)
+        if section != "controls" or not m or int(m.group(4)) != _NRAGE_KEY:
+            continue
+        player, button = int(m.group(1)) + 1, int(m.group(2))
+        if player <= 2 and button in _N64_BUTTONS:
+            _add_key(km, (player, str(button)), key_from_dik(int(m.group(3), 16)))
+    return km
+
+
+_MUGEN_BUTTONS = {"A": "Button A", "B": "Button B", "C": "Button C", "X": "Button X",
+                  "Y": "Button Y", "Z": "Button Z", "Start": "Start"}
+
+
+_SDL1_NAMED = {32: "SPACE", 27: "ESC", 9: "TAB", 8: "BACKSPACE", 273: "UP", 274: "DOWN",
+               275: "RIGHT", 276: "LEFT", 271: "ENTER_PAD"}
+
+
+def key_from_sdl1(code: int) -> Optional[str]:
+    """SDL 1.2 key symbols (Mugen 1.x): ASCII letters and digits, Return, Space."""
+    if 97 <= code <= 122 or 48 <= code <= 57 or code == 13:
+        return key_from_ascii(code)
+    if 256 <= code <= 265:
+        return _kc(f"{code - 256}_PAD")
+    if 282 <= code <= 293:
+        return _kc(f"F{code - 281}")
+    return _kc(_SDL1_NAMED[code]) if code in _SDL1_NAMED else None
+
+
+def mugen_keymap_text(text: str, source: str) -> Optional[Keymap]:
+    """``[P1 Keys]`` / ``[P2 Keys]`` of a ``data\\mugen.cfg``.
+
+    WinMugen writes DirectInput scan codes, Mugen 1.x SDL key symbols; which
+    one is told by ``Jump`` (the up arrow: 200 or 273).  Any other ``Jump``
+    and the file isn't read.
+    """
+    keys: dict[tuple[int, str], int] = {}
+    player = 0
+    for line in text.replace("\r\n", "\n").split("\n"):
+        s = line.split(";", 1)[0].strip()
+        m = re.fullmatch(r"\[\s*P([12])\s+Keys\s*\]", s, re.I)
+        if m or s.startswith("["):
+            player = int(m.group(1)) if m else 0
+            continue
+        m = re.fullmatch(r"(\w+)\s*=\s*(-?\d+)", s)
+        if player and m:
+            keys[(player, m.group(1).lower())] = int(m.group(2))
+    jump = keys.get((1, "jump"))
+    decode = key_from_dik if jump == 200 else key_from_sdl1 if jump == 273 else None
+    if decode is None:
+        return None
+    km = Keymap(source=source, labels=dict(_MUGEN_BUTTONS))
+    for (player, name), code in keys.items():
+        act = next((a for a in _MUGEN_BUTTONS if a.lower() == name), None)
+        if act and code >= 0:
+            _add_key(km, (player, act), decode(code))
+    return km
+
+
+def _read_7z_member(path: Path, member: str) -> Optional[bytes]:
+    """One file from a 7z archive (``py7zr``, a soft dependency); None without it or on error."""
+    try:
+        import py7zr
+    except ImportError:
+        return None
+
+    class _Sink:
+        def __init__(self) -> None:
+            self.data = bytearray()
+
+        def write(self, b: bytes) -> int:
+            self.data += b
+            return len(b)
+
+        def read(self, size: Optional[int] = None) -> bytes:
+            return b""
+
+        def seek(self, offset: int, whence: int = 0) -> int:
+            return len(self.data)
+
+        def flush(self) -> None:
+            pass
+
+        def close(self) -> None:
+            pass
+
+        def size(self) -> int:
+            return len(self.data)
+
+    class _Factory:
+        def __init__(self) -> None:
+            self.sinks: dict[str, _Sink] = {}
+
+        def create(self, filename: str) -> _Sink:
+            return self.sinks.setdefault(filename, _Sink())
+
+    try:
+        with py7zr.SevenZipFile(path, mode="r") as z:
+            name = next((n for n in z.getnames() if n.replace("\\", "/").lower() == member.lower()), None)
+            if name is None:
+                return None
+            if hasattr(z, "read"):          # py7zr < 1.0
+                buf = (z.read(targets=[name]) or {}).get(name)
+                return buf.read() if buf is not None else None
+            factory = _Factory()            # py7zr >= 1.0
+            z.extract(targets=[name], factory=factory)
+            sink = factory.sinks.get(name)
+            return bytes(sink.data) if sink is not None else None
+    except Exception:  # noqa: BLE001 — a damaged archive must not stop the run
+        return None
+
+
+#: ``data\\mugen.cfg`` texts read from ``.7z`` games, by archive, size and date:
+#: reaching the file means decompressing the archive up to it (minutes for a
+#: build of several GB), so each archive is read once until it changes.
+MUGEN_CFG_CACHE = CONFIG_DIR / "ledblinky_mugen_cfg_cache.json"
+
+
+def _cached_7z_member(rom: Path, member: str) -> Optional[bytes]:
+    import json
+
+    try:
+        st = rom.stat()
+    except OSError:
+        return None
+    try:
+        cache = json.loads(MUGEN_CFG_CACHE.read_text(encoding="utf-8")) if MUGEN_CFG_CACHE.is_file() else {}
+    except (OSError, ValueError):
+        cache = {}
+    key = f"{str(rom).lower()}|{member.lower()}"
+    stamp = [st.st_size, st.st_mtime_ns]
+    hit = cache.get(key) if isinstance(cache, dict) else None
+    if isinstance(hit, dict) and hit.get("stamp") == stamp and isinstance(hit.get("text"), str):
+        return hit["text"].encode("latin-1")
+    data = _read_7z_member(rom, member)
+    if data is not None:
+        cache = cache if isinstance(cache, dict) else {}
+        cache[key] = {"stamp": stamp, "text": data.decode("latin-1")}
+        try:
+            MUGEN_CFG_CACHE.parent.mkdir(parents=True, exist_ok=True)
+            atomic_write_bytes(MUGEN_CFG_CACHE, json.dumps(cache, indent=1).encode("utf-8"))
+        except OSError:
+            pass        # no cache: the next run reads the archive again
+    return data
+
+
+def mugen_game_cfg(rom: Path, member: str) -> Optional[str]:
+    """``data\\mugen.cfg`` of one Mugen game: *member* in its folder, ``.zip`` or ``.7z``."""
+    if rom.is_dir():
+        cfg = _ci_path(rom.parent, *member.split("/"))
+        return _read_text(cfg) if cfg is not None and cfg.is_file() else None
+    data = None
+    if rom.suffix.lower() == ".zip":
+        try:
+            with zipfile.ZipFile(rom) as z:
+                name = next((n for n in z.namelist() if n.replace("\\", "/").lower() == member.lower()), None)
+                data = z.read(name) if name else None
+        except (OSError, zipfile.BadZipFile, RuntimeError, NotImplementedError):
+            data = None
+    elif rom.suffix.lower() == ".7z":
+        data = _cached_7z_member(rom, member)
+    return data.decode("latin-1") if data is not None else None
+
+
 _SSF_ORDER =("UP", "DOWN", "LEFT", "RIGHT", "A", "B", "C", "X", "Y", "Z", "L", "R", "Start")
 
 
@@ -1300,6 +1567,8 @@ class Launcher:
     emulator: str
     folder: Optional[Path]
     exe: str
+    #: The section's ``Module`` (``MUGEN.ahk``); "" when it names none.
+    module: str = ""
 
 
 class RocketLauncherIndex:
@@ -1365,7 +1634,8 @@ class RocketLauncherIndex:
             folder = Path(str(p.parent))
         else:
             folder = self.rl_dir.joinpath(*p.parent.parts)
-        return Launcher(emulator=emulator, folder=folder, exe=p.name)
+        return Launcher(emulator=emulator, folder=folder, exe=p.name,
+                        module=PureWindowsPath(sec.get("Module", "")).name)
 
     def ahk_keymapper_on(self, system: str) -> bool:
         """Whether RocketLauncher loads AHK keymapper profiles for *system*.
@@ -1450,7 +1720,12 @@ class KeymapResolver:
         self._flycast: dict[tuple[Path, bool], Optional[Keymap]] = {}
         self._mapping_files: dict[Path, dict[str, Path]] = {}
         self._uae: dict[Path, Keymap] = {}
+        self._mugen: dict[tuple[str, str], Optional[Keymap]] = {}
         self._roms: Optional[_RomLookup] = None
+        self.config = config
+        #: The panel's key -> port label (``ProfileBuilder`` sets it): which
+        #: player a MESS keypad key belongs to.
+        self.panel: dict[str, str] = {}
 
     def for_launcher(self, launcher: Optional[Launcher], system: str,
                      game: Optional[str] = None) -> Optional[Keymap]:
@@ -1473,15 +1748,17 @@ class KeymapResolver:
             idx = self._mame[folder]
             if system in MESS_DRIVERS:
                 # Console run through MESS/MAME: one driver for the whole wheel.
-                km = idx.driver_keymap(MESS_DRIVERS[system]) if not game else None
+                km = idx.driver_keymap(MESS_DRIVERS[system], self.panel) if not game else None
             elif system in MESS_PER_GAME_DRIVER:
-                km = idx.driver_keymap(game) if game else None
+                km = idx.driver_keymap(game, self.panel) if game else None
             else:
                 # Arcade ROM: default keys plus cfg/<game>.cfg.
                 km = idx.keymap(game)
             if km is not None and (system in MESS_DRIVERS or system in MESS_PER_GAME_DRIVER):
-                km.labels = dict(MESS_LABELS)
+                km.labels = {**MESS_LABELS, **km.labels}
             return km
+        if launcher.module.lower().startswith("mugen") or exe.startswith(("mugen", "winmugen")):
+            return self._mugen_keymap(launcher, system, game)
         if exe.startswith("flycast"):
             return self._flycast_keymap(folder / "mappings", system, game, launcher.emulator)
         if exe.startswith("winuae"):
@@ -1494,7 +1771,7 @@ class KeymapResolver:
                    "pokemini.exe": pokemini_keymap, "ppsspp": ppsspp_keymap,
                    "duckstation": duckstation_keymap, "pcsx2": pcsx2_keymap,
                    "vita3k": vita3k_keymap, "eka2l1": eka2l1_keymap, "cxbx": cxbxr_keymap,
-                   "bigpemu": bigpemu_keymap}
+                   "bigpemu": bigpemu_keymap, "snesgt": snesgt_keymap, "project64": nrage_keymap}
         for prefix, reader in readers.items():
             if exe.startswith(prefix):
                 key = (prefix, folder)
@@ -1518,6 +1795,51 @@ class KeymapResolver:
         if path not in self._uae:
             self._uae[path] = winuae_keymap(path)
         return self._uae[path]
+
+    def _mugen_game(self, launcher: Launcher, system: str, game: str) -> Optional[Keymap]:
+        """One Mugen game's keys: ``data\\mugen.cfg`` beside the exe RocketLauncher's module starts.
+
+        That exe is the game's ``gamePath`` in the module's ini
+        (``Modules\\MUGEN\\MUGEN.ini``), else ``<game>\\MUGEN.exe``, inside the
+        game's folder, ``.zip`` or ``.7z`` (``py7zr``) under the wheel's ``Rom_Path``.
+        """
+        key = (system.lower(), game.lower())
+        if key in self._mugen:
+            return self._mugen[key]
+        stem = Path(launcher.module).stem or "MUGEN"
+        exe = _ini_value(self.rl.rl_dir / "Modules" / stem / f"{stem}.ini", game, "gamePath")
+        rel = PureWindowsPath(exe.strip().strip('"') if exe and exe.strip() else f"{game}\\MUGEN.exe")
+        member = "/".join(rel.parent.parts + ("data", "mugen.cfg"))
+        if self._roms is None:
+            self._roms = _RomLookup(self.rl.rl_dir)
+        src = self._roms.source(system, launcher.emulator)
+        rom = self._roms.find(src, [game]) if src is not None else None
+        if rom is None and src is not None:
+            rom = next((f / game for _el, f in src.folders if f is not None and (f / game).is_dir()), None)
+        text = mugen_game_cfg(rom, member) if rom is not None else None
+        km = mugen_keymap_text(text, "Mugen " + member.replace("/", "\\")) if text else None
+        self._mugen[key] = km
+        return km
+
+    def _mugen_keymap(self, launcher: Launcher, system: str, game: Optional[str]) -> Optional[Keymap]:
+        """Mugen: every game is its own build with its own keys.
+
+        With *game*, that game's keys.  Without, the layout most of the
+        wheel's games share, so the games that differ get groups of their own.
+        """
+        if game:
+            return self._mugen_game(launcher, system, game)
+        counts: dict[tuple, list[Keymap]] = {}
+        for g in load_db(self.config, system) or []:
+            km = self._mugen_game(launcher, system, g.name)
+            if km is not None:
+                counts.setdefault(tuple(sorted((s, tuple(k)) for s, k in km.keys.items())), []).append(km)
+        if not counts:
+            return None
+        best = max(counts.values(), key=len)
+        km = Keymap(source=f"Mugen data\\mugen.cfg ({len(best)} of {sum(map(len, counts.values()))} games)",
+                    keys=dict(best[0].keys), labels=dict(best[0].labels))
+        return km
 
     def _flycast_keymap(self, mappings: Path, system: str, game: Optional[str],
                         emulator: str) -> Optional[Keymap]:
@@ -2029,6 +2351,7 @@ class ProfileBuilder:
         self.lb_dir = Path(config.ledblinky_dir)
         self.panel = load_panel(self.lb_dir)
         self.resolver = KeymapResolver(config)
+        self.resolver.panel = self.panel
         self.xml_path = self.lb_dir / CONTROLS_XML_NAME
         # The document's regex edits insert "\n"; keep the file's own line
         # endings by editing LF text and restoring CRLF on write.
