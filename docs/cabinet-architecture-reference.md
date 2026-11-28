@@ -262,6 +262,7 @@ do not delete that library as a cache.
 keys; inspect coverage rather than assuming every emulator has a MAME schema.
 Where an emulator's own keys can't be read (PC game launchers, Flash players),
 it lights the keys each game's AHK keymapper profile remaps or binds.
+Flycast's keys come from its `mappings\SDL_Keyboard*.cfg` files.
 Color brightness commands normalize/scale named colors, not Windows display
 brightness.
 

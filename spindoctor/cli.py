@@ -11293,12 +11293,13 @@ def ledblinky_profiles(apply_changes, no_backup, verbose):
 
     \b
       - Consoles: each system's DEFAULT lights the pad's buttons as the
-        emulator maps them (RetroArch, DeSmuME, SSF, PokeMini, MESS).
+        emulator maps them (RetroArch, DeSmuME, SSF, PokeMini, MESS, Flycast).
       - Wheels whose emulator keys can't be read (PC game launchers, Flash
         players) light the keys each game's AHK keymapper profile remaps.
       - Arcade wheels LEDBlinky doesn't treat as MAME (CPS, Neo Geo, CAVE,
         ST-V, Zinc, gun and driving wheels…) get one profile per game.
-      - Existing Naomi / Model 2 / Model 3 / Type X profiles are re-keyed.
+      - Existing Naomi / Model 2 / Model 3 / Type X profiles are re-keyed
+        (Naomi and Atomiswave on Demul or Flycast).
       - HBMAME / PacMAME / MAME ROMs missing from Controls.ini borrow their
         parent's entry; the community controls.dat button count is used
         where it disagrees with MAME's.
