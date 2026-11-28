@@ -27,6 +27,7 @@ from __future__ import annotations
 import configparser
 import re
 import xml.etree.ElementTree as ET
+import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path, PureWindowsPath
 from typing import Iterable, Optional
@@ -40,6 +41,7 @@ from .ledblinky import (
     _config_backup_dir,
 )
 from .ledblinky_library import Library, RawIni, find_community_controls, render_section
+from .rl_rom_paths import _RomLookup
 from ._text import read_editable_text, read_windows_text, write_windows_text
 
 INPUT_MAP_NAME = "LEDBlinkyInputMap.xml"
@@ -564,7 +566,110 @@ def melonds_keymap(folder: Path) -> Optional[Keymap]:
     return km
 
 
-_SSF_ORDER = ("UP", "DOWN", "LEFT", "RIGHT", "A", "B", "C", "X", "Y", "Z", "L", "R", "Start")
+# Flycast ----------------------------------------------------------------------
+
+_SDL_NAMED = {40: "ENTER", 41: "ESC", 42: "BACKSPACE", 43: "TAB", 44: "SPACE", 45: "MINUS",
+              46: "EQUALS", 54: "COMMA", 55: "STOP", 56: "SLASH", 79: "RIGHT", 80: "LEFT",
+              81: "DOWN", 82: "UP", 88: "ENTER_PAD", 224: "LCONTROL", 225: "LSHIFT",
+              226: "LALT", 228: "RCONTROL", 229: "RSHIFT", 230: "RALT"}
+
+
+def key_from_sdl_scancode(code: int) -> Optional[str]:
+    """SDL scancodes (Flycast's keyboard binds): 4-29 A-Z, 30-39 1-0, 58-69 F1-F12."""
+    if 4 <= code <= 29:
+        return _kc(chr(ord("A") + code - 4))
+    if 30 <= code <= 39:
+        return _kc(str((code - 29) % 10))
+    if 58 <= code <= 69:
+        return _kc(f"F{code - 57}")
+    if 89 <= code <= 98:
+        return _kc(f"{(code - 88) % 10}_PAD")
+    return _kc(_SDL_NAMED[code]) if code in _SDL_NAMED else None
+
+
+#: Flycast's Dreamcast pad actions -> (action, button name).
+_FLYCAST_DC = {"btn_a": ("A", "Button A"), "btn_b": ("B", "Button B"), "btn_x": ("X", "Button X"),
+               "btn_y": ("Y", "Button Y"), "btn_c": ("C", "Button C"), "btn_z": ("Z", "Button Z"),
+               "btn_trigger_left": ("L", "L Trigger"), "btn_trigger_right": ("R", "R Trigger"),
+               "btn_d": ("D", "Button D"), "btn_start": ("Start", "Start")}
+#: The same actions on Naomi / Atomiswave boards: buttons 1-8, Start, Coin.
+_FLYCAST_ARCADE = {"btn_a": "BUTTON1", "btn_b": "BUTTON2", "btn_c": "BUTTON3", "btn_x": "BUTTON4",
+                   "btn_y": "BUTTON5", "btn_z": "BUTTON6", "btn_dpad2_left": "BUTTON7",
+                   "btn_dpad2_right": "BUTTON8", "btn_start": "START", "btn_d": "COIN"}
+#: Characters Flycast writes as "-" when it names a key file after a game.
+_FLYCAST_ID_CHARS = re.compile(r'[/\\:?*|"<>]')
+
+
+def is_flycast_arcade(system: str) -> bool:
+    """Wheels Flycast runs as arcade boards, which read the ``_arcade`` key files."""
+    low = system.lower()
+    return "naomi" in low or "atomiswave" in low
+
+
+def flycast_keymap(path: Path, arcade: bool) -> Optional[Keymap]:
+    """One Flycast keyboard map (``mappings\\SDL_Keyboard*.cfg``).
+
+    ``bindN = <SDL scancode>:<action>``; an action ending in ``1`` is port B
+    (player 2), ``2`` / ``3`` ports C / D.  Dreamcast wheels get the pad's
+    buttons; arcade boards Flycast's buttons 1-8, Start and Coin.
+    """
+    km = (Keymap(source=f"Flycast mappings\\{path.name}") if arcade else
+          Keymap(source=f"Flycast mappings\\{path.name}", labels=dict(_FLYCAST_DC.values())))
+    for line in _read_text(path).splitlines():
+        m = re.fullmatch(r"\s*bind\d+\s*=\s*(\d+)\s*:\s*(\w+)\s*", line)
+        if not m:
+            continue
+        action, player = m.group(2), 1
+        if action[-1] in "123":
+            action, player = action[:-1], int(action[-1]) + 1
+        if player > 2:
+            continue
+        act = _FLYCAST_ARCADE.get(action) if arcade else _FLYCAST_DC.get(action, ("", ""))[0]
+        key = key_from_sdl_scancode(int(m.group(1)))
+        if act and key:
+            keys = km.keys.setdefault((player, act), [])
+            if key not in keys:
+                keys.append(key)
+    return km
+
+
+def flycast_key_file(files: dict[str, Path], arcade: bool, game_id: str = "") -> Optional[Path]:
+    """The keyboard map Flycast loads, from *files* (lower-cased name -> file in ``mappings``).
+
+    A Dreamcast game: ``SDL_Keyboard_<ID>.cfg``, then ``SDL_Keyboard.cfg``.  An
+    arcade game: ``SDL_Keyboard_<ID>_arcade.cfg``, then ``SDL_Keyboard_arcade.cfg``,
+    then the two Dreamcast names.
+    """
+    gid = _FLYCAST_ID_CHARS.sub("-", game_id)
+    names = [f"SDL_Keyboard_{gid}.cfg", "SDL_Keyboard.cfg"] if gid else ["SDL_Keyboard.cfg"]
+    if arcade:
+        names = ([f"SDL_Keyboard_{gid}_arcade.cfg"] if gid else []) + ["SDL_Keyboard_arcade.cfg"] + names
+    return next((files[n.lower()] for n in names if n.lower() in files), None)
+
+
+def naomi_boot_title(rom: Path) -> Optional[str]:
+    """The title in a Naomi cartridge's ROM header, which Flycast takes as its game ID.
+
+    The first ROM of the cartridge starts ``NAOMI`` (``Naomi2`` on Naomi 2)
+    and holds the title at 0x30, 32 bytes padded with spaces.  None for
+    GD-ROM sets, encrypted cartridges and Atomiswave sets, which don't show it.
+    """
+    try:
+        with zipfile.ZipFile(rom) as z:
+            names = sorted(z.namelist(), key=lambda n: not n.lower().endswith((".ic22", ".ic11")))
+            for name in names:
+                with z.open(name) as f:
+                    head = f.read(0x50)
+                if head[:16].rstrip(b" ") in (b"NAOMI", b"Naomi2") and len(head) == 0x50:
+                    title = head[0x30:0x50]
+                    # A blank title (0xFF) means Flycast reads one further on: not matched here.
+                    return title.decode("latin-1").rstrip() if title.strip(b" \x00\xff") else None
+    except (OSError, ValueError, RuntimeError, NotImplementedError, zipfile.BadZipFile):
+        return None
+    return None
+
+
+_SSF_ORDER =("UP", "DOWN", "LEFT", "RIGHT", "A", "B", "C", "X", "Y", "Z", "L", "R", "Start")
 
 
 def ssf_keymap(folder: Path) -> Optional[Keymap]:
@@ -935,6 +1040,9 @@ class KeymapResolver:
         self._ra: dict[Path, RetroArchIndex] = {}
         self._mame: dict[Path, MameIndex] = {}
         self._simple: dict[tuple[str, Path], Optional[Keymap]] = {}
+        self._flycast: dict[tuple[Path, bool], Optional[Keymap]] = {}
+        self._mapping_files: dict[Path, dict[str, Path]] = {}
+        self._roms: Optional[_RomLookup] = None
 
     def for_launcher(self, launcher: Optional[Launcher], system: str,
                      game: Optional[str] = None) -> Optional[Keymap]:
@@ -966,6 +1074,8 @@ class KeymapResolver:
             if km is not None and (system in MESS_DRIVERS or system in MESS_PER_GAME_DRIVER):
                 km.labels = dict(MESS_LABELS)
             return km
+        if exe.startswith("flycast"):
+            return self._flycast_keymap(folder / "mappings", system, game, launcher.emulator)
         if game:
             return None
         readers = {"desmume": desmume_keymap, "melonds": melonds_keymap,
@@ -979,6 +1089,40 @@ class KeymapResolver:
                     self._simple[key] = reader(folder)
                 return self._simple[key]
         return None
+
+    def _flycast_keymap(self, mappings: Path, system: str, game: Optional[str],
+                        emulator: str) -> Optional[Keymap]:
+        """Flycast's keys for *system*, or with *game* that game's own file (else None).
+
+        A Dreamcast game's file is named after the product number inside its
+        disc image, which isn't read here.  A Naomi cartridge's is named after
+        the title in its ROM header, read from the game's zip only when the
+        ``mappings`` folder has per-game files at all.
+        """
+        if mappings not in self._mapping_files:
+            self._mapping_files[mappings] = ({p.name.lower(): p for p in mappings.iterdir() if p.is_file()}
+                                             if mappings.is_dir() else {})
+        files = self._mapping_files[mappings]
+        arcade = is_flycast_arcade(system)
+        general = flycast_key_file(files, arcade)
+        if not game:
+            if general is None:
+                return None
+            # An arcade wheel can fall back to SDL_Keyboard.cfg, which then reads as arcade buttons.
+            key = (general, arcade)
+            if key not in self._flycast:
+                self._flycast[key] = flycast_keymap(general, arcade)
+            return self._flycast[key]
+        if not arcade or not any(n.startswith("sdl_keyboard_") and n != "sdl_keyboard_arcade.cfg"
+                                 for n in files):
+            return None
+        if self._roms is None:
+            self._roms = _RomLookup(self.rl.rl_dir)
+        src = self._roms.source(system, emulator)
+        rom = self._roms.find(src, [game]) if src is not None else None
+        title = naomi_boot_title(rom) if rom is not None and rom.suffix.lower() == ".zip" else None
+        own = flycast_key_file(files, True, title) if title else None
+        return flycast_keymap(own, True) if own is not None and own != general else None
 
     def system_launcher(self, system: str) -> Optional[Launcher]:
         return self.rl.launcher(self.rl.default_emulator(system), system)
@@ -2080,7 +2224,8 @@ def plan_profiles(config: Config) -> ProfileBuilder:
         if exe.startswith(("mame", "hbmame")) and system not in MESS_DRIVERS and system not in MESS_PER_GAME_DRIVER:
             b.arcade_wheel(system)
         elif exe.startswith(("zinc", "demul", "daphne", "emulator_multicpu", "supermodel", "aae")) \
-                or system in ("Sega Model 3", "Sega Triforce", "Taito Type X"):
+                or system in ("Sega Model 3", "Sega Triforce", "Taito Type X") \
+                or (exe.startswith("flycast") and is_flycast_arcade(system)):
             if system in ("Zinc", "Sega Hikaru") or emu_key(system) not in b.doc.emulators():
                 b.arcade_wheel(system)
             else:
