@@ -2197,14 +2197,113 @@ class LibretroClient:
         return self.fetch_with_search(game_name, system_name, threshold=0.6)[:max_results]
 
 
+# ─── ArcadeDB ─────────────────────────────────────────────────────────────────
+
+ARCADEDB_API = "https://adb.arcadeitalia.net/service_scraper.php"
+# MAME set names: what an arcade wheel's database names its games. Anything
+# else (a console's "Title (USA)") isn't sent, so console wheels cost nothing.
+_MAME_SET = re.compile(r"[a-z0-9_]{1,24}")
+
+# ArcadeDB field → HyperSpin media slot, best first.
+_ARCADEDB_SLOTS: tuple[tuple[str, str, str], ...] = (
+    ("video", "url_video_shortplay", "mp4"),
+    ("video", "url_video_shortplay_hd", "mp4"),
+    ("snap", "url_image_ingame", "png"),
+    ("title", "url_image_title", "png"),
+    ("artwork", "url_image_flyer", "png"),
+    ("artwork", "url_image_cabinet", "png"),
+)
+
+
+def _parse_arcadedb(row: dict) -> GameMetadata:
+    set_name = str(row.get("game_name") or "")
+    meta = GameMetadata(
+        name=str(row.get("title") or set_name),
+        manufacturer=str(row.get("manufacturer") or ""),
+        year=str(row.get("year") or "")[:4],
+        genre=str(row.get("genre") or ""),
+        players=str(row.get("players") or ""),
+        source="arcadedb",
+        source_id=set_name,
+        source_url=str(row.get("url") or ""),
+        match_score=1.0,                 # asked by exact set name
+    )
+    for slot, field_name, fmt in _ARCADEDB_SLOTS:
+        url = str(row.get(field_name) or "")
+        if not url:
+            continue
+        meta.media_candidates.setdefault(slot, []).append(
+            MediaCandidate(url=url, format=fmt, source_type=field_name[4:]))
+        if not getattr(meta, f"{slot}_url", ""):
+            setattr(meta, f"{slot}_url", url)
+    return meta
+
+
+class ArcadeDBClient(_FetchWithSearchMixin):
+    """ArcadeDB (adb.arcadeitalia.net): MAME games by set name.
+
+    No key. Gives a short gameplay video (SD, and HD as a second choice),
+    in-game, title, flyer and cabinet pictures, and title, maker, year,
+    genre and players. Only names shaped like MAME sets are asked.
+    """
+
+    source_name = "arcadedb"
+
+    def __init__(self, rate_limit: float = 1.0, cache: Optional["MetadataCache"] = None):
+        self._limiter = RateLimiter(rate_limit)
+        self._session = make_session()
+        self._cache = cache
+        # fetch_with_search() asks search() after a miss; both would send the
+        # same request, so the last answer is kept.
+        self._last: Optional[tuple[str, Optional[GameMetadata]]] = None
+
+    def fetch(self, game_name: str, system_name: str) -> Optional[GameMetadata]:
+        if not _MAME_SET.fullmatch(game_name or ""):
+            return None
+        if self._last is not None and self._last[0] == game_name:
+            return self._last[1]
+        self._limiter.wait()
+        params = {"ajax": "query_mame", "use_parent": "1", "game_name": game_name}
+        try:
+            resp = self._session.get(ARCADEDB_API, params=params, timeout=20)
+        except requests.RequestException as e:
+            _log_http("arcadedb.fetch", "GET", ARCADEDB_API, params, None, "", error=e)
+            raise MetadataError(f"ArcadeDB fetch failed: {e}") from e
+        _log_http("arcadedb.fetch", "GET", ARCADEDB_API, params,
+                  resp.status_code, resp.text or "")
+        if resp.status_code == 400:
+            # ArcadeDB answers "400 Bad Request" (an HTML page) for a set
+            # name it doesn't know, e.g. a wheel-only name like a Xbox port's.
+            self._last = (game_name, None)
+            return None
+        try:
+            resp.raise_for_status()
+            data = resp.json()
+        except (requests.RequestException, ValueError) as e:
+            raise MetadataError(_api_failure("ArcadeDB fetch failed", e, resp, params)) from e
+        rows = _as_dict(data).get("result") or []
+        row = next((r for r in rows if isinstance(r, dict)
+                    and str(r.get("game_name") or "") == game_name), None)
+        meta = None
+        if row:
+            with _parse_guard("ArcadeDB", game_name):
+                meta = _parse_arcadedb(row)
+        self._last = (game_name, meta)
+        return meta
+
+    def search(self, game_name: str, system_name: str) -> list[GameMetadata]:
+        meta = self.fetch(game_name, system_name)
+        return [meta] if meta else []
+
+
 # ─── several sources in turn ──────────────────────────────────────────────────
 
 # Every name `--source` and `default_metadata_source` accept; a comma list of
 # the single sources asks them in that order.
-SINGLE_SOURCES = ("screenscraper", "thegamesdb", "launchbox", "libretro")
+SINGLE_SOURCES = ("screenscraper", "thegamesdb", "launchbox", "libretro", "arcadedb")
 SOURCE_ALIASES = ("auto", "both", "combined")
 _SOURCE_LABELS = {"screenscraper": "ScreenScraper", "thegamesdb": "TheGamesDB",
-                  "launchbox": "LaunchBox", "libretro": "libretro"}
+                  "launchbox": "LaunchBox", "libretro": "libretro", "arcadedb": "ArcadeDB"}
 
 
 def parse_source_list(value: Optional[str]) -> list[str]:
@@ -2471,6 +2570,9 @@ def build_client(
 
     if source == "libretro":
         return LibretroClient(ttl_days=config.metadata_cache_ttl_days, refresh=not enabled)
+
+    if source == "arcadedb":
+        return ArcadeDBClient(cache=cache)
 
     if source in ("both", "combined"):
         return CombinedMetadataClient(_make_ss(), _make_tgdb(), cache=cache)

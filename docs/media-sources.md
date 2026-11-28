@@ -5,10 +5,11 @@ them with `--source` (or `default_metadata_source`).
 
 | Source | `--source` | Needs | Gives |
 |---|---|---|---|
-| ScreenScraper | `screenscraper` | A user login and an issued developer ID (Setup) | Wheel logos, box art, screenshots, videos, themes, sounds, tags. The only source of videos and themes; a daily allowance per user |
+| ScreenScraper | `screenscraper` | A user login and an issued developer ID (Setup) | Wheel logos, box art, screenshots, videos, themes, sounds, tags. The only source of console videos and of themes; a daily allowance per user |
 | TheGamesDB | `thegamesdb` | An API key | Logos, box art, screenshots, banners, tags. About a thousand requests a month per key |
 | LaunchBox Games Database | `launchbox` | `spindoctor launchbox-db update --apply` once (about 100 MB) | Clear logos, box art, screenshots, title screens, fanart; year, developer, genre, rating, players. Lookups are local |
 | libretro-thumbnails | `libretro` | Nothing | Box art, screenshots and title screens for every system; logos for some. Matched by No-Intro / Redump file name; no tags |
+| ArcadeDB | `arcadedb` | Nothing | Arcade games by MAME set name: gameplay videos, in-game, title, flyer and cabinet pictures; title, maker, year, genre, players |
 | Steam store | `fetch-steam-media` | Nothing | Videos, screenshots, backgrounds and header art for PC games, one game at a time |
 
 `auto` (the default) uses ScreenScraper and TheGamesDB as configured; `both`
@@ -88,3 +89,24 @@ spindoctor fetch-media --system "Nintendo DS" --types wheel --source launchbox,l
   `~/.spindoctor/libretro` for `metadata_cache_ttl_days`. GitHub allows 60 such calls
   an hour without an account; when the list isn't available (or, like MAME's, is
   too big for one call), exact file names are checked one request each instead.
+
+## ArcadeDB
+
+ArcadeDB (`adb.arcadeitalia.net`) describes every MAME machine by its set name,
+with no key: a short gameplay video, in-game, title, flyer and cabinet pictures,
+and title, maker, year, genre and players. It is the free source of videos for
+arcade wheels.
+
+```text
+spindoctor fetch-media --system MAME --types video,snap,title --source arcadedb
+spindoctor fetch-media --system MAME --types video,wheel --source arcadedb,thegamesdb
+```
+
+- **Names:** only games named like a MAME set (`pacman`, `sf2ce`: lowercase letters,
+  digits and `_`) are asked, so a console wheel sends nothing. A clone without its
+  own media gets its parent's.
+- **Slots:** the SD video → video (the HD one is the second choice with
+  `--pick-media`), in-game → snap, title → title, flyer (else cabinet) → artwork.
+  ArcadeDB has no wheel logos: its marquees are photos of the cabinet's sign.
+- **Requests:** one per game, at most one a second, and kept in the metadata
+  cache like the other scrapers' answers.
