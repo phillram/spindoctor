@@ -269,6 +269,9 @@ PPSSPP, DuckStation, PCSX2 2.x and Vita3K keys come from their portable
 folders (`memstick\PSP\SYSTEM\controls.ini`, `settings.ini`, `inis\PCSX2.ini`,
 `config.yml`), and so do EKA2L1's (`bindings\*.yml`), Cxbx-R's (`settings.ini`),
 WinUAE's (`Configurations\host\*.uae`) and BigPEmu's (`UserData\BigPEmuConfig.bigpcfg`).
+SNESGT (`SNESGT.ini`), Project64's N-Rage (`Config\NRage.ini`) and each Mugen
+game's own `data\mugen.cfg` are read too; Mugen `.7z` reads are cached in
+`ledblinky_mugen_cfg_cache.json`.
 Flycast's keys come from its `mappings\SDL_Keyboard*.cfg` files.
 Color brightness commands normalize/scale named colors, not Windows display
 brightness.
