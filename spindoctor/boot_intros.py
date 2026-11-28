@@ -462,30 +462,34 @@ def retroarch_layouts(exe_dir: Path) -> list[RetroArchLayout]:
     return layouts
 
 
-def _ra_core_files(setting: IntroSetting, layouts: list[RetroArchLayout]) -> list[Path]:
-    """The core options files *setting*'s key lives in, for every layout.
+def _ra_core_files(setting: IntroSetting,
+                   layouts: list[RetroArchLayout]) -> tuple[list[Path], list[Path]]:
+    """``(core files, game files)`` for *setting*, over every layout.
 
-    The core's own ``<core name>.opt`` (created when missing), or the shared
-    ``retroarch-core-options.cfg`` with ``global_core_options`` on; plus every
-    per-game and per-folder ``.opt`` already in the core's options folder:
-    RetroArch reads one of those *instead of* the core's file for that game,
-    so each needs the key too.
+    The core files are the core's own ``<core name>.opt`` (created when
+    missing), or the shared ``retroarch-core-options.cfg`` with
+    ``global_core_options`` on.  The game files are the per-game and
+    per-folder ``.opt`` files already in the core's options folder: RetroArch
+    reads one of those *instead of* the core's file for that game.  They can
+    be a game kept off the BIOS on purpose, so they change only on request.
     """
-    files: list[Path] = []
+    own_files: list[Path] = []
+    game_files: list[Path] = []
     for layout in layouts:
         folder = _ci_path(layout.options_dir, setting.library) or layout.options_dir / setting.library
         own = (layout.legacy_file if layout.global_mode
                else _ci_child(folder, f"{setting.library}.opt") or folder / f"{setting.library}.opt")
-        extra = []
+        if own not in own_files:
+            own_files.append(own)
         try:
             extra = sorted((p for p in folder.glob("*.opt") if p.is_file()),
                            key=lambda p: p.name.lower())
         except OSError:
-            pass
-        for path in [own] + extra:
-            if path not in files:
-                files.append(path)
-    return files
+            extra = []
+        for path in extra:
+            if path not in own_files and path not in game_files:
+                game_files.append(path)
+    return own_files, [p for p in game_files if p not in own_files]
 
 
 def _ra_seed(setting: IntroSetting, path: Path, layouts: list[RetroArchLayout]) -> str:
@@ -842,6 +846,7 @@ class Target:
     folder: Path
     used_by: list[str] = field(default_factory=list)   # RocketLauncher emulator names
     files: list[Path] = field(default_factory=list)    # where the key is set
+    game_files: list[Path] = field(default_factory=list)  # a core's per-game / per-folder .opt
     values: dict = field(default_factory=dict)         # (file, key) -> value, None = absent
     also: dict = field(default_factory=dict)           # (file, key) -> value of also_on keys
     blocked: str = ""                # a blocked_by reason that applies
@@ -857,9 +862,10 @@ class Target:
             return self.setting.name
         return f"{self.setting.name} ({self.program})"
 
-    @property
-    def also_ok(self) -> bool:
-        for (_path, key), value in self.also.items():
+    def _also_ok(self, paths: list[Path]) -> bool:
+        for (path, key), value in self.also.items():
+            if path not in paths:
+                continue
             want, absent_ok = next((v, ok) for k, v, ok in self.setting.also_on if k == key)
             if value is None and not absent_ok:
                 return False
@@ -867,14 +873,24 @@ class Target:
                 return False
         return True
 
-    @property
-    def state(self) -> Optional[bool]:
-        """True: logo on, False: off, None: files or keys disagree, or nothing read."""
-        states = {is_on(v, self.setting) for v in self.values.values()}
+    def state_of(self, paths: list[Path]) -> Optional[bool]:
+        """True: logo on in *paths*, False: off, None: they disagree or none read."""
+        states = {is_on(v, self.setting) for (p, _k), v in self.values.items() if p in paths}
         if len(states) != 1:
             return None
         on = states.pop()
-        return on and self.also_ok and not self.blocked
+        return on and self._also_ok(paths) and not self.blocked
+
+    @property
+    def state(self) -> Optional[bool]:
+        """The logo as the emulator (or the core's own options file) has it."""
+        return self.state_of(self.files)
+
+    def games_off_on(self) -> tuple[list[Path], list[Path]]:
+        """The core's game files with the logo off, and with it on."""
+        off = [p for p in self.game_files if self.state_of([p]) is False]
+        on = [p for p in self.game_files if self.state_of([p]) is True]
+        return off, on
 
     @property
     def can_turn_on(self) -> bool:
@@ -906,7 +922,7 @@ class Survey:
 
 def _read_values(target: Target) -> None:
     s = target.setting
-    for path in target.files:
+    for path in target.files + target.game_files:
         text = ""
         if path.is_file():
             try:
@@ -931,8 +947,8 @@ def _retroarch_targets(folder: Path, program: str,
     for setting in SETTINGS:
         if not setting.retroarch or not _ra_has_core(setting.cores, layouts):
             continue
-        t = Target(setting, program, folder, list(used_by), _ra_core_files(setting, layouts),
-                   layouts=layouts)
+        own, games = _ra_core_files(setting, layouts)
+        t = Target(setting, program, folder, list(used_by), own, games, layouts=layouts)
         _read_values(t)
         if setting.needs:
             if None in systems:
@@ -1057,6 +1073,8 @@ class Plan:
     changes: list[Change] = field(default_factory=list)
     already: list[Target] = field(default_factory=list)
     refused: list[tuple[Target, str]] = field(default_factory=list)
+    # Game files left as they are although their logo differs from the change.
+    kept: list[tuple[Target, list[Path]]] = field(default_factory=list)
 
     def targets(self) -> list[Target]:
         seen: list[Target] = []
@@ -1098,8 +1116,15 @@ def select(found: Survey, names: Iterable[str]) -> list[Target]:
     return picked
 
 
-def plan(targets: Iterable[Target], turn_on: bool) -> Plan:
-    """What turning the logo on (or off) for *targets* would change."""
+def plan(targets: Iterable[Target], turn_on: bool, game_files: bool = False) -> Plan:
+    """What turning the logo on (or off) for *targets* would change.
+
+    A RetroArch core's per-game and per-folder ``.opt`` files are changed
+    only with *game_files*: one with the logo off may be a game the console
+    BIOS refuses (the Genesis TMSS ROM locks up a cartridge without "SEGA"
+    in its header), kept off it on purpose.  Without it, those that differ
+    are listed in ``kept``.
+    """
     result = Plan(turn_on)
     for t in targets:
         s = t.setting
@@ -1114,7 +1139,12 @@ def plan(targets: Iterable[Target], turn_on: bool) -> Plan:
             continue
         want = s.on if turn_on else s.off
         changes = []
-        for path in t.files:
+        if not game_files:
+            off, on = t.games_off_on()
+            differ = off if turn_on else on
+            if differ:
+                result.kept.append((t, differ))
+        for path in t.files + (t.game_files if game_files else []):
             for key in s.keys:
                 old = t.values.get((path, key))
                 if is_on(old, s) != turn_on:

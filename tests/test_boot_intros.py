@@ -142,6 +142,24 @@ def _only(found, ident):
 
 # ── RetroArch cores ───────────────────────────────────────────────────────────
 
+def test_a_games_own_options_file_keeps_its_setting_unless_asked(tmp_path):
+    cfg, rl, emus = _cabinet(tmp_path, backup_before_modify=False)
+    ra = _retroarch(emus, rl, cores=("genesis_plus_gx_libretro",))
+    own = _put(ra / "config" / "Genesis Plus GX" / "Genesis Plus GX.opt", 'genesis_plus_gx_bios = "disabled"\n')
+    # A cartridge without "SEGA" in its header, kept off the TMSS BIOS on purpose.
+    kept = _put(ra / "config" / "Genesis Plus GX" / "Populous (USA).opt", 'genesis_plus_gx_bios = "disabled"\n')
+    _put(ra / "system" / "bios_MD.bin")
+
+    t = _only(boot_intros.survey(cfg), "genesis-plus-gx")
+    assert t.files == [own] and t.game_files == [kept]
+    result = boot_intros.plan([t], turn_on=True)
+    assert [c.file for c in result.changes] == [own]
+    assert result.kept == [(t, [kept])]
+    boot_intros.write_plan(result, cfg)
+    assert kept.read_text(encoding="utf-8") == 'genesis_plus_gx_bios = "disabled"\n'
+    assert _only(boot_intros.survey(cfg), "genesis-plus-gx").state is True
+
+
 def test_core_and_per_game_options_are_both_switched(tmp_path):
     cfg, rl, emus = _cabinet(tmp_path)
     ra = _retroarch(emus, rl)
@@ -151,10 +169,10 @@ def test_core_and_per_game_options_are_both_switched(tmp_path):
 
     t = _only(boot_intros.survey(cfg), "gambatte")
     assert t.label == "Gambatte (RetroArch)" and t.used_by == ["RetroArch"]
-    assert t.state is True and t.files == [own, game]
+    assert t.state is True and t.files == [own] and t.game_files == [game]
     assert t.missing == [f"gbc_bios.bin (Game Boy Color boot ROM) in {ra / 'system'}"]
 
-    result = boot_intros.plan([t], turn_on=False)
+    result = boot_intros.plan([t], turn_on=False, game_files=True)
     assert [(c.file, c.old, c.new) for c in result.changes] == [
         (own, "enabled", "disabled"), (game, "enabled", "disabled")]
     written = boot_intros.write_plan(result, cfg)

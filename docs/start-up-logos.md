@@ -18,6 +18,7 @@ spindoctor boot-intros off
 spindoctor boot-intros off --apply
 spindoctor boot-intros on gambatte mgba --apply
 spindoctor boot-intros off "DuckStation (PS1)" --apply
+spindoctor boot-intros off melonds-ds --game-files --apply
 ```
 
 - **`list`** shows each emulator with such a setting, the consoles it covers,
@@ -52,7 +53,9 @@ With no RocketLauncher entries, the folders one level under `emulators_dir`.
   once per RetroArch install.
 - **The core's options file** is `<config folder>\<core name>\<core name>.opt`. A
   per-game or per-folder `.opt` beside it is read *instead of* the core's file for
-  that game, so `boot-intros` sets the key in each of them too.
+  that game, so that game keeps its own setting: that is how a game the console's
+  BIOS refuses is kept off it (below). `list` counts them, `on` and `off` name the
+  ones they leave different, and `--game-files` changes them too.
 - **A core that has no options file yet gets one.** It starts with the core's lines
   from the old shared `retroarch-core-options.cfg` when there is one, as RetroArch
   does itself the first time. With `global_core_options = "true"`, only the shared
@@ -98,6 +101,19 @@ folder unless the row says otherwise.
 
 Things worth knowing:
 
+- **A console's BIOS refuses some games, as the real console does.** With
+  Genesis Plus GX's BIOS on, the Genesis TMSS ROM locks up a cartridge without
+  `SEGA` at `0x100` (some early EA and Accolade games such as Populous, Budokan and
+  Ishido, and some unlicensed ones); the Game Gear BIOS can lock up one without the
+  `TMR SEGA` header; the export Master System BIOS checks the header and its
+  checksum. Japanese and headerless Master System games boot as before, because
+  Genesis Plus GX gives them the Japanese BIOS (`bios_J.sms`), which is usually not
+  there. Gearsystem's own option text warns the same, and a Game Boy boot ROM
+  (Gambatte, Gearboy) stops on a cartridge whose logo or header checksum is wrong,
+  as a patched ROM's can be; mGBA skips its BIOS for those instead. Keep such a
+  game off the BIOS with its own options file: a copy of the core's `.opt` named
+  after the game file (`config\Genesis Plus GX\Populous (USA).opt`) with
+  `genesis_plus_gx_bios = "disabled"`.
 - **Dolphin won't start a GameCube game whose region has no `IPL.bin`** ("the GC IPL
   could not be found") while `SkipIPL` is off, so all three regions are needed. Wii
   games never show it. Its user folder is `User` beside `Dolphin.exe` with

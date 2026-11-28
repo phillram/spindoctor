@@ -3251,6 +3251,10 @@ def boot_intros_list():
         for t in found.targets:
             if t.problem:
                 console.print(f"[yellow]{t.label}:[/yellow] {t.problem}")
+            off, on = t.games_off_on()
+            if off or on:
+                console.print(f"[dim]{t.label}: {len(t.game_files)} game(s) have their own options "
+                              f"file, which RetroArch reads instead ({len(on)} on, {len(off)} off)[/dim]")
     if found.no_setting:
         console.print("[dim]No start-up logo setting: "
                       + ", ".join(sorted({n.name for n in found.no_setting})) + "[/dim]")
@@ -3258,7 +3262,7 @@ def boot_intros_list():
                   "(all, or NAME ...), then --apply.[/dim]")
 
 
-def _boot_intros_set(names, apply_changes: bool, turn_on: bool) -> None:
+def _boot_intros_set(names, apply_changes: bool, turn_on: bool, game_files: bool) -> None:
     from .boot_intros import BootIntroError, plan, select, survey, write_plan
 
     config = _cfg()
@@ -3270,7 +3274,7 @@ def _boot_intros_set(names, apply_changes: bool, turn_on: bool) -> None:
     if not targets:
         console.print("[dim]No emulator with a start-up logo setting found.[/dim]")
         return
-    result = plan(targets, turn_on)
+    result = plan(targets, turn_on, game_files=game_files)
     word = "on" if turn_on else "off"
     for t in result.targets():
         console.print(f"[cyan]{t.label}[/cyan] [dim]({t.setting.consoles})[/dim]")
@@ -3285,6 +3289,10 @@ def _boot_intros_set(names, apply_changes: bool, turn_on: bool) -> None:
         console.print(f"[dim]already {word}: {t.label}[/dim]")
     for t, why in result.refused:
         console.print(f"[yellow]not changed:[/yellow] {t.label}: {why}")
+    for t, paths in result.kept:
+        state = "off" if turn_on else "on"
+        console.print(f"[dim]kept {state} by their own options file ({t.label}; --game-files "
+                      f"changes them too): {', '.join(p.stem for p in paths)}[/dim]")
     if not result.changes:
         return
     if not apply_changes:
@@ -3303,33 +3311,43 @@ def _boot_intros_set(names, apply_changes: bool, turn_on: bool) -> None:
         sys.exit(1)
 
 
+_GAME_FILES_HELP = ("Also change the per-game and per-folder .opt files beside a RetroArch "
+                    "core's own. RetroArch reads those instead of the core's file, and one "
+                    "can keep a game the console BIOS refuses off it, so by default they "
+                    "keep their own setting.")
+
+
 @boot_intros_group.command("on")
 @click.argument("names", nargs=-1)
+@click.option("--game-files", is_flag=True, help=_GAME_FILES_HELP)
 @click.option("--apply", "apply_changes", is_flag=True,
               help="Write the settings. Without this flag, only a preview is printed.")
-def boot_intros_on(names, apply_changes):
+def boot_intros_on(names, game_files, apply_changes):
     """Play the consoles' start-up logos (all emulators, or the NAMEs given).
 
     \b
     NAME is a name from 'boot-intros list' (gambatte, duckstation, ...),
     an emulator folder or a RocketLauncher emulator name. An emulator whose
     boot ROM or BIOS isn't found is left as it is, and the file is named.
+    Like the real consoles, a BIOS can refuse some games: the Genesis TMSS
+    ROM locks up a cartridge without "SEGA" in its header.
     """
-    _boot_intros_set(names, apply_changes, turn_on=True)
+    _boot_intros_set(names, apply_changes, turn_on=True, game_files=game_files)
 
 
 @boot_intros_group.command("off")
 @click.argument("names", nargs=-1)
+@click.option("--game-files", is_flag=True, help=_GAME_FILES_HELP)
 @click.option("--apply", "apply_changes", is_flag=True,
               help="Write the settings. Without this flag, only a preview is printed.")
-def boot_intros_off(names, apply_changes):
+def boot_intros_off(names, game_files, apply_changes):
     """Skip the consoles' start-up logos (all emulators, or the NAMEs given).
 
     \b
     NAME is a name from 'boot-intros list' (gambatte, duckstation, ...),
     an emulator folder or a RocketLauncher emulator name.
     """
-    _boot_intros_set(names, apply_changes, turn_on=False)
+    _boot_intros_set(names, apply_changes, turn_on=False, game_files=game_files)
 
 
 @cli.group("stats-report", invoke_without_command=True)

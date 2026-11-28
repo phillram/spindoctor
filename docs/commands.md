@@ -79,8 +79,8 @@ Turn consoles' own start-up logos on or off, emulator by emulator.
 Options: `--help`.
 
 - `boot-intros list`: List the emulators with a start-up logo setting, and whether it is on. Options: `--help`.
-- `boot-intros off NAMES`: Skip the consoles' start-up logos (all emulators, or the NAMEs given). Options: `--apply`, `--help`.
-- `boot-intros on NAMES`: Play the consoles' start-up logos (all emulators, or the NAMEs given). Options: `--apply`, `--help`.
+- `boot-intros off NAMES`: Skip the consoles' start-up logos (all emulators, or the NAMEs given). Options: `--game-files`, `--apply`, `--help`.
+- `boot-intros on NAMES`: Play the consoles' start-up logos (all emulators, or the NAMEs given). Options: `--game-files`, `--apply`, `--help`.
 
 ## `check-archive-ext`
 
