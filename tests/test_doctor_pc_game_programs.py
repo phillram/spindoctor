@@ -366,6 +366,39 @@ def test_missing_program_is_info(tmp_path, windows):
     assert node.status == INFO
 
 
+def test_disc_image_program_on_the_disc_root_is_not_reported_missing(tmp_path, windows):
+    # PCLauncher mounts DiscImage before it checks the programs, and takes a bare
+    # Application file name as the root of the mounted image.
+    cfg, rl, folder = _cabinet(tmp_path, ["Disc Root", "Local Gone", "No Disc"])
+    iso = _write(folder / "isos" / "game.iso", b"")
+    _game_ini(rl, "Disc Root", Application="setup.exe", DiscImage=iso)
+    _write(rl / "setup.exe", _pe(["steam_api.dll"]))  # not the program that runs
+    _game_ini(rl, "Local Gone", Application=folder / "Local" / "game.exe", DiscImage=iso)
+    _game_ini(rl, "No Disc", Application="nodisc.exe")
+    node = _wheel(cfg)
+    row = _row(node, "Programs not found")
+    assert "Disc Root" not in row.detail
+    assert "Local Gone: game.exe" in row.detail  # a local path is still checked
+    assert "No Disc: nodisc.exe" in row.detail
+    assert row.detail.startswith("2 program(s)")
+    assert _row(node, "Missing DLLs") is None
+    assert "1 program(s) are on a disc image" in node.detail
+
+
+@pytest.mark.skipif(os.name != "nt", reason="drive letters are Windows paths")
+def test_disc_image_program_on_a_drive_that_isnt_there_is_not_reported_missing(tmp_path, windows):
+    free = next(c for c in "QRSTUVWXYZ" if not os.path.exists(f"{c}:\\"))
+    cfg, rl, folder = _cabinet(tmp_path, ["Disc Drive", "No Disc Drive"])
+    iso = _write(folder / "isos" / "game.iso", b"")
+    _game_ini(rl, "Disc Drive", Application=f"{free}:\\GAME\\game.exe", DiscImage=iso,
+              PreLaunch=f"{free}:\\patch.exe")
+    _game_ini(rl, "No Disc Drive", Application=f"{free}:\\GAME\\game.exe")
+    row = _row(_wheel(cfg), "Programs not found")
+    assert "Disc Drive:" not in row.detail.replace("No Disc Drive:", "")
+    assert "No Disc Drive: game.exe" in row.detail
+    assert row.detail.startswith("1 program(s)")
+
+
 def test_uninstaller_as_application_warns(tmp_path, windows):
     cfg, rl, folder = _cabinet(tmp_path, ["Robot Rumble", "Run Gun"])
     ini = _game_ini(rl, "Robot Rumble",
